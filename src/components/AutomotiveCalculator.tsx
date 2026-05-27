@@ -5,7 +5,6 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Save, 
-  FileDown, 
   Package,
   Zap,
   LayoutDashboard,
@@ -21,6 +20,7 @@ import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { pdfService } from '../services/pdfService';
+import GeneratePdfButton from './GeneratePdfButton';
 export default function AutomotiveCalculator() {
   const [customerName, setCustomerName] = useState('');
   const [selectedMake, setSelectedMake] = useState<string>('');
@@ -435,14 +435,12 @@ export default function AutomotiveCalculator() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <button 
+                <GeneratePdfButton
                   disabled={!customerName || !selectedMaterialId || !selectedVehicleId}
-                  onClick={handleGeneratePDF}
-                  className="w-full bg-white text-slate-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-100 transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-wider text-xs"
-                >
-                  <FileDown size={20} />
-                  GERAR PDF PROFISSIONAL
-                </button>
+                  onGenerate={handleGeneratePDF}
+                  label="Gerar PDF profissional"
+                  className="shadow-lg"
+                />
               </div>
             </div>
           </section>

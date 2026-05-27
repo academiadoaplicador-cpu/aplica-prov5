@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Package,
   LayoutDashboard,
-  FileDown,
   Maximize,
   ChevronDown,
   Info,
@@ -20,6 +19,7 @@ import { FinancialSettings, Material, DecorativeItem, Appliance } from '../types
 import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { pdfService } from '../services/pdfService';
+import GeneratePdfButton from './GeneratePdfButton';
 type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
 
 export default function DecorativeCalculator() {
@@ -473,14 +473,12 @@ export default function DecorativeCalculator() {
                 </h4>
               </div>
 
-              <button 
-                onClick={handleGeneratePDF}
+              <GeneratePdfButton
+                onGenerate={handleGeneratePDF}
                 disabled={!customerName || !selectedMaterialId}
-                className="w-full bg-white hover:bg-slate-50 text-slate-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-widest text-xs"
-              >
-                <FileDown size={20} />
-                Gerar PDF Decor
-              </button>
+                label="Gerar PDF decor"
+                className="shadow-lg"
+              />
             </div>
           </section>
         </div>

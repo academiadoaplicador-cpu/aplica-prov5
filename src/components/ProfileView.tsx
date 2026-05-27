@@ -158,6 +158,9 @@ export default function ProfileView({ user }: ProfileViewProps) {
               accept="image/*" 
               onChange={handlePhotoUpload} 
             />
+            <p className="text-[10px] text-slate-500 text-center mt-2 max-w-[8rem] leading-tight">
+              Sua logo aparece nos PDFs dos orçamentos
+            </p>
             {profile.verifiedDocuments && (
               <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-1 rounded-full border-2 border-slate-900">
                 <CheckCircle2 size={16} />

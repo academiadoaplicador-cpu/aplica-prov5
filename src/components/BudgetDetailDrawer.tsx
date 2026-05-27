@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Car,
   Home,
-  FileDown,
   Trash2,
   Package,
   Clock,
@@ -19,6 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Budget, Material } from '../types';
 import { VEHICLE_PARTS_DATA } from '../types/vehicleParts';
 import { formatCurrency, cn } from '../lib/utils';
+import GeneratePdfButton from './GeneratePdfButton';
 
 interface BudgetDetailDrawerProps {
   budget: Budget | null;
@@ -274,14 +274,11 @@ export default function BudgetDetailDrawer({
 
             {/* Footer actions */}
             <div className="shrink-0 p-5 border-t border-slate-800 space-y-2">
-              <button
-                type="button"
-                onClick={onGeneratePDF}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-white text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider hover:bg-slate-100 transition-colors"
-              >
-                <FileDown size={18} />
-                Gerar PDF
-              </button>
+              <GeneratePdfButton
+                onGenerate={onGeneratePDF}
+                label="Gerar PDF"
+                size="sm"
+              />
               <button
                 type="button"
                 onClick={onDelete}

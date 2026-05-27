@@ -45,7 +45,11 @@ function text(doc: jsPDF, hex: string) {
   doc.setTextColor(...hexToRgb(hex));
 }
 
-async function loadLogo(): Promise<{ dataUrl: string; aspect: number } | null> {
+const DEFAULT_LOGO = '/logo.png';
+
+type PdfImage = { dataUrl: string; aspect: number };
+
+async function loadImageForPdf(src: string): Promise<PdfImage | null> {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -65,8 +69,16 @@ async function loadLogo(): Promise<{ dataUrl: string; aspect: number } | null> {
       });
     };
     img.onerror = () => resolve(null);
-    img.src = '/logo.png';
+    img.src = src;
   });
+}
+
+async function resolvePdfLogo(profilePhotoUrl?: string): Promise<PdfImage | null> {
+  if (profilePhotoUrl?.trim()) {
+    const custom = await loadImageForPdf(profilePhotoUrl);
+    if (custom) return custom;
+  }
+  return loadImageForPdf(DEFAULT_LOGO);
 }
 
 function drawSectionTitle(doc: jsPDF, title: string, y: number): number {
@@ -116,12 +128,12 @@ function getPieceNames(budget: Budget): string[] {
 
 export const pdfService = {
   generateBudgetPDF: async (budget: Budget) => {
-    const [user, materials, logo] = await Promise.all([
+    const [user, materials] = await Promise.all([
       databaseService.getUser(),
       databaseService.getMaterials(),
-      loadLogo(),
     ]);
     const profile = user ? await databaseService.getProfile(user.id) : null;
+    const logo = await resolvePdfLogo(profile?.photoUrl);
 
     const material = materials.find((m) => m.id === budget.materialId);
     const businessName = user?.businessName || 'Aplica PRO';
