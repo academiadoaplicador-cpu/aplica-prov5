@@ -44,7 +44,8 @@ RUN npm run build && npm ci --omit=dev
 # --- Produção: Nginx + API no mesmo container (compatível com Coolify) ---
 FROM node:22-alpine AS production
 
-RUN apk add --no-cache nginx wget
+RUN apk add --no-cache nginx wget \
+  && mkdir -p /run/nginx /var/lib/nginx/tmp /var/log/nginx /etc/nginx/http.d
 
 WORKDIR /srv/api
 
@@ -57,7 +58,7 @@ COPY --from=web-builder /app/dist /srv/public
 
 COPY docker/nginx.prod.conf /etc/nginx/http.d/default.conf
 COPY docker/start-prod.sh /start-prod.sh
-RUN chmod +x /start-prod.sh
+RUN chmod +x /start-prod.sh && nginx -t
 
 ENV NODE_ENV=production
 ENV PORT=4000
