@@ -1,0 +1,124 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: aplica-pro-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aplica}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aplica}
+      POSTGRES_DB: ${POSTGRES_DB:-aplica_pro}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aplica} -d ${POSTGRES_DB:-aplica_pro}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    profiles:
+      - dev
+    build:
+      context: ./server
+      target: development
+    container_name: aplica-pro-api
+    ports:
+      - "${API_PORT:-4000}:4000"
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aplica}:${POSTGRES_PASSWORD:-aplica}@db:5432/${POSTGRES_DB:-aplica_pro}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-aplica-pro-jwt-secret-change-in-production-32chars}
+    volumes:
+      - ./server:/app
+      - api_node_modules:/app/node_modules
+    command: sh -c "npm ci && npm run dev"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api-prod:
+    profiles:
+      - prod
+    build:
+      context: ./server
+      target: production
+    container_name: aplica-pro-api-prod
+    env_file:
+      - path: .env.production
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aplica}:${POSTGRES_PASSWORD:-aplica}@db:5432/${POSTGRES_DB:-aplica_pro}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET com pelo menos 32 caracteres}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ENABLE_ADMIN_BOOTSTRAP: ${ENABLE_ADMIN_BOOTSTRAP:-false}
+      ADMIN_BUSINESS_NAME: ${ADMIN_BUSINESS_NAME:-Gestão do Sistema}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "4000"
+    networks:
+      default:
+        aliases:
+          - api
+
+  app:
+    profiles:
+      - dev
+    build:
+      context: .
+      target: development
+    container_name: aplica-pro-dev
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      VITE_API_PROXY: http://api:4000
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  app-prod:
+    profiles:
+      - prod
+    build:
+      context: .
+      target: production
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    container_name: aplica-pro-prod
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      - api-prod
+    restart: unless-stopped
+
+volumes:
+  node_modules:
+  api_node_modules:
+  postgres_data:

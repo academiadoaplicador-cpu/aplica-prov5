@@ -1,0 +1,490 @@
+import { useState, useMemo, useEffect } from 'react';
+import { 
+  Home, 
+  Plus, 
+  Trash2, 
+  Save, 
+  CheckCircle2,
+  Package,
+  LayoutDashboard,
+  FileDown,
+  Maximize,
+  ChevronDown,
+  Info,
+  Zap,
+  Refrigerator,
+  Layout,
+} from 'lucide-react';
+import { databaseService } from '../services/databaseService';
+import { FinancialSettings, Material, DecorativeItem, Appliance } from '../types';
+import { formatCurrency, generateId, cn } from '../lib/utils';
+import { motion } from 'motion/react';
+import { pdfService } from '../services/pdfService';
+type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
+
+export default function DecorativeCalculator() {
+  const [customerName, setCustomerName] = useState('');
+  const [subType, setSubType] = useState<SubType>('Eletrodomésticos');
+  const [selectedApplianceMake, setSelectedApplianceMake] = useState<string>('');
+  const [selectedApplianceType, setSelectedApplianceType] = useState<string>('');
+  const [selectedApplianceId, setSelectedApplianceId] = useState<string>('');
+
+  const [items, setItems] = useState<DecorativeItem[]>([
+    { id: generateId(), name: 'Peça Principal', width: 0.5, height: 0.5, complexity: 1 }
+  ]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
+  const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(null);
+  const [isSaved, setIsSaved] = useState(false);
+  const [appliances, setAppliances] = useState<Appliance[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [settings, setSettings] = useState<FinancialSettings>({
+    hourlyRate: 50,
+    profitMarginPercentage: 30,
+    taxPercentage: 6,
+    fixedCosts: 1500,
+  });
+
+  useEffect(() => {
+    Promise.all([
+      databaseService.getAppliances(),
+      databaseService.getMaterials(),
+      databaseService.getFinancialSettings(),
+    ]).then(([a, m, s]) => {
+      setAppliances(a);
+      setMaterials(m);
+      setSettings(s);
+    });
+  }, []);
+
+  // Filter options for 3-level select
+  const applianceMakes = useMemo(() => Array.from(new Set(appliances.map(a => a.make))), [appliances]);
+  const applianceTypes = useMemo(() => {
+    if (!selectedApplianceMake) return [];
+    return Array.from(new Set(appliances.filter(a => a.make === selectedApplianceMake).map(a => a.type)));
+  }, [selectedApplianceMake, appliances]);
+  const applianceModels = useMemo(() => {
+    if (!selectedApplianceMake || !selectedApplianceType) return [];
+    return appliances.filter(a => a.make === selectedApplianceMake && a.type === selectedApplianceType as any);
+  }, [selectedApplianceMake, selectedApplianceType, appliances]);
+
+  // Sync items if appliance is selected
+  useEffect(() => {
+    if (subType === 'Eletrodomésticos' && selectedApplianceId) {
+      const app = appliances.find(a => a.id === selectedApplianceId);
+      if (app) {
+        // Simple logic for appliance parts (frente + 2 laterais)
+        const parts: DecorativeItem[] = [
+          { id: generateId(), name: `Frente (${app.type})`, width: app.width, height: app.height, complexity: 2 },
+          { id: generateId(), name: 'Lateral Dir', width: app.depth, height: app.height, complexity: 1 },
+          { id: generateId(), name: 'Lateral Esq', width: app.depth, height: app.height, complexity: 1 }
+        ];
+        setItems(parts);
+      }
+    }
+  }, [selectedApplianceId, subType, appliances]);
+
+  const addItem = () => {
+    setItems(prev => [...prev, { id: generateId(), name: 'Nova Peça', width: 0.5, height: 0.5, complexity: 1 }]);
+  };
+
+  const removeItem = (id: string) => {
+    setItems(prev => prev.filter(i => i.id !== id));
+  };
+
+  const updateItem = (id: string, updates: Partial<DecorativeItem>) => {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
+  };
+
+  const totals = useMemo(() => {
+    const totalM2 = items.reduce((acc, item) => acc + (item.width * item.height), 0);
+    const wasteFactor = 1.15; 
+    const finalM2 = totalM2 * wasteFactor;
+    
+    const totalHours = items.reduce((acc, item) => {
+      const baseTime = item.width * item.height;
+      const multiplier = item.complexity === 1 ? 1.5 : item.complexity === 2 ? 2.5 : 4;
+      return acc + (baseTime * multiplier);
+    }, 0);
+
+    const material = materials.find(m => m.id === selectedMaterialId);
+    const pricePerM2 = customPricePerM2 ?? (material?.pricePerM2 || 0);
+    
+    const materialCost = finalM2 * pricePerM2;
+    const laborCost = totalHours * settings.hourlyRate;
+    
+    const baseCost = materialCost + laborCost;
+    const totalPrice = baseCost * (1 + (settings.profitMarginPercentage / 100)) * (1 + (settings.taxPercentage / 100));
+    const profit = totalPrice - baseCost - (totalPrice * (settings.taxPercentage / 100));
+
+    return {
+      m2: totalM2,
+      finalM2,
+      hours: totalHours,
+      cost: baseCost,
+      price: totalPrice,
+      profit
+    };
+  }, [items, selectedMaterialId, customPricePerM2, materials, settings]);
+
+  const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
+  const selectedAppliance = appliances.find((a) => a.id === selectedApplianceId);
+  const isRecommended = selectedMaterial?.recommendedFor.includes(subType);
+
+  const currentBudget = useMemo(() => ({
+    id: generateId(),
+    customerName,
+    vehicleModel: `${subType}${selectedApplianceId ? ': ' + appliances.find(a => a.id === selectedApplianceId)?.model : ''}`,
+    status: 'Pendente' as const,
+    date: new Date().toISOString(),
+    items: [], 
+    materialId: selectedMaterialId,
+    customPricePerM2: customPricePerM2 || undefined,
+    totalHours: totals.hours,
+    totalMaterialMeters: totals.finalM2,
+    totalMaterialM2: totals.finalM2,
+    totalCost: totals.cost,
+    totalPrice: totals.price,
+    profit: totals.profit,
+    type: 'Decorativo' as const,
+    subType
+  }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances]);
+
+  const handleSave = async () => {
+    if (!customerName || !selectedMaterialId) return;
+    await databaseService.saveBudget(currentBudget);
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 3000);
+  };
+
+  const handleGeneratePDF = async () => {
+    if (!customerName || !selectedMaterialId) return;
+    await pdfService.generateBudgetPDF(currentBudget);
+  };
+
+  return (
+    <div className="space-y-8 w-full pb-20">
+      <header className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-2xl shadow-xl">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+            <Home className="text-white" size={24} />
+          </div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Cálculo Decorativo</h2>
+            <p className="text-slate-400 text-sm italic">Móveis, Eletros e Paredes</p>
+          </div>
+        </div>
+        <div className="flex gap-3 w-full sm:w-auto">
+          <button 
+            disabled={!customerName || items.length === 0 || !selectedMaterialId}
+            onClick={handleSave}
+            className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-all shadow-lg"
+          >
+            {isSaved ? <CheckCircle2 size={18} /> : <Save size={18} />}
+            {isSaved ? 'Salvo' : 'Salvar Orçamento'}
+          </button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-6">
+          {/* Main Config */}
+          <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-widest ml-1">Nome do Cliente</label>
+                <input 
+                  type="text" 
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Ex: João da Silva"
+                  className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-4 text-base sm:text-sm text-white focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-widest ml-1">Categoria</label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {(['Eletrodomésticos', 'Móveis', 'Parede'] as SubType[]).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        setSubType(cat);
+                        setSelectedApplianceId('');
+                      }}
+                      className={cn(
+                        "w-full sm:flex-1 p-3 rounded-xl border text-[10px] font-bold uppercase transition-all",
+                        subType === cat ? "bg-emerald-600/10 border-emerald-500 text-emerald-400" : "bg-slate-950 border-slate-800 text-slate-500"
+                      )}
+                    >
+                      {cat === 'Eletrodomésticos' && <Refrigerator size={14} className="mx-auto mb-1" />}
+                      {cat === 'Móveis' && <Layout size={14} className="mx-auto mb-1" />}
+                      {cat === 'Parede' && <Maximize size={14} className="mx-auto mb-1" />}
+                      {cat === 'Eletrodomésticos' ? 'Eletros' : cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {subType === 'Eletrodomésticos' && (
+              <div className="space-y-4 pt-4 border-t border-slate-800">
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-widest ml-1 block">
+                  Eletrodoméstico (catálogo)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="relative">
+                    <select 
+                      value={selectedApplianceMake}
+                      onChange={(e) => {
+                        setSelectedApplianceMake(e.target.value);
+                        setSelectedApplianceType('');
+                        setSelectedApplianceId('');
+                      }}
+                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-base sm:text-xs text-white focus:ring-2 focus:ring-indigo-500 appearance-none transition-all font-sans"
+                    >
+                      <option value="">Marca...</option>
+                      {applianceMakes.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                  </div>
+                  <div className="relative">
+                    <select 
+                      value={selectedApplianceType}
+                      disabled={!selectedApplianceMake}
+                      onChange={(e) => {
+                        setSelectedApplianceType(e.target.value);
+                        setSelectedApplianceId('');
+                      }}
+                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-base sm:text-xs text-white focus:ring-2 focus:ring-indigo-500 appearance-none transition-all font-sans disabled:opacity-30"
+                    >
+                      <option value="">Tipo...</option>
+                      {applianceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                  </div>
+                  <div className="relative">
+                    <select 
+                      value={selectedApplianceId}
+                      disabled={!selectedApplianceType}
+                      onChange={(e) => setSelectedApplianceId(e.target.value)}
+                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-base sm:text-xs text-white focus:ring-2 focus:ring-indigo-500 appearance-none transition-all font-sans disabled:opacity-30"
+                    >
+                      <option value="">Modelo...</option>
+                      {applianceModels.map(app => (
+                        <option key={app.id} value={app.id}>{app.model}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                  </div>
+                </div>
+                {selectedAppliance && (
+                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl flex flex-wrap gap-4 text-xs">
+                    <div>
+                      <span className="text-slate-500 uppercase text-[9px] font-mono block mb-1">Dimensões</span>
+                      <span className="font-mono text-white">
+                        {selectedAppliance.width.toFixed(2)} × {selectedAppliance.height.toFixed(2)} × {selectedAppliance.depth.toFixed(2)} m
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase text-[9px] font-mono block mb-1">Largura</span>
+                      <span className="font-mono text-emerald-400">{selectedAppliance.width.toFixed(2)} m</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase text-[9px] font-mono block mb-1">Altura</span>
+                      <span className="font-mono text-emerald-400">{selectedAppliance.height.toFixed(2)} m</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase text-[9px] font-mono block mb-1">Profundidade</span>
+                      <span className="font-mono text-emerald-400">{selectedAppliance.depth.toFixed(2)} m</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Parts List */}
+          <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-sm font-mono uppercase tracking-widest text-slate-500">Detalhes das Peças</h3>
+              <button 
+                onClick={addItem}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-[10px] font-bold rounded-lg border border-slate-700 transition-colors uppercase tracking-widest"
+              >
+                <Plus size={14} /> Adicionar
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {items.map((item) => (
+                <motion.div 
+                  layout
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  key={item.id} 
+                  className="grid grid-cols-1 md:grid-cols-12 gap-4 p-5 bg-slate-950 rounded-2xl border border-slate-800 group transition-all hover:border-slate-700 shadow-sm"
+                >
+                  <div className="md:col-span-4">
+                    <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Nome da Face</label>
+                    <input 
+                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs font-bold text-white w-full focus:ring-1 focus:ring-emerald-500"
+                      value={item.name}
+                      onChange={(e) => updateItem(item.id, { name: e.target.value })}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                     <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Largura (m)</label>
+                    <input 
+                      type="number"
+                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white w-full font-mono"
+                      value={item.width}
+                      step="0.01"
+                      onChange={(e) => updateItem(item.id, { width: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Altura (m)</label>
+                    <input 
+                      type="number"
+                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white w-full font-mono"
+                      value={item.height}
+                      step="0.01"
+                      onChange={(e) => updateItem(item.id, { height: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Dificuldade</label>
+                    <select 
+                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-[10px] text-white w-full font-bold uppercase tracking-tight"
+                      value={item.complexity}
+                      onChange={(e) => updateItem(item.id, { complexity: parseInt(e.target.value) as any })}
+                    >
+                      <option value={1}>Fácil (Plano)</option>
+                      <option value={2}>Médio (Curvas)</option>
+                      <option value={3}>Alto (Cantos/Puxadores)</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-1 flex items-end justify-center pb-2">
+                    <button onClick={() => removeItem(item.id)} className="text-slate-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </section>
+
+          {/* Material Suggestion Card */}
+          {selectedMaterialId && (
+            <div className={cn(
+              "p-6 rounded-2xl border flex flex-col sm:flex-row gap-6 transition-all",
+              isRecommended ? "bg-emerald-500/5 border-emerald-500/20" : "bg-amber-500/5 border-amber-500/20"
+            )}>
+              <div className="w-16 h-16 bg-slate-950 rounded-xl flex items-center justify-center border border-slate-800 shrink-0">
+                 <Package className={cn(isRecommended ? "text-emerald-500" : "text-amber-500")} size={24} />
+              </div>
+              <div className="flex-1">
+                 <div className="flex justify-between items-start mb-1">
+                    <h4 className="font-bold text-white text-lg">{selectedMaterial?.name}</h4>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded text-[10px] font-bold uppercase h-fit mt-1",
+                      isRecommended ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                    )}>
+                      {isRecommended ? 'Uso Recomendado' : 'Consulte Fabricante'}
+                    </span>
+                 </div>
+                 <p className="text-xs text-slate-400 mb-2">{selectedMaterial?.brand} • {selectedMaterial?.type} • Durabilidade: {selectedMaterial?.durability}</p>
+                 <div className="flex items-center gap-2 pt-2 border-t border-slate-800/30">
+                    <Info size={14} className="text-indigo-400" />
+                    <p className="text-[10px] italic text-slate-500">{selectedMaterial?.details}</p>
+                 </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Totals side */}
+        <div className="space-y-6">
+          <section className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-6 shadow-2xl shadow-emerald-900/10 lg:sticky lg:top-8">
+            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+              <LayoutDashboard className="text-emerald-500" size={20} />
+              Resumo do Projeto
+            </h3>
+
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Vinil (Catálogo)</label>
+                  <select 
+                    value={selectedMaterialId}
+                    onChange={(e) => {
+                      setSelectedMaterialId(e.target.value);
+                      setCustomPricePerM2(null);
+                    }}
+                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-white focus:ring-1 focus:ring-emerald-500 appearance-none"
+                  >
+                    <option value="">Escolher Material...</option>
+                    {materials.map(m => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.brand})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Valor por m² (Personalizar)</label>
+                  <div className="relative">
+                    <input 
+                      type="number"
+                      value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
+                      onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
+                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-emerald-400 focus:ring-1 focus:ring-emerald-500 font-mono"
+                    />
+                    <Zap size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500/50" />
+                  </div>
+                  {customPricePerM2 !== null && (
+                    <button 
+                      onClick={() => setCustomPricePerM2(null)}
+                      className="text-[9px] text-emerald-400 underline hover:text-emerald-300 ml-1"
+                    >
+                      Restaurar valor do sistema
+                    </button>
+                  )}
+                </div>
+
+                <div className="pt-6 border-t border-slate-800 space-y-4">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 italic">Área Útil</span>
+                    <span className="font-mono text-white">{totals.m2.toFixed(2)} m²</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 italic">Consumo c/ Perda</span>
+                    <span className="font-mono text-white">{totals.finalM2.toFixed(2)} m²</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-t border-slate-800/50 pt-2">
+                    <span className="text-slate-400 font-bold">Mão de Obra</span>
+                    <span className="font-mono text-emerald-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-emerald-600/10 border border-emerald-500/20 p-5 rounded-2xl shadow-inner text-center">
+                <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest mb-1 font-bold">Total Sugerido</p>
+                <h4 className="text-4xl font-black text-white tracking-tighter">
+                  {formatCurrency(totals.price)}
+                </h4>
+              </div>
+
+              <button 
+                onClick={handleGeneratePDF}
+                disabled={!customerName || !selectedMaterialId}
+                className="w-full bg-white hover:bg-slate-50 text-slate-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-widest text-xs"
+              >
+                <FileDown size={20} />
+                Gerar PDF Decor
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}

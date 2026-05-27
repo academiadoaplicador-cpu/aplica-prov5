@@ -1,0 +1,184 @@
+import {
+  ApplicatorProfile,
+  Budget,
+  FinancialSettings,
+  Material,
+  User,
+  Vehicle,
+  Appliance,
+} from '../types';
+import { RegisterPayload } from '../types/auth';
+
+const USER_CACHE_KEY = 'aplica_pro_user_cache';
+
+function getCachedUser(): User | null {
+  try {
+    const data = sessionStorage.getItem(USER_CACHE_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedUser(user: User | null) {
+  if (user) {
+    sessionStorage.setItem(USER_CACHE_KEY, JSON.stringify(user));
+  } else {
+    sessionStorage.removeItem(USER_CACHE_KEY);
+  }
+}
+
+async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
+  };
+
+  const res = await fetch(`/api${path}`, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text;
+    try {
+      message = JSON.parse(text).error ?? text;
+    } catch {
+      /* texto puro */
+    }
+    throw new Error(message || `Erro na API (${res.status})`);
+  }
+
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  return text ? JSON.parse(text) : (undefined as T);
+}
+
+export const databaseService = {
+  getUser: async (): Promise<User | null> => {
+    try {
+      const { user } = await api<{ user: User }>('/auth/me');
+      setCachedUser(user);
+      return user;
+    } catch {
+      setCachedUser(null);
+      return null;
+    }
+  },
+
+  getCachedUser,
+
+  login: async (email: string, password: string): Promise<User> => {
+    const { user } = await api<{ user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    setCachedUser(user);
+    return user;
+  },
+
+  register: async (payload: RegisterPayload): Promise<User> => {
+    const { user } = await api<{ user: User }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    setCachedUser(user);
+    return user;
+  },
+
+  logout: async (): Promise<void> => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } finally {
+      setCachedUser(null);
+    }
+  },
+
+  getFinancialSettings: async (): Promise<FinancialSettings> => {
+    return api<FinancialSettings>('/financial-settings');
+  },
+
+  setFinancialSettings: async (settings: FinancialSettings): Promise<void> => {
+    await api('/financial-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  getMaterials: async (): Promise<Material[]> => {
+    return api<Material[]>('/materials');
+  },
+
+  setMaterials: async (materials: Material[]): Promise<void> => {
+    await api('/materials', {
+      method: 'PUT',
+      body: JSON.stringify({ materials }),
+    });
+  },
+
+  importMaterials: async (materials: Material[]): Promise<Material[]> => {
+    return api<Material[]>('/materials/import', {
+      method: 'POST',
+      body: JSON.stringify({ materials }),
+    });
+  },
+
+  getBudgets: async (): Promise<Budget[]> => {
+    return api<Budget[]>('/budgets');
+  },
+
+  saveBudget: async (budget: Budget): Promise<void> => {
+    await api('/budgets', {
+      method: 'POST',
+      body: JSON.stringify(budget),
+    });
+  },
+
+  deleteBudget: async (id: string): Promise<void> => {
+    await api(`/budgets/${id}`, { method: 'DELETE' });
+  },
+
+  getProfile: async (userId: string): Promise<ApplicatorProfile | null> => {
+    void userId;
+    return api<ApplicatorProfile | null>('/profile');
+  },
+
+  setProfile: async (userId: string, profile: ApplicatorProfile): Promise<void> => {
+    void userId;
+    await api('/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+  },
+
+  getVehicles: async (): Promise<Vehicle[]> => {
+    return api<Vehicle[]>('/vehicles');
+  },
+
+  setVehicles: async (vehicles: Vehicle[]): Promise<void> => {
+    await api('/vehicles', {
+      method: 'PUT',
+      body: JSON.stringify({ vehicles }),
+    });
+  },
+
+  getAppliances: async (): Promise<Appliance[]> => {
+    return api<Appliance[]>('/appliances');
+  },
+
+  setAppliances: async (appliances: Appliance[]): Promise<void> => {
+    await api('/appliances', {
+      method: 'PUT',
+      body: JSON.stringify({ appliances }),
+    });
+  },
+
+  importAppliances: async (appliances: Appliance[]): Promise<Appliance[]> => {
+    return api<Appliance[]>('/appliances/import', {
+      method: 'POST',
+      body: JSON.stringify({ appliances }),
+    });
+  },
+};

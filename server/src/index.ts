@@ -1,0 +1,735 @@
+import bcrypt from 'bcryptjs';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import express, { NextFunction, Request, Response } from 'express';
+import {
+  clearAuthCookie,
+  getTokenFromRequest,
+  setAuthCookie,
+  signAuthToken,
+  verifyAuthToken,
+} from './auth.js';
+import {
+  ensureAdminUser,
+  isAdminEmail,
+  mapUserWithRole,
+  reservedEmailMessage,
+  userIsAdmin,
+} from './admin.js';
+import { pool, waitForDb } from './db.js';
+import { runMigrations } from './migrate.js';
+import { seedUserData } from './seed/seedUser.js';
+
+const SALT_ROUNDS = 10;
+
+const app = express();
+const PORT = Number(process.env.PORT) || 4000;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
+app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
+app.use(cookieParser());
+app.use(express.json({ limit: '2mb' }));
+
+function sendAuthResponse(res: Response, userRow: Record<string, unknown>, status = 200) {
+  const user = mapUserWithRole(userRow);
+  const token = signAuthToken(user.id);
+  setAuthCookie(res, token);
+  res.status(status).json({ user });
+}
+
+function num(value: unknown): number {
+  return Number(value);
+}
+
+function mapFinancial(row: Record<string, unknown>) {
+  return {
+    hourlyRate: num(row.hourly_rate),
+    profitMarginPercentage: num(row.profit_margin_percentage),
+    taxPercentage: num(row.tax_percentage),
+    fixedCosts: num(row.fixed_costs),
+  };
+}
+
+function mapMaterial(row: Record<string, unknown>) {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    brand: row.brand as string,
+    pricePerM2: num(row.price_per_m2),
+    type: row.type as string,
+    line: row.line as string,
+    colorTexture: row.color_texture as string,
+    durability: row.durability as string,
+    recommendedFor: (row.recommended_for as string[]) || [],
+    details: (row.details as string) || undefined,
+  };
+}
+
+function mapVehicle(row: Record<string, unknown>) {
+  return {
+    id: row.id as string,
+    make: row.make as string,
+    model: row.model as string,
+    year: row.year as string,
+    size: row.size as string,
+    partMeasurements: row.part_measurements as Record<string, { width: number; length: number }>,
+  };
+}
+
+function mapAppliance(row: Record<string, unknown>) {
+  return {
+    id: row.id as string,
+    make: row.make as string,
+    model: row.model as string,
+    type: row.type as string,
+    width: num(row.width),
+    height: num(row.height),
+    depth: num(row.depth),
+  };
+}
+
+function mapProfile(row: Record<string, unknown>) {
+  return {
+    id: row.user_id as string,
+    photoUrl: (row.photo_url as string) || undefined,
+    fullName: row.full_name as string,
+    rating: num(row.rating),
+    experienceYears: Number(row.experience_years),
+    phone: row.phone as string,
+    address: row.address as string,
+    areasOfExpertise: (row.areas_of_expertise as string[]) || [],
+    verifiedDocuments: Boolean(row.verified_documents),
+    documentsUrls: (row.documents_urls as string[]) || [],
+  };
+}
+
+function mapBudget(row: Record<string, unknown>) {
+  return {
+    id: row.id as string,
+    customerName: row.customer_name as string,
+    vehicleModel: (row.vehicle_model as string) || undefined,
+    applianceModel: (row.appliance_model as string) || undefined,
+    vehicleId: (row.vehicle_id as string) || undefined,
+    status: row.status as string,
+    date: row.date as string,
+    items: row.items as unknown[],
+    materialId: row.material_id as string,
+    customPricePerM2: row.custom_price_per_m2 != null ? num(row.custom_price_per_m2) : undefined,
+    totalHours: num(row.total_hours),
+    totalMaterialMeters: num(row.total_material_meters),
+    totalMaterialM2: row.total_material_m2 != null ? num(row.total_material_m2) : undefined,
+    totalCost: num(row.total_cost),
+    totalPrice: num(row.total_price),
+    profit: num(row.profit),
+    type: row.type as string,
+    subType: (row.sub_type as string) || undefined,
+  };
+}
+
+function requireUser(req: Request, res: Response, next: NextFunction) {
+  const token = getTokenFromRequest(req.cookies, req.header('authorization'));
+  if (!token) {
+    res.status(401).json({ error: 'Usuário não autenticado' });
+    return;
+  }
+  try {
+    const payload = verifyAuthToken(token);
+    req.userId = payload.sub;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Sessão inválida ou expirada' });
+  }
+}
+
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.userId) {
+    res.status(401).json({ error: 'Usuário não autenticado' });
+    return;
+  }
+  const admin = await userIsAdmin(pool, req.userId);
+  if (!admin) {
+    res.status(403).json({ error: 'Acesso restrito ao administrador' });
+    return;
+  }
+  next();
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+    }
+  }
+}
+
+app.get('/api/health', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', database: 'connected' });
+  } catch {
+    res.status(503).json({ status: 'error', database: 'disconnected' });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  const { businessName, email, password, profile } = req.body as {
+    businessName?: string;
+    email?: string;
+    password?: string;
+    profile?: {
+      fullName?: string;
+      phone?: string;
+      address?: string;
+      experienceYears?: number;
+      areasOfExpertise?: string[];
+      photoUrl?: string;
+      documentsUrls?: string[];
+    };
+  };
+
+  if (!businessName?.trim() || !email?.trim() || !password) {
+    res.status(400).json({ error: 'Empresa, e-mail e senha são obrigatórios' });
+    return;
+  }
+  if (password.length < 6) {
+    res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
+    return;
+  }
+  if (!profile?.fullName?.trim() || !profile.phone?.trim() || !profile.address?.trim()) {
+    res.status(400).json({ error: 'Preencha os dados do aplicador' });
+    return;
+  }
+  if (!profile.areasOfExpertise?.length) {
+    res.status(400).json({ error: 'Selecione ao menos uma área de especialidade' });
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (isAdminEmail(normalizedEmail)) {
+    res.status(403).json({ error: reservedEmailMessage() });
+    return;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existing.rows.length > 0) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'Este e-mail já está cadastrado' });
+      return;
+    }
+
+    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    await client.query(
+      'INSERT INTO users (id, email, business_name, password_hash) VALUES ($1, $2, $3, $4)',
+      [id, normalizedEmail, businessName.trim(), passwordHash],
+    );
+
+    await seedUserData(client, id);
+
+    const hasDocuments = (profile.documentsUrls?.length ?? 0) > 0;
+    await client.query(
+      `INSERT INTO applicator_profiles (
+        user_id, photo_url, full_name, rating, experience_years, phone, address,
+        areas_of_expertise, verified_documents, documents_urls
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        id,
+        profile.photoUrl ?? null,
+        profile.fullName.trim(),
+        5,
+        Math.max(0, Number(profile.experienceYears) || 1),
+        profile.phone.trim(),
+        profile.address.trim(),
+        profile.areasOfExpertise,
+        hasDocuments,
+        profile.documentsUrls ?? [],
+      ],
+    );
+
+    await client.query('COMMIT');
+    sendAuthResponse(
+      res,
+      {
+        id,
+        email: normalizedEmail,
+        business_name: businessName.trim(),
+      },
+      201,
+    );
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Erro ao criar conta' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body as { email?: string; password?: string };
+  if (!email?.trim() || !password) {
+    res.status(400).json({ error: 'E-mail e senha são obrigatórios' });
+    return;
+  }
+
+  const result = await pool.query(
+    'SELECT id, email, business_name, password_hash FROM users WHERE email = $1',
+    [email.trim().toLowerCase()],
+  );
+
+  if (result.rows.length === 0) {
+    res.status(401).json({ error: 'E-mail ou senha incorretos' });
+    return;
+  }
+
+  const row = result.rows[0];
+  if (!row.password_hash) {
+    res.status(401).json({
+      error: 'Conta antiga sem senha. Crie uma nova conta ou entre em contato com o suporte.',
+    });
+    return;
+  }
+
+  const valid = await bcrypt.compare(password, row.password_hash as string);
+  if (!valid) {
+    res.status(401).json({ error: 'E-mail ou senha incorretos' });
+    return;
+  }
+
+  sendAuthResponse(res, row);
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  clearAuthCookie(res);
+  res.status(204).send();
+});
+
+app.get('/api/auth/me', requireUser, async (req, res) => {
+  const result = await pool.query('SELECT id, email, business_name FROM users WHERE id = $1', [
+    req.userId,
+  ]);
+  if (result.rows.length === 0) {
+    res.status(404).json({ error: 'Usuário não encontrado' });
+    return;
+  }
+  res.json({ user: mapUserWithRole(result.rows[0]) });
+});
+
+app.get('/api/financial-settings', requireUser, async (req, res) => {
+  const result = await pool.query('SELECT * FROM financial_settings WHERE user_id = $1', [
+    req.userId,
+  ]);
+  if (result.rows.length === 0) {
+    res.json({
+      hourlyRate: 50,
+      profitMarginPercentage: 30,
+      taxPercentage: 6,
+      fixedCosts: 1500,
+    });
+    return;
+  }
+  res.json(mapFinancial(result.rows[0]));
+});
+
+app.put('/api/financial-settings', requireUser, async (req, res) => {
+  const s = req.body;
+  await pool.query(
+    `INSERT INTO financial_settings (user_id, hourly_rate, profit_margin_percentage, tax_percentage, fixed_costs)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (user_id) DO UPDATE SET
+       hourly_rate = EXCLUDED.hourly_rate,
+       profit_margin_percentage = EXCLUDED.profit_margin_percentage,
+       tax_percentage = EXCLUDED.tax_percentage,
+       fixed_costs = EXCLUDED.fixed_costs`,
+    [req.userId, s.hourlyRate, s.profitMarginPercentage, s.taxPercentage, s.fixedCosts],
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/materials', requireUser, async (req, res) => {
+  const result = await pool.query('SELECT * FROM materials WHERE user_id = $1 ORDER BY name', [
+    req.userId,
+  ]);
+  res.json(result.rows.map(mapMaterial));
+});
+
+app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
+  const materials = (req.body.materials || []) as Record<string, unknown>[];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM materials WHERE user_id = $1', [req.userId]);
+    for (const m of materials) {
+      await client.query(
+        `INSERT INTO materials (
+          user_id, id, name, brand, price_per_m2, type, line, color_texture,
+          durability, recommended_for, details
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          req.userId,
+          m.id,
+          m.name,
+          m.brand,
+          m.pricePerM2,
+          m.type,
+          m.line,
+          m.colorTexture,
+          m.durability,
+          m.recommendedFor || [],
+          m.details ?? null,
+        ],
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Erro ao salvar materiais' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) => {
+  const incoming = (req.body.materials || []) as Record<string, unknown>[];
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    res.status(400).json({ error: 'Nenhum material para importar' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const m of incoming) {
+      const brand = String(m.brand ?? '').trim();
+      const name = String(m.name ?? '').trim();
+      if (!brand || !name) continue;
+
+      const existing = await client.query(
+        `SELECT id FROM materials
+         WHERE user_id = $1
+           AND LOWER(TRIM(brand)) = LOWER(TRIM($2))
+           AND LOWER(TRIM(name)) = LOWER(TRIM($3))`,
+        [req.userId, brand, name],
+      );
+
+      if (existing.rows.length > 0) {
+        await client.query(
+          `UPDATE materials
+           SET price_per_m2 = $1, type = $2, line = $3, color_texture = $4,
+               durability = $5, recommended_for = $6, details = $7,
+               brand = $8, name = $9
+           WHERE user_id = $10 AND id = $11`,
+          [
+            m.pricePerM2,
+            m.type,
+            m.line,
+            m.colorTexture,
+            m.durability,
+            m.recommendedFor || [],
+            m.details ?? null,
+            brand,
+            name,
+            req.userId,
+            existing.rows[0].id,
+          ],
+        );
+      } else {
+        const id = String(m.id ?? crypto.randomUUID());
+        await client.query(
+          `INSERT INTO materials (
+            user_id, id, name, brand, price_per_m2, type, line, color_texture,
+            durability, recommended_for, details
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            req.userId,
+            id,
+            name,
+            brand,
+            m.pricePerM2,
+            m.type,
+            m.line,
+            m.colorTexture,
+            m.durability,
+            m.recommendedFor || [],
+            m.details ?? null,
+          ],
+        );
+      }
+    }
+    await client.query('COMMIT');
+
+    const result = await pool.query('SELECT * FROM materials WHERE user_id = $1 ORDER BY name', [
+      req.userId,
+    ]);
+    res.json(result.rows.map(mapMaterial));
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Erro ao importar materiais' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/vehicles', requireUser, async (req, res) => {
+  const result = await pool.query('SELECT * FROM vehicles WHERE user_id = $1 ORDER BY make, model', [
+    req.userId,
+  ]);
+  res.json(result.rows.map(mapVehicle));
+});
+
+app.put('/api/vehicles', requireUser, requireAdmin, async (req, res) => {
+  const vehicles = (req.body.vehicles || []) as Record<string, unknown>[];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM vehicles WHERE user_id = $1', [req.userId]);
+    for (const v of vehicles) {
+      await client.query(
+        `INSERT INTO vehicles (user_id, id, make, model, year, size, part_measurements)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [req.userId, v.id, v.make, v.model, v.year, v.size, JSON.stringify(v.partMeasurements || {})],
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao salvar veículos' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/appliances', requireUser, async (req, res) => {
+  const result = await pool.query('SELECT * FROM appliances WHERE user_id = $1 ORDER BY make', [
+    req.userId,
+  ]);
+  res.json(result.rows.map(mapAppliance));
+});
+
+app.put('/api/appliances', requireUser, requireAdmin, async (req, res) => {
+  const appliances = (req.body.appliances || []) as Record<string, unknown>[];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM appliances WHERE user_id = $1', [req.userId]);
+    for (const a of appliances) {
+      await client.query(
+        `INSERT INTO appliances (user_id, id, make, model, type, width, height, depth)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [req.userId, a.id, a.make, a.model, a.type, a.width, a.height, a.depth],
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao salvar eletrodomésticos' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/appliances/import', requireUser, requireAdmin, async (req, res) => {
+  const incoming = (req.body.appliances || []) as Record<string, unknown>[];
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    res.status(400).json({ error: 'Nenhum eletrodoméstico para importar' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const a of incoming) {
+      const make = String(a.make ?? '').trim();
+      const model = String(a.model ?? '').trim();
+      const type = String(a.type ?? '').trim();
+      if (!make || !model || !type) continue;
+
+      const existing = await client.query(
+        `SELECT id FROM appliances
+         WHERE user_id = $1
+           AND LOWER(TRIM(make)) = LOWER(TRIM($2))
+           AND LOWER(TRIM(model)) = LOWER(TRIM($3))
+           AND LOWER(TRIM(type)) = LOWER(TRIM($4))`,
+        [req.userId, make, model, type],
+      );
+
+      if (existing.rows.length > 0) {
+        await client.query(
+          `UPDATE appliances
+           SET width = $1, height = $2, depth = $3, make = $4, model = $5, type = $6
+           WHERE user_id = $7 AND id = $8`,
+          [
+            a.width,
+            a.height,
+            a.depth,
+            make,
+            model,
+            type,
+            req.userId,
+            existing.rows[0].id,
+          ],
+        );
+      } else {
+        const id = String(a.id ?? crypto.randomUUID());
+        await client.query(
+          `INSERT INTO appliances (user_id, id, make, model, type, width, height, depth)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [req.userId, id, make, model, type, a.width, a.height, a.depth],
+        );
+      }
+    }
+    await client.query('COMMIT');
+
+    const result = await pool.query('SELECT * FROM appliances WHERE user_id = $1 ORDER BY make', [
+      req.userId,
+    ]);
+    res.json(result.rows.map(mapAppliance));
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao importar eletrodomésticos' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/profile', requireUser, async (req, res) => {
+  const result = await pool.query('SELECT * FROM applicator_profiles WHERE user_id = $1', [
+    req.userId,
+  ]);
+  if (result.rows.length === 0) {
+    res.json(null);
+    return;
+  }
+  res.json(mapProfile(result.rows[0]));
+});
+
+app.put('/api/profile', requireUser, async (req, res) => {
+  const p = req.body;
+  await pool.query(
+    `INSERT INTO applicator_profiles (
+      user_id, photo_url, full_name, rating, experience_years, phone, address,
+      areas_of_expertise, verified_documents, documents_urls
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    ON CONFLICT (user_id) DO UPDATE SET
+      photo_url = EXCLUDED.photo_url,
+      full_name = EXCLUDED.full_name,
+      rating = EXCLUDED.rating,
+      experience_years = EXCLUDED.experience_years,
+      phone = EXCLUDED.phone,
+      address = EXCLUDED.address,
+      areas_of_expertise = EXCLUDED.areas_of_expertise,
+      verified_documents = EXCLUDED.verified_documents,
+      documents_urls = EXCLUDED.documents_urls`,
+    [
+      req.userId,
+      p.photoUrl ?? null,
+      p.fullName,
+      p.rating,
+      p.experienceYears,
+      p.phone ?? '',
+      p.address ?? '',
+      p.areasOfExpertise || [],
+      p.verifiedDocuments ?? false,
+      p.documentsUrls || [],
+    ],
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/budgets', requireUser, async (req, res) => {
+  const result = await pool.query(
+    'SELECT * FROM budgets WHERE user_id = $1 ORDER BY date DESC',
+    [req.userId],
+  );
+  res.json(result.rows.map(mapBudget));
+});
+
+app.post('/api/budgets', requireUser, async (req, res) => {
+  const b = req.body;
+  await pool.query(
+    `INSERT INTO budgets (
+      user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id, status, date,
+      items, material_id, custom_price_per_m2, total_hours, total_material_meters,
+      total_material_m2, total_cost, total_price, profit, type, sub_type
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+    ON CONFLICT (user_id, id) DO UPDATE SET
+      customer_name = EXCLUDED.customer_name,
+      vehicle_model = EXCLUDED.vehicle_model,
+      appliance_model = EXCLUDED.appliance_model,
+      vehicle_id = EXCLUDED.vehicle_id,
+      status = EXCLUDED.status,
+      date = EXCLUDED.date,
+      items = EXCLUDED.items,
+      material_id = EXCLUDED.material_id,
+      custom_price_per_m2 = EXCLUDED.custom_price_per_m2,
+      total_hours = EXCLUDED.total_hours,
+      total_material_meters = EXCLUDED.total_material_meters,
+      total_material_m2 = EXCLUDED.total_material_m2,
+      total_cost = EXCLUDED.total_cost,
+      total_price = EXCLUDED.total_price,
+      profit = EXCLUDED.profit,
+      type = EXCLUDED.type,
+      sub_type = EXCLUDED.sub_type`,
+    [
+      req.userId,
+      b.id,
+      b.customerName,
+      b.vehicleModel ?? null,
+      b.applianceModel ?? null,
+      b.vehicleId ?? null,
+      b.status,
+      b.date,
+      JSON.stringify(b.items || []),
+      b.materialId,
+      b.customPricePerM2 ?? null,
+      b.totalHours,
+      b.totalMaterialMeters,
+      b.totalMaterialM2 ?? null,
+      b.totalCost,
+      b.totalPrice,
+      b.profit,
+      b.type,
+      b.subType ?? null,
+    ],
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/api/budgets/:id', requireUser, async (req, res) => {
+  await pool.query('DELETE FROM budgets WHERE user_id = $1 AND id = $2', [
+    req.userId,
+    req.params.id,
+  ]);
+  res.json({ ok: true });
+});
+
+async function start() {
+  await waitForDb();
+  await runMigrations();
+  await ensureAdminUser(pool);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`API Aplica PRO rodando em http://0.0.0.0:${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Falha ao iniciar API:', err);
+  process.exit(1);
+});
