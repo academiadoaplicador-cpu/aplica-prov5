@@ -19,6 +19,15 @@ import {
 import { ensureDatabase, pool, waitForDb } from './db.js';
 import { runMigrations } from './migrate.js';
 import { seedUserData } from './seed/seedUser.js';
+import {
+  buildAddressLine,
+  buildPhoneStored,
+  mapProfileRow,
+  profileDbParams,
+  PROFILE_INSERT_SQL,
+  PROFILE_UPSERT_SQL,
+  type ProfileAddressInput,
+} from './profileData.js';
 
 const SALT_ROUNDS = 10;
 
@@ -90,21 +99,6 @@ function mapAppliance(row: Record<string, unknown>) {
     width: num(row.width),
     height: num(row.height),
     depth: num(row.depth),
-  };
-}
-
-function mapProfile(row: Record<string, unknown>) {
-  return {
-    id: row.user_id as string,
-    photoUrl: (row.photo_url as string) || undefined,
-    fullName: row.full_name as string,
-    rating: num(row.rating),
-    experienceYears: Number(row.experience_years),
-    phone: row.phone as string,
-    address: row.address as string,
-    areasOfExpertise: (row.areas_of_expertise as string[]) || [],
-    verifiedDocuments: Boolean(row.verified_documents),
-    documentsUrls: (row.documents_urls as string[]) || [],
   };
 }
 
@@ -181,10 +175,8 @@ app.post('/api/auth/register', async (req, res) => {
     businessName?: string;
     email?: string;
     password?: string;
-    profile?: {
+    profile?: ProfileAddressInput & {
       fullName?: string;
-      phone?: string;
-      address?: string;
       experienceYears?: number;
       areasOfExpertise?: string[];
       photoUrl?: string;
@@ -200,8 +192,18 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
     return;
   }
-  if (!profile?.fullName?.trim() || !profile.phone?.trim() || !profile.address?.trim()) {
-    res.status(400).json({ error: 'Preencha os dados do aplicador' });
+  const phoneStored = buildPhoneStored(profile || {});
+  const addressLine = buildAddressLine(profile || {});
+  if (!profile?.fullName?.trim() || !phoneStored) {
+    res.status(400).json({ error: 'Preencha nome e telefone do aplicador' });
+    return;
+  }
+  if (!profile?.street?.toString().trim() || !profile?.neighborhood?.toString().trim()) {
+    res.status(400).json({ error: 'Preencha o endereço (CEP, rua e bairro)' });
+    return;
+  }
+  if (!profile?.city?.toString().trim() || !profile?.stateCode?.toString().trim()) {
+    res.status(400).json({ error: 'Cidade e UF são obrigatórios' });
     return;
   }
   if (!profile.areasOfExpertise?.length) {
@@ -238,25 +240,18 @@ app.post('/api/auth/register', async (req, res) => {
 
     await seedUserData(client, id);
 
-    const hasDocuments = (profile.documentsUrls?.length ?? 0) > 0;
-    await client.query(
-      `INSERT INTO applicator_profiles (
-        user_id, photo_url, full_name, rating, experience_years, phone, address,
-        areas_of_expertise, verified_documents, documents_urls
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [
-        id,
-        profile.photoUrl ?? null,
-        profile.fullName.trim(),
-        5,
-        Math.max(0, Number(profile.experienceYears) || 1),
-        profile.phone.trim(),
-        profile.address.trim(),
-        profile.areasOfExpertise,
-        hasDocuments,
-        profile.documentsUrls ?? [],
-      ],
-    );
+    const hasDocuments = ((profile.documentsUrls as string[])?.length ?? 0) > 0;
+    const profileRow = {
+      ...profile,
+      fullName: (profile.fullName as string).trim(),
+      rating: 5,
+      experienceYears: profile.experienceYears,
+      phone: phoneStored,
+      address: addressLine,
+      verifiedDocuments: hasDocuments,
+      documentsUrls: profile.documentsUrls ?? [],
+    };
+    await client.query(PROFILE_INSERT_SQL, [id, ...profileDbParams(profileRow)]);
 
     await client.query('COMMIT');
     sendAuthResponse(
@@ -617,39 +612,12 @@ app.get('/api/profile', requireUser, async (req, res) => {
     res.json(null);
     return;
   }
-  res.json(mapProfile(result.rows[0]));
+  res.json(mapProfileRow(result.rows[0]));
 });
 
 app.put('/api/profile', requireUser, async (req, res) => {
-  const p = req.body;
-  await pool.query(
-    `INSERT INTO applicator_profiles (
-      user_id, photo_url, full_name, rating, experience_years, phone, address,
-      areas_of_expertise, verified_documents, documents_urls
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    ON CONFLICT (user_id) DO UPDATE SET
-      photo_url = EXCLUDED.photo_url,
-      full_name = EXCLUDED.full_name,
-      rating = EXCLUDED.rating,
-      experience_years = EXCLUDED.experience_years,
-      phone = EXCLUDED.phone,
-      address = EXCLUDED.address,
-      areas_of_expertise = EXCLUDED.areas_of_expertise,
-      verified_documents = EXCLUDED.verified_documents,
-      documents_urls = EXCLUDED.documents_urls`,
-    [
-      req.userId,
-      p.photoUrl ?? null,
-      p.fullName,
-      p.rating,
-      p.experienceYears,
-      p.phone ?? '',
-      p.address ?? '',
-      p.areasOfExpertise || [],
-      p.verifiedDocuments ?? false,
-      p.documentsUrls || [],
-    ],
-  );
+  const p = req.body as Record<string, unknown>;
+  await pool.query(PROFILE_UPSERT_SQL, [req.userId, ...profileDbParams(p)]);
   res.json({ ok: true });
 });
 

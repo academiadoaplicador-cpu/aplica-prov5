@@ -6,8 +6,6 @@ import {
   Lock,
   Building,
   User,
-  Phone,
-  MapPin,
   Briefcase,
   Camera,
   Upload,
@@ -28,6 +26,10 @@ import { databaseService } from '../services/databaseService';
 import { EXPERTISE_OPTIONS } from '../constants/profile';
 import { cn } from '../lib/utils';
 import BrandLogo from './BrandLogo';
+import { AddressFields } from './AddressFields';
+import { PhoneInput, phoneValueFromStored, isValidNationalPhone } from './PhoneInput';
+import { emptyApplicatorAddress, buildAddressSummary, ApplicatorAddress } from '../types/address';
+import { COUNTRY_PHONE_LIST } from '../constants/countries';
 
 interface AuthPageProps {
   onLogin: (user: UserType) => void;
@@ -220,8 +222,8 @@ function RegisterWizard({
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState(() => phoneValueFromStored(''));
+  const [address, setAddress] = useState<ApplicatorAddress>(emptyApplicatorAddress);
   const [experienceYears, setExperienceYears] = useState(1);
 
   const [areasOfExpertise, setAreasOfExpertise] = useState<AreaOfExpertise[]>([]);
@@ -246,8 +248,14 @@ function RegisterWizard({
     }
     if (step === 2) {
       if (!fullName.trim()) return 'Informe seu nome completo';
-      if (!phone.trim()) return 'Informe o telefone';
-      if (!address.trim()) return 'Informe o endereço';
+      const country = COUNTRY_PHONE_LIST.find((c) => c.dial === phone.countryCode) || COUNTRY_PHONE_LIST[0];
+      if (!isValidNationalPhone(country, phone.national)) return 'Informe um telefone válido com DDD';
+      if (address.cep.replace(/\D/g, '').length !== 8) return 'Informe um CEP válido';
+      if (!address.street.trim()) return 'Informe a rua / logradouro';
+      if (!address.addressNumber.trim()) return 'Informe o número do endereço';
+      if (!address.neighborhood.trim()) return 'Informe o bairro';
+      if (!address.city.trim()) return 'Informe a cidade';
+      if (!address.stateCode.trim()) return 'Informe a UF';
     }
     if (step === 3) {
       if (areasOfExpertise.length === 0) return 'Selecione ao menos uma especialidade';
@@ -300,8 +308,11 @@ function RegisterWizard({
       password,
       profile: {
         fullName: fullName.trim(),
-        phone: phone.trim(),
-        address: address.trim(),
+        phone: phone.stored,
+        phoneCountryCode: phone.countryCode,
+        phoneNational: phone.national,
+        address: buildAddressSummary(address),
+        ...address,
         experienceYears,
         areasOfExpertise,
         photoUrl: photoUrl || undefined,
@@ -436,45 +447,23 @@ function RegisterWizard({
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               </div>
             </Field>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Telefone">
-                <div className="relative">
-                  <input
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                    className={inputWithIconClass}
-                  />
-                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                </div>
-              </Field>
-              <Field label="Anos de experiência">
-                <input
-                  type="number"
-                  min={0}
-                  value={experienceYears}
-                  onChange={(e) => setExperienceYears(parseInt(e.target.value, 10) || 0)}
-                  className={inputClass}
-                />
-              </Field>
-            </div>
+            <Field label="Telefone (com código do país)">
+              <PhoneInput value={phone} onChange={setPhone} />
+            </Field>
+            <Field label="Anos de experiência">
+              <input
+                type="number"
+                min={0}
+                value={experienceYears}
+                onChange={(e) => setExperienceYears(parseInt(e.target.value, 10) || 0)}
+                className={inputClass}
+              />
+            </Field>
             <Field label="Endereço (uso interno da rede)">
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Rua, número, cidade"
-                  className={inputWithIconClass}
-                />
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              </div>
+              <AddressFields value={address} onChange={setAddress} />
             </Field>
             <p className="text-[10px] text-slate-600 italic">
-              Mesmos dados do cadastro do aplicador dentro do sistema.
+              Busque pelo CEP para preencher rua, bairro, cidade e estado automaticamente.
             </p>
           </motion.div>
         )}

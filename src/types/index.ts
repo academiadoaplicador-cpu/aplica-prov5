@@ -112,8 +112,27 @@ export interface ApplicatorProfile {
   fullName: string;
   rating: number; // 1-5
   experienceYears: number;
-  phone: string; // Database only
-  address: string; // Database only
+  /** Telefone formatado / E.164 para exibição */
+  phone: string;
+  phoneCountryCode?: string;
+  phoneNational?: string;
+  /** Linha única legada; gerada a partir dos campos estruturados */
+  address: string;
+  cep?: string;
+  street?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  neighborhood?: string;
+  city?: string;
+  stateName?: string;
+  stateCode?: string;
+  region?: string;
+  ibge?: string;
+  gia?: string;
+  ddd?: string;
+  siafi?: string;
+  addressUnit?: string;
+  viacepComplement?: string;
   areasOfExpertise: AreaOfExpertise[];
   verifiedDocuments: boolean;
   documentsUrls: string[];

@@ -4,8 +4,6 @@ import {
   Camera, 
   Star, 
   Briefcase, 
-  Phone, 
-  MapPin, 
   FileCheck, 
   Upload,
   CheckCircle2,
@@ -17,6 +15,11 @@ import { motion } from 'motion/react';
 import { databaseService } from '../services/databaseService';
 import { ApplicatorProfile, AreaOfExpertise, User as UserType } from '../types';
 import { EXPERTISE_OPTIONS, EXPERTISE_ICONS } from '../constants/profile';
+import { AddressFields } from './AddressFields';
+import { PhoneInput, phoneValueFromStored } from './PhoneInput';
+import { buildAddressSummary } from '../types/address';
+import { profileToAddress, mergeAddressIntoProfile } from '../utils/profileAddress';
+import type { PhoneInputValue } from './PhoneInput';
 
 interface ProfileViewProps {
   user: UserType;
@@ -38,19 +41,51 @@ export default function ProfileView({ user }: ProfileViewProps) {
 
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [address, setAddress] = useState(() => emptyApplicatorAddressFromProfile());
+  const [phone, setPhone] = useState<PhoneInputValue>(() => phoneValueFromStored(''));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
 
+  function emptyApplicatorAddressFromProfile() {
+    return profileToAddress({
+      id: user.id,
+      fullName: '',
+      experienceYears: 1,
+      rating: 5,
+      phone: '',
+      address: '',
+      areasOfExpertise: [],
+      verifiedDocuments: false,
+      documentsUrls: [],
+    });
+  }
+
   useEffect(() => {
     databaseService.getProfile(user.id).then((saved) => {
-      if (saved) setProfile(saved);
+      if (!saved) return;
+      setProfile(saved);
+      setAddress(profileToAddress(saved));
+      setPhone(
+        phoneValueFromStored(saved.phone, saved.phoneCountryCode || '+55'),
+      );
     });
   }, [user.id]);
 
   const handleSave = async () => {
+    const payload = mergeAddressIntoProfile(
+      {
+        ...profile,
+        phone: phone.stored,
+        phoneCountryCode: phone.countryCode,
+        phoneNational: phone.national,
+        address: buildAddressSummary(address),
+      },
+      address,
+    );
     setIsSaving(true);
     try {
-      await databaseService.setProfile(user.id, profile);
+      await databaseService.setProfile(user.id, payload);
+      setProfile(payload);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
     } finally {
@@ -186,44 +221,32 @@ export default function ProfileView({ user }: ProfileViewProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-slate-500 mb-2 block font-mono">Telefone (Fixo/Privado)</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
-                  <input 
-                    type="tel"
-                    value={profile.phone}
-                    onChange={(e) => setProfile(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pl-10 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                    placeholder="(00) 00000-0000"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-2 block font-mono">Anos de Profissão</label>
-                <input 
-                  type="number"
-                  min="0"
-                  value={profile.experienceYears}
-                  onChange={(e) => setProfile(prev => ({ ...prev, experienceYears: parseInt(e.target.value) || 0 }))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                />
-              </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-2 block font-mono">Telefone (Fixo/Privado)</label>
+              <PhoneInput
+                value={phone}
+                onChange={setPhone}
+                inputClassName="rounded-lg h-[42px]"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-2 block font-mono">Anos de Profissão</label>
+              <input 
+                type="number"
+                min="0"
+                value={profile.experienceYears}
+                onChange={(e) => setProfile(prev => ({ ...prev, experienceYears: parseInt(e.target.value) || 0 }))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+              />
             </div>
 
             <div>
               <label className="text-xs text-slate-500 mb-2 block font-mono">Endereço (Privado)</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
-                <input 
-                  type="text"
-                  value={profile.address}
-                  onChange={(e) => setProfile(prev => ({ ...prev, address: e.target.value }))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pl-10 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                  placeholder="Rua, Número, Bairro, Cidade"
-                />
-              </div>
+              <AddressFields
+                value={address}
+                onChange={setAddress}
+                inputClass="rounded-lg h-[42px]"
+              />
               <p className="text-[10px] text-slate-600 mt-2 italic">* Telefone e endereço ficam visíveis apenas para a administração da rede.</p>
             </div>
           </div>
