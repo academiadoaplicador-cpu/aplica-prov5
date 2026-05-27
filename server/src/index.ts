@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
+import type { PoolClient } from 'pg';
 import helmet from 'helmet';
 import {
   clearAuthCookie,
@@ -279,7 +280,7 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
     return;
   }
 
-  let client: Awaited<ReturnType<typeof pool.connect>> | undefined;
+  let client: PoolClient | undefined;
 
   try {
     client = await pool.connect();
