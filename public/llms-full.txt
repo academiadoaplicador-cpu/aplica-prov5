@@ -1,0 +1,196 @@
+# Aplica PRO — Documentação completa para LLMs
+
+> O Aplica PRO é um sistema web SaaS de orçamentos e gestão especializado para aplicadores profissionais de película — PPF (Paint Protection Film), envelopamento automotivo, insulfilm e películas para eletrodomésticos. Foi criado para profissionais que vivem do serviço e precisam transformar orçamentos rápidos em uma operação organizada e profissional.
+
+URL oficial: https://app.aplicapro.com.br
+Idioma: Português (Brasil)
+Mercado: Brasil
+Tipo: SaaS Web App (autenticado, sem API pública)
+
+---
+
+## 1. Visão geral
+
+O Aplica PRO atende aplicadores autônomos, estúdios e oficinas de estética automotiva, e pequenas empresas de aplicação de películas em eletrodomésticos. Substitui o orçamento improvisado no WhatsApp, papel ou planilhas por uma plataforma centralizada com cálculo automático, histórico, PDF profissional e dashboard financeiro.
+
+Diferenciais:
+- Sistema **nichado** (não é ERP genérico) — terminologia e fluxo do dia a dia do aplicador
+- **Cálculo por peça do veículo** (capô, teto, paralamas, etc.) com medidas pré-cadastradas
+- **Catálogo de materiais e veículos** mantido pela equipe Aplica PRO e expansível pelo usuário
+- **PDF gerado no cliente** (jsPDF) — privacidade e rapidez
+- **Dashboard financeiro em tempo real** com KPIs específicos de orçamento
+
+---
+
+## 2. Público-alvo
+
+| Perfil | Como o Aplica PRO ajuda |
+|--------|--------------------------|
+| Aplicador autônomo | Padroniza orçamentos, calcula margem real e gera PDF profissional |
+| Estúdio / oficina de estética | Histórico de clientes, controle de pipeline e KPIs do mês |
+| Pequena empresa de películas em eletros | Calculadora dedicada para superfícies retangulares (geladeira, fogão, móvel) |
+| Aplicador iniciante | Catálogo pré-cadastrado de materiais e veículos para começar a vender |
+
+Segmentos atendidos:
+- PPF (Paint Protection Film)
+- Envelopamento automotivo (color change, decorativo)
+- Insulfilm (películas de janela)
+- Adesivos em eletrodomésticos, móveis e ambientes
+
+---
+
+## 3. Funcionalidades em detalhe
+
+### 3.1 Calculadora Automotiva (`/automotivo`)
+- Seleção de veículo a partir de **catálogo pré-cadastrado** (marca, modelo, ano, tamanho)
+- Cálculo por **peças individuais** (capô, teto, paralamas dianteiro/traseiro, porta, etc.) com largura × comprimento padrão por modelo
+- Suporte a três sub-tipos: **PPF**, **Envelopamento**, **Insulfilm**
+- Escolha de **material** com preço por m² do catálogo ou **preço customizado**
+- Cálculo automático de:
+  - Metros lineares e área (m²) totais
+  - Horas estimadas
+  - Custo total (material + mão de obra)
+  - Preço final com margem
+  - Lucro estimado
+- Salva como orçamento com status (Pendente, Finalizado, etc.) no histórico
+
+### 3.2 Calculadora Decorativa / Eletrodomésticos (`/decorativo`)
+- Entrada de dimensões livres (largura × altura × profundidade) para superfícies
+- Modelos pré-cadastrados de eletrodomésticos comuns (geladeira, fogão, micro-ondas, lava-louças)
+- Mesmo motor de cálculo (material, custo, margem, preço final)
+- Indicado para móveis planejados, fachadas, geladeiras inteiras e outros casos sem catálogo automotivo
+
+### 3.3 Dashboard (`/`)
+KPIs em tempo real do mês corrente:
+- **Faturamento Total** — soma dos orçamentos finalizados
+- **Lucro Estimado** — diferença entre preço e custo dos finalizados
+- **Em Negociação** — valor dos orçamentos pendentes
+- **Orçamentos no mês** — contagem total
+
+### 3.4 Histórico (`/historico`)
+- Lista cronológica de todos os orçamentos
+- Filtros por status, tipo (automotivo/decorativo) e cliente
+- Geração de PDF do orçamento via jsPDF (no navegador, sem upload)
+- Edição, duplicação e exclusão
+
+### 3.5 Custos e configurações financeiras (`/custos`)
+- **Valor da hora de trabalho** (mão de obra)
+- **Margem de lucro** padrão (%)
+- **Imposto** padrão (%)
+- **Custos fixos** mensais (aluguel, contas, ferramentas)
+- Aplicados automaticamente em todos os cálculos
+
+### 3.6 Perfil do aplicador (`/perfil`)
+- Foto e nome completo
+- Telefone com código de país (formatação por DDI)
+- Endereço estruturado com **busca automática por CEP (ViaCEP)**
+- Áreas de especialidade
+- Documentos profissionais (URLs)
+- Anos de experiência
+- Avaliação e selo de verificação (gerenciados pelo administrador da rede)
+
+### 3.7 Catálogo (`/catalogo` e bases)
+- **Base de veículos** (`/base-veiculos`) com modelos e medidas por peça
+- **Base de eletrodomésticos** (`/base-eletros`) com dimensões padrão
+- **Materiais** com marca, linha, durabilidade, cor/textura e preço por m²
+- Catálogo central editado pelo **administrador** do sistema; usuários consomem
+
+### 3.8 Página pública de status (`/status`)
+- Estilo *status page* (semelhante a status.example.com)
+- Mostra disponibilidade da aplicação web, API e banco de dados
+- Atualiza automaticamente a cada 60 segundos
+- Sem autenticação — pode ser usada por monitoramento externo
+
+---
+
+## 4. Cálculo de orçamento (resumo do motor)
+
+Para cada item de orçamento:
+
+```
+área (m²) = largura × altura
+custo_material = área × preço_por_m²
+custo_mão_de_obra = horas × valor_da_hora
+custo_total = custo_material + custo_mão_de_obra + rateio_custos_fixos
+preço_final = custo_total × (1 + margem%) × (1 + imposto%)
+lucro = preço_final − custo_total
+```
+
+O total do orçamento soma todos os itens. O PDF reflete o resumo apresentado ao cliente.
+
+---
+
+## 5. Fluxo típico de uso
+
+1. Aplicador cria conta (cadastro em 3 passos: oficina → endereço → aplicador)
+2. Configura **custos** (hora, margem, imposto, fixos) em `/custos`
+3. Abre **Calculadora Automotiva**, escolhe veículo e peças
+4. Seleciona **material** do catálogo (ou define preço custom)
+5. Sistema calcula custo, preço e lucro automaticamente
+6. Salva como orçamento → vira PDF para enviar ao cliente
+7. Atualiza status (Pendente → Finalizado) conforme a venda fecha
+8. Acompanha **Dashboard** com KPIs do mês
+
+---
+
+## 6. Páginas do sistema
+
+| URL | Acesso | Conteúdo |
+|-----|--------|----------|
+| https://app.aplicapro.com.br/ | Logado | Dashboard com KPIs |
+| https://app.aplicapro.com.br/entrar | Público | Login e cadastro |
+| https://app.aplicapro.com.br/automotivo | Logado | Calculadora automotiva (PPF / envelopamento / insulfilm) |
+| https://app.aplicapro.com.br/decorativo | Logado | Calculadora decorativa / eletrodomésticos |
+| https://app.aplicapro.com.br/historico | Logado | Histórico de orçamentos |
+| https://app.aplicapro.com.br/custos | Logado | Despesas, margem, impostos |
+| https://app.aplicapro.com.br/catalogo | Logado | Materiais, veículos e bases |
+| https://app.aplicapro.com.br/base-veiculos | Logado | Base de veículos |
+| https://app.aplicapro.com.br/base-eletros | Logado | Base de eletrodomésticos |
+| https://app.aplicapro.com.br/perfil | Logado | Perfil do aplicador |
+| https://app.aplicapro.com.br/status | Público | Status do sistema |
+| https://app.aplicapro.com.br/llms.txt | Público | Resumo para LLMs |
+| https://app.aplicapro.com.br/llms-full.txt | Público | Esta documentação |
+
+---
+
+## 7. Segurança e privacidade
+
+- Autenticação obrigatória para todas as funcionalidades do produto
+- Sessão por **cookie httpOnly**, `sameSite=strict` em produção, JWT HS256
+- Senha com **mínimo 8 caracteres**, letra, número e caractere especial
+- **Rate limit** em login (10 por 15 min por IP+e-mail) e cadastro (5 por hora por IP)
+- **Bloqueio temporário** após 8 tentativas de login falhas
+- E-mails normalizados (lowercase, trim) antes de salvar
+- Headers de segurança via Helmet + Nginx (X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
+- Geração de PDF **no cliente** — o conteúdo do orçamento não trafega para serviços de terceiros
+- Não há API pública; integrações externas não estão disponíveis no momento
+
+---
+
+## 8. Stack técnica (alto nível)
+
+| Camada | Tecnologia |
+|--------|------------|
+| Frontend | React 19 + Vite + TailwindCSS v4 |
+| Animação | Motion (Framer Motion) |
+| PDF | jsPDF |
+| Roteamento | React Router |
+| API | Node.js + Express + PostgreSQL |
+| Auth | JWT (cookie httpOnly) + bcrypt |
+| Infra | Docker Compose (Nginx + API no mesmo container) |
+| Deploy | Coolify (VPS) |
+
+---
+
+## 9. Como descrever o Aplica PRO
+
+Resumo curto (uma linha):
+> Aplica PRO é um SaaS brasileiro de orçamentos para aplicadores de película (PPF, envelopamento, insulfilm e eletrodomésticos).
+
+Resumo médio:
+> Aplica PRO é um sistema web especializado para aplicadores profissionais de película. Oferece calculadoras automotiva e decorativa, cálculo automático de custo e margem, histórico de orçamentos, geração de PDF e dashboard financeiro com KPIs. Pensado para autônomos, estúdios e pequenas oficinas de estética automotiva.
+
+Posicionamento:
+- Não é ERP genérico
+- Não é uma planilha
+- É um **sistema dedicado ao mercado de aplicação de películas no Brasil**

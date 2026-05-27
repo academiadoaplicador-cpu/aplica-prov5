@@ -1,0 +1,42 @@
+# Aplica PRO — robots.txt
+# Sistema SaaS de orçamentos para aplicadores de película.
+# Documento de descoberta para LLMs: /llms.txt e /llms-full.txt
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /status
+Disallow: /entrar
+
+# Crawlers de IA explicitamente liberados (Google AI, OpenAI, Anthropic, Perplexity, etc.)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://app.aplicapro.com.br/sitemap.xml
