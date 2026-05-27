@@ -34,6 +34,15 @@ export async function ensureDatabase(): Promise<void> {
       await admin.query(`CREATE DATABASE "${dbName}"`);
       console.log(`[db] Banco "${dbName}" criado.`);
     }
+  } catch (err) {
+    const pgErr = err as { code?: string };
+    if (pgErr.code === '28P01') {
+      console.error(
+        '[db] Senha do Postgres incorreta. O volume foi criado com outra senha.',
+        'No Coolify: apague o volume postgres-data, confira POSTGRES_PASSWORD e redeploy.',
+      );
+    }
+    throw err;
   } finally {
     await admin.end();
   }
