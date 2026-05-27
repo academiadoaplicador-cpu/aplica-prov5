@@ -6,6 +6,9 @@ export const pool = new Pool({
   connectionString:
     process.env.DATABASE_URL ||
     'postgresql://aplica:aplica@localhost:5432/aplica_pro',
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 30_000,
+  max: 20,
 });
 
 /** Cria o banco da DATABASE_URL se o volume Postgres já existir sem ele (comum no Coolify). */

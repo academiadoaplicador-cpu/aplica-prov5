@@ -20,6 +20,7 @@ import { PhoneInput, phoneValueFromStored } from './PhoneInput';
 import { buildAddressSummary } from '../types/address';
 import { profileToAddress, mergeAddressIntoProfile } from '../utils/profileAddress';
 import type { PhoneInputValue } from './PhoneInput';
+import { compressImageFile } from '../lib/compressImage';
 
 interface ProfileViewProps {
   user: UserType;
@@ -102,15 +103,16 @@ export default function ProfileView({ user }: ProfileViewProps) {
     }));
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfile(prev => ({ ...prev, photoUrl: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file);
+      setProfile((prev) => ({ ...prev, photoUrl: compressed }));
+    } catch {
+      alert('Não foi possível usar esta imagem. Tente um arquivo menor (JPG ou PNG).');
     }
+    e.target.value = '';
   };
 
   const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

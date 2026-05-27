@@ -65,7 +65,27 @@ app.use(
 );
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(cookieParser());
-app.use(express.json({ limit: '512kb' }));
+app.use(express.json({ limit: '1mb' }));
+
+app.use(
+  (
+    err: Error & { type?: string; status?: number },
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    if (err.type === 'entity.too.large') {
+      res.status(413).json({
+        error:
+          'Os dados enviados são grandes demais. Reduza o tamanho da foto/logo e tente novamente.',
+      });
+      return;
+    }
+    next(err);
+  },
+);
+
+const MAX_PROFILE_PHOTO_LENGTH = 280_000;
 
 function sendAuthResponse(res: Response, userRow: Record<string, unknown>, status = 200) {
   const user = mapUserWithRole(userRow);
@@ -244,6 +264,13 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
     res.status(400).json({ error: 'Selecione ao menos uma área de especialidade' });
     return;
   }
+  if (profile.photoUrl && profile.photoUrl.length > MAX_PROFILE_PHOTO_LENGTH) {
+    res.status(400).json({
+      error:
+        'A foto/logo é muito grande. Use uma imagem menor (recomendado até 200 KB).',
+    });
+    return;
+  }
 
   const normalizedEmail = normalizeEmail(email);
 
@@ -252,9 +279,10 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
     return;
   }
 
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | undefined;
 
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
 
     const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
@@ -300,11 +328,19 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
       201,
     );
   } catch (e) {
-    await client.query('ROLLBACK');
-    console.error(e);
-    res.status(500).json({ error: 'Erro ao criar conta' });
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* transação já encerrada */
+      }
+    }
+    console.error('[auth/register]', e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erro ao criar conta. Tente novamente em instantes.' });
+    }
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
@@ -669,6 +705,15 @@ app.get('/api/profile', requireUser, async (req, res) => {
 
 app.put('/api/profile', requireUser, async (req, res) => {
   const body = (req.body || {}) as Record<string, unknown>;
+
+  const photoUrl = body.photoUrl;
+  if (typeof photoUrl === 'string' && photoUrl.length > MAX_PROFILE_PHOTO_LENGTH) {
+    res.status(400).json({
+      error:
+        'A foto/logo é muito grande. Use uma imagem menor (recomendado até 200 KB).',
+    });
+    return;
+  }
 
   const current = await pool.query(
     'SELECT rating, verified_documents FROM applicator_profiles WHERE user_id = $1',

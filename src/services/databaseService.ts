@@ -28,32 +28,62 @@ function setCachedUser(user: User | null) {
   }
 }
 
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+function parseApiError(status: number, text: string): string {
+  let message = text;
+  try {
+    const parsed = JSON.parse(text) as { error?: string };
+    message = parsed.error ?? text;
+  } catch {
+    /* texto puro */
+  }
+  if (status === 413) {
+    return 'Os dados enviados são grandes demais. Use uma foto menor e tente novamente.';
+  }
+  if (status === 429) {
+    return message || 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
+  }
+  return message || `Erro na API (${status})`;
+}
+
+async function api<T>(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = 60_000,
+): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
 
-  const res = await fetch(`/api${path}`, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    const text = await res.text();
-    let message = text;
-    try {
-      message = JSON.parse(text).error ?? text;
-    } catch {
-      /* texto puro */
+  try {
+    const res = await fetch(`/api${path}`, {
+      ...options,
+      headers,
+      credentials: 'include',
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(parseApiError(res.status, text));
     }
-    throw new Error(message || `Erro na API (${res.status})`);
-  }
 
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? JSON.parse(text) : (undefined as T);
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return text ? JSON.parse(text) : (undefined as T);
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new Error(
+        'A operação demorou demais. Verifique sua internet e tente novamente.',
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const databaseService = {
@@ -80,10 +110,14 @@ export const databaseService = {
   },
 
   register: async (payload: RegisterPayload): Promise<User> => {
-    const { user } = await api<{ user: User }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    const { user } = await api<{ user: User }>(
+      '/auth/register',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      120_000,
+    );
     setCachedUser(user);
     return user;
   },

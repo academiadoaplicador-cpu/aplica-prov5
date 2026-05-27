@@ -33,6 +33,7 @@ import {
   PASSWORD_RULES,
 } from '../lib/password';
 import BrandLogo from './BrandLogo';
+import { compressImageFile } from '../lib/compressImage';
 import { AddressFields } from './AddressFields';
 import { PhoneInput, phoneValueFromStored, isValidNationalPhone } from './PhoneInput';
 import { emptyApplicatorAddress, buildAddressSummary, ApplicatorAddress } from '../types/address';
@@ -385,12 +386,17 @@ function RegisterWizard({
     setStep((s) => Math.max(1, s - 1));
   };
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => setPhotoUrl(reader.result as string);
-    reader.readAsDataURL(file);
+    try {
+      setError('');
+      const compressed = await compressImageFile(file);
+      setPhotoUrl(compressed);
+    } catch {
+      setError('Não foi possível usar esta imagem. Tente outro arquivo (JPG ou PNG).');
+    }
+    e.target.value = '';
   };
 
   const handleDocs = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -611,7 +617,9 @@ function RegisterWizard({
                 ) : (
                   <Camera className="text-indigo-400" size={24} />
                 )}
-                <span className="text-xs text-slate-400">Foto (opcional)</span>
+                <span className="text-xs text-slate-400 text-center leading-tight">
+                  Logo / foto (opcional)
+                </span>
               </button>
               <button
                 type="button"
@@ -679,14 +687,21 @@ function RegisterWizard({
             <ChevronRight size={18} />
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={loading}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-all font-mono tracking-wider"
-          >
-            {loading ? 'CRIANDO CONTA...' : 'FINALIZAR CADASTRO'}
-          </button>
+          <div className="flex-1 flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-all font-mono tracking-wider"
+            >
+              {loading ? 'CRIANDO CONTA...' : 'FINALIZAR CADASTRO'}
+            </button>
+            {loading && (
+              <p className="text-[10px] text-slate-500 text-center">
+                Pode levar até 30 segundos em conexões lentas. Não feche a página.
+              </p>
+            )}
+          </div>
         )}
       </div>
 

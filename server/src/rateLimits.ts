@@ -18,7 +18,7 @@ export const loginRateLimiter = rateLimit({
 /** Limita cadastros por IP para mitigar spam de contas. */
 export const registerRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 5,
+  limit: 15,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Muitos cadastros a partir deste IP. Tente mais tarde.' },
