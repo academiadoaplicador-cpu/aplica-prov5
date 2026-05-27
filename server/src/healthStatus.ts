@@ -57,7 +57,7 @@ export async function getHealthReport(pool: Pool): Promise<HealthReport> {
       id: 'database',
       name: 'Banco de dados',
       status: dbStatus,
-      detail: database === 'connected' ? 'PostgreSQL respondendo' : 'Sem conexão com PostgreSQL',
+      detail: database === 'connected' ? 'Respondendo normalmente' : 'Sem resposta no momento',
     },
   ];
 
