@@ -31,7 +31,13 @@ Sistema de orçamentos e gestão para aplicadores de película (PPF, envelopamen
    ```powershell
    npm run docker:prod
    ```
-5. No **Coolify**, associe o domínio **somente** ao serviço `app-prod` (porta **80**). Em produção, frontend e API rodam no **mesmo container** (Nginx → API em `localhost:4000`). Não exponha `api-prod` separado.
+5. No **Coolify**:
+   - **Docker Compose file:** `docker-compose.prod.yml` (só `db` + `app-prod`, sem build de dev)
+   - **Variáveis:** `COMPOSE_PROFILES` não é necessário com esse arquivo
+   - Domínio **somente** no serviço `app-prod`, porta **80**
+   - Frontend e API no **mesmo container** (Nginx → API em `localhost:4000`)
+
+Se o deploy falhar com exit code **255** durante `npm ci`, costuma ser **falta de RAM** na VPS. O `Dockerfile` faz build em sequência para reduzir o pico de memória; se persistir, aumente RAM ou swap no servidor.
 
 Para teste local com porta no host, use `docker-compose.override.yml` com `ports: ["8080:80"]` no serviço `app-prod`.
 

@@ -1,0 +1,51 @@
+# Compose só para produção (Coolify). Evita build dos serviços de dev (api/app).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: aplica-pro-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aplica}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aplica}
+      POSTGRES_DB: ${POSTGRES_DB:-aplica_pro}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aplica} -d ${POSTGRES_DB:-aplica_pro}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app-prod:
+    build:
+      context: .
+      target: production
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    container_name: aplica-pro-prod
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aplica}:${POSTGRES_PASSWORD:-aplica}@db:5432/${POSTGRES_DB:-aplica_pro}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required in production}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ENABLE_ADMIN_BOOTSTRAP: ${ENABLE_ADMIN_BOOTSTRAP:-false}
+      ADMIN_BUSINESS_NAME: ${ADMIN_BUSINESS_NAME:-Gestão do Sistema}
+    expose:
+      - "80"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
