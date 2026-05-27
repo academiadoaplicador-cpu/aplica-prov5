@@ -2,12 +2,16 @@ import type { Response } from 'express';
 import jwt from 'jsonwebtoken';
 
 const COOKIE_NAME = 'aplica_session';
-const TOKEN_TTL = '7d';
+const TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+const TOKEN_TTL_MS = TOKEN_TTL_SECONDS * 1000;
+const JWT_ALGORITHM = 'HS256';
+
+const isProduction = (): boolean => process.env.NODE_ENV === 'production';
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 32) {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction()) {
       throw new Error('JWT_SECRET deve ter pelo menos 32 caracteres em produção');
     }
     return 'dev-only-aplica-pro-jwt-secret-change-in-production-32chars';
@@ -21,12 +25,15 @@ export interface AuthTokenPayload {
 
 export function signAuthToken(userId: string): string {
   return jwt.sign({ sub: userId } satisfies AuthTokenPayload, getJwtSecret(), {
-    expiresIn: TOKEN_TTL,
+    expiresIn: TOKEN_TTL_SECONDS,
+    algorithm: JWT_ALGORITHM,
   });
 }
 
 export function verifyAuthToken(token: string): AuthTokenPayload {
-  const payload = jwt.verify(token, getJwtSecret()) as AuthTokenPayload;
+  const payload = jwt.verify(token, getJwtSecret(), {
+    algorithms: [JWT_ALGORITHM],
+  }) as AuthTokenPayload;
   if (!payload?.sub) {
     throw new Error('Token inválido');
   }
@@ -40,26 +47,34 @@ export function extractBearerToken(authorization: string | undefined): string | 
 }
 
 export function setAuthCookie(res: Response, token: string): void {
-  const isProduction = process.env.NODE_ENV === 'production';
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: isProduction(),
+    sameSite: isProduction() ? 'strict' : 'lax',
+    maxAge: TOKEN_TTL_MS,
     path: '/',
   });
 }
 
 export function clearAuthCookie(res: Response): void {
-  const isProduction = process.env.NODE_ENV === 'production';
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: 'lax',
+    secure: isProduction(),
+    sameSite: isProduction() ? 'strict' : 'lax',
     path: '/',
   });
 }
 
-export function getTokenFromRequest(cookies: Record<string, string | undefined>, authorization?: string): string | null {
-  return cookies[COOKIE_NAME] || extractBearerToken(authorization) || null;
+/**
+ * Em produção aceitamos apenas o cookie httpOnly (frontend não usa Bearer).
+ * Bearer fica disponível em desenvolvimento para facilitar testes.
+ */
+export function getTokenFromRequest(
+  cookies: Record<string, string | undefined>,
+  authorization?: string,
+): string | null {
+  const fromCookie = cookies[COOKIE_NAME];
+  if (fromCookie) return fromCookie;
+  if (isProduction()) return null;
+  return extractBearerToken(authorization);
 }

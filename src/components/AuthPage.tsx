@@ -26,6 +26,12 @@ import { databaseService } from '../services/databaseService';
 import { EXPERTISE_OPTIONS } from '../constants/profile';
 import { cn } from '../lib/utils';
 import { getEmailValidationMessage, normalizeEmail } from '../lib/email';
+import {
+  checkPasswordRequirements,
+  getPasswordValidationMessage,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_RULES,
+} from '../lib/password';
 import BrandLogo from './BrandLogo';
 import { AddressFields } from './AddressFields';
 import { PhoneInput, phoneValueFromStored, isValidNationalPhone } from './PhoneInput';
@@ -343,7 +349,8 @@ function RegisterWizard({
       if (!businessName.trim()) return 'Informe o nome da empresa';
       const emailError = getEmailValidationMessage(email);
       if (emailError) return emailError;
-      if (password.length < 6) return 'A senha deve ter no mínimo 6 caracteres';
+      const passwordError = getPasswordValidationMessage(password);
+      if (passwordError) return passwordError;
       if (password !== confirmPassword) return 'As senhas não coincidem';
     }
     if (step === 2) {
@@ -488,14 +495,16 @@ function RegisterWizard({
                 <input
                   type="password"
                   required
-                  minLength={6}
+                  minLength={PASSWORD_MIN_LENGTH}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder={`Mínimo ${PASSWORD_MIN_LENGTH} caracteres com letra, número e símbolo`}
                   className={inputWithIconClass}
+                  autoComplete="new-password"
                 />
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               </div>
+              <PasswordChecklist password={password} />
             </Field>
             <Field label="Confirmar senha">
               <div className="relative">
@@ -506,9 +515,13 @@ function RegisterWizard({
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repita a senha"
                   className={inputWithIconClass}
+                  autoComplete="new-password"
                 />
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               </div>
+              {confirmPassword && password !== confirmPassword && (
+                <p className="text-xs text-red-400 mt-1">As senhas não coincidem.</p>
+              )}
             </Field>
           </motion.div>
         )}
@@ -727,6 +740,34 @@ function RegisterStepIndicator({ currentStep }: { currentStep: number }) {
         );
       })}
     </nav>
+  );
+}
+
+function PasswordChecklist({ password }: { password: string }) {
+  const reqs = checkPasswordRequirements(password);
+  if (!password) return null;
+
+  return (
+    <ul className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">
+      {PASSWORD_RULES.map(({ id, label }) => {
+        const ok = reqs[id];
+        return (
+          <li
+            key={id}
+            className={cn(
+              'flex items-center gap-1.5 text-xs',
+              ok ? 'text-emerald-400' : 'text-slate-500',
+            )}
+          >
+            <CheckCircle2
+              size={12}
+              className={ok ? 'text-emerald-400' : 'text-slate-700'}
+            />
+            <span>{label}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

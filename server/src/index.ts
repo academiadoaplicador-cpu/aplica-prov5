@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
 import {
   clearAuthCookie,
   getTokenFromRequest,
@@ -20,6 +21,14 @@ import { ensureDatabase, pool, waitForDb } from './db.js';
 import { isValidEmail, normalizeEmail } from './email.js';
 import { getHealthReport, handleHealthRequest, renderStatusPageHtml } from './healthStatus.js';
 import { runMigrations } from './migrate.js';
+import { getPasswordValidationMessage } from './password.js';
+import {
+  clearFailedLogins,
+  isAccountLocked,
+  loginRateLimiter,
+  registerFailedLogin,
+  registerRateLimiter,
+} from './rateLimits.js';
 import { seedUserData } from './seed/seedUser.js';
 import {
   buildAddressLine,
@@ -40,11 +49,23 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 if (isProduction) {
   app.set('trust proxy', 1);
+  if (CORS_ORIGIN.startsWith('http://localhost')) {
+    console.warn(
+      '[security] CORS_ORIGIN aponta para localhost em produção. Defina a URL pública real para evitar problemas de cookie/CORS.',
+    );
+  }
 }
 
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+);
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(cookieParser());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '512kb' }));
 
 function sendAuthResponse(res: Response, userRow: Record<string, unknown>, status = 200) {
   const user = mapUserWithRole(userRow);
@@ -174,7 +195,7 @@ app.get('/status', async (req, res) => {
   res.status(httpStatus).type('html').send(renderStatusPageHtml(report, baseUrl));
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
   const { businessName, email, password, profile } = req.body as {
     businessName?: string;
     email?: string;
@@ -196,8 +217,13 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(400).json({ error: 'Informe um e-mail válido' });
     return;
   }
-  if (password.length < 6) {
-    res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
+  const passwordError = getPasswordValidationMessage(password);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
+    return;
+  }
+  if (businessName.length > 120 || (profile?.fullName?.length ?? 0) > 120) {
+    res.status(400).json({ error: 'Nome muito longo' });
     return;
   }
   const phoneStored = buildPhoneStored(profile || {});
@@ -234,7 +260,9 @@ app.post('/api/auth/register', async (req, res) => {
     const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
     if (existing.rows.length > 0) {
       await client.query('ROLLBACK');
-      res.status(409).json({ error: 'Este e-mail já está cadastrado' });
+      res.status(409).json({
+        error: 'Não foi possível concluir o cadastro com este e-mail.',
+      });
       return;
     }
 
@@ -280,41 +308,53 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   const { email, password } = req.body as { email?: string; password?: string };
   if (!email?.trim() || !password) {
     res.status(400).json({ error: 'E-mail e senha são obrigatórios' });
     return;
   }
   if (!isValidEmail(email)) {
-    res.status(400).json({ error: 'Informe um e-mail válido' });
+    res.status(401).json({ error: 'E-mail ou senha incorretos' });
+    return;
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+
+  const lockedUntil = isAccountLocked(normalizedEmail);
+  if (lockedUntil) {
+    const minutes = Math.max(1, Math.ceil((lockedUntil - Date.now()) / 60000));
+    res.status(429).json({
+      error: `Conta temporariamente bloqueada após muitas tentativas. Tente novamente em ${minutes} min.`,
+    });
     return;
   }
 
   const result = await pool.query(
     'SELECT id, email, business_name, password_hash FROM users WHERE email = $1',
-    [normalizeEmail(email)],
+    [normalizedEmail],
   );
 
   if (result.rows.length === 0) {
+    registerFailedLogin(normalizedEmail);
     res.status(401).json({ error: 'E-mail ou senha incorretos' });
     return;
   }
 
   const row = result.rows[0];
   if (!row.password_hash) {
-    res.status(401).json({
-      error: 'Conta antiga sem senha. Crie uma nova conta ou entre em contato com o suporte.',
-    });
+    res.status(401).json({ error: 'E-mail ou senha incorretos' });
     return;
   }
 
   const valid = await bcrypt.compare(password, row.password_hash as string);
   if (!valid) {
+    registerFailedLogin(normalizedEmail);
     res.status(401).json({ error: 'E-mail ou senha incorretos' });
     return;
   }
 
+  clearFailedLogins(normalizedEmail);
   sendAuthResponse(res, row);
 });
 
@@ -628,8 +668,28 @@ app.get('/api/profile', requireUser, async (req, res) => {
 });
 
 app.put('/api/profile', requireUser, async (req, res) => {
-  const p = req.body as Record<string, unknown>;
-  await pool.query(PROFILE_UPSERT_SQL, [req.userId, ...profileDbParams(p)]);
+  const body = (req.body || {}) as Record<string, unknown>;
+
+  const current = await pool.query(
+    'SELECT rating, verified_documents FROM applicator_profiles WHERE user_id = $1',
+    [req.userId],
+  );
+  const isAdmin = await userIsAdmin(pool, req.userId!);
+
+  const safeBody: Record<string, unknown> = { ...body };
+  if (!isAdmin) {
+    delete safeBody.rating;
+    delete safeBody.verifiedDocuments;
+    if (current.rows.length > 0) {
+      safeBody.rating = current.rows[0].rating;
+      safeBody.verifiedDocuments = current.rows[0].verified_documents;
+    } else {
+      safeBody.rating = 5;
+      safeBody.verifiedDocuments = false;
+    }
+  }
+
+  await pool.query(PROFILE_UPSERT_SQL, [req.userId, ...profileDbParams(safeBody)]);
   res.json({ ok: true });
 });
 

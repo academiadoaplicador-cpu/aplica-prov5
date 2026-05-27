@@ -61,22 +61,36 @@ export async function ensureAdminUser(pool: Pool): Promise<void> {
 
   const email = getAdminEmail();
   const password = getAdminPassword();
-  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
   const businessName =
     process.env.ADMIN_BUSINESS_NAME?.trim() || 'Gestão do Sistema';
 
   const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
 
   if (existing.rows.length > 0) {
-    await pool.query(
-      'UPDATE users SET password_hash = $1, business_name = $2 WHERE email = $3',
-      [passwordHash, businessName, email],
-    );
-    if (!isProduction()) {
-      console.log('[admin] Conta administrativa atualizada (dev).');
+    // Em produção: NUNCA resetar a senha em restart. Reset só via ADMIN_PASSWORD_RESET=true (one-shot).
+    const shouldResetPassword =
+      !isProduction() || process.env.ADMIN_PASSWORD_RESET === 'true';
+
+    if (shouldResetPassword) {
+      const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+      await pool.query(
+        'UPDATE users SET password_hash = $1, business_name = $2 WHERE email = $3',
+        [passwordHash, businessName, email],
+      );
+      console.log(
+        isProduction()
+          ? '[admin] Senha administrativa atualizada (ADMIN_PASSWORD_RESET=true). Lembre-se de remover essa variável.'
+          : '[admin] Conta administrativa atualizada (dev).',
+      );
+    } else if (isProduction()) {
+      console.log(
+        '[admin] Conta administrativa já existe; senha mantida. Defina ADMIN_PASSWORD_RESET=true para forçar reset.',
+      );
     }
     return;
   }
+
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
   const id = isProduction()
     ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
@@ -91,9 +105,11 @@ export async function ensureAdminUser(pool: Pool): Promise<void> {
     );
     await seedUserData(client, id);
     await client.query('COMMIT');
-    if (!isProduction()) {
-      console.log('[admin] Conta administrativa criada (dev).');
-    }
+    console.log(
+      isProduction()
+        ? '[admin] Conta administrativa criada com sucesso.'
+        : '[admin] Conta administrativa criada (dev).',
+    );
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
