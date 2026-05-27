@@ -1,5 +1,11 @@
+networks:
+  aplica:
+    driver: bridge
+
 services:
   db:
+    networks:
+      - aplica
     image: postgres:16-alpine
     container_name: aplica-pro-db
     environment:
@@ -85,6 +91,11 @@ services:
     restart: unless-stopped
     expose:
       - "4000"
+    networks:
+      aplica:
+        aliases:
+          - api
+          - api-prod
 
   app:
     profiles:
@@ -120,9 +131,10 @@ services:
       args:
         GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     container_name: aplica-pro-prod
-    # Porta 80 só na rede Docker (Coolify encaminha o domínio sem usar 8080 no host).
     expose:
       - "80"
+    networks:
+      - aplica
     depends_on:
       api-prod:
         condition: service_started
