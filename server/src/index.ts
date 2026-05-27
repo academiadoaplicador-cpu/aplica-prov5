@@ -16,7 +16,7 @@ import {
   reservedEmailMessage,
   userIsAdmin,
 } from './admin.js';
-import { pool, waitForDb } from './db.js';
+import { ensureDatabase, pool, waitForDb } from './db.js';
 import { runMigrations } from './migrate.js';
 import { seedUserData } from './seed/seedUser.js';
 
@@ -721,6 +721,7 @@ app.delete('/api/budgets/:id', requireUser, async (req, res) => {
 });
 
 async function start() {
+  await ensureDatabase();
   await waitForDb();
   await runMigrations();
   await ensureAdminUser(pool);

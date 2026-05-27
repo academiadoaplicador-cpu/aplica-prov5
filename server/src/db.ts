@@ -8,12 +8,47 @@ export const pool = new Pool({
     'postgresql://aplica:aplica@localhost:5432/aplica_pro',
 });
 
-export async function waitForDb(maxAttempts = 30): Promise<void> {
+/** Cria o banco da DATABASE_URL se o volume Postgres já existir sem ele (comum no Coolify). */
+export async function ensureDatabase(): Promise<void> {
+  const url = process.env.DATABASE_URL;
+  if (!url) return;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
+
+  const dbName = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+  if (!dbName || !/^[a-zA-Z0-9_]+$/.test(dbName)) return;
+
+  parsed.pathname = '/postgres';
+  const admin = new Pool({ connectionString: parsed.toString() });
+
+  try {
+    const exists = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [
+      dbName,
+    ]);
+    if (exists.rows.length === 0) {
+      await admin.query(`CREATE DATABASE "${dbName}"`);
+      console.log(`[db] Banco "${dbName}" criado.`);
+    }
+  } finally {
+    await admin.end();
+  }
+}
+
+export async function waitForDb(maxAttempts = 60): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
       await pool.query('SELECT 1');
       return;
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (i === 0 || i === maxAttempts - 1) {
+        console.warn(`[db] Aguardando Postgres (${i + 1}/${maxAttempts}): ${msg}`);
+      }
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
