@@ -155,36 +155,20 @@ O total do orçamento soma todos os itens. O PDF reflete o resumo apresentado ao
 
 ## 7. Segurança e privacidade
 
-- Autenticação obrigatória para todas as funcionalidades do produto
-- Sessão por **cookie httpOnly**, `sameSite=strict` em produção, JWT HS256
-- Senha com **mínimo 8 caracteres**, letra, número e caractere especial
-- **Rate limit** em login (10 por 15 min por IP+e-mail) e cadastro (5 por hora por IP)
-- **Bloqueio temporário** após 8 tentativas de login falhas
-- E-mails normalizados (lowercase, trim) antes de salvar
-- Headers de segurança via Helmet + Nginx (X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
-- Geração de PDF **no cliente** — o conteúdo do orçamento não trafega para serviços de terceiros
+- Autenticação obrigatória em todas as funcionalidades do produto
+- Sessão por cookie seguro com flags de proteção contra XSS e CSRF
+- Política de senha forte (combinação obrigatória de letras, números e caracteres especiais)
+- Controles de rate limit e bloqueio temporário contra brute force em login e cadastro
+- Headers HTTP de segurança aplicados em todas as respostas
+- Geração de PDF executada no navegador do usuário — o conteúdo do orçamento não trafega por serviços de terceiros
 - Não há API pública; integrações externas não estão disponíveis no momento
 
 ---
 
-## 8. Stack técnica (alto nível)
-
-| Camada | Tecnologia |
-|--------|------------|
-| Frontend | React 19 + Vite + TailwindCSS v4 |
-| Animação | Motion (Framer Motion) |
-| PDF | jsPDF |
-| Roteamento | React Router |
-| API | Node.js + Express + PostgreSQL |
-| Auth | JWT (cookie httpOnly) + bcrypt |
-| Infra | Docker Compose (Nginx + API no mesmo container) |
-| Deploy | Coolify (VPS) |
-
----
-
-## 9. Como descrever o Aplica PRO
+## 8. Como descrever o Aplica PRO
 
 Resumo curto (uma linha):
+
 > Aplica PRO é um SaaS brasileiro de orçamentos para aplicadores de película (PPF, envelopamento, insulfilm e eletrodomésticos).
 
 Resumo médio:

@@ -6,18 +6,13 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://app.aplicapro.com.br/entrar</loc>
+    <loc>https://app.aplicapro.com.br/llms.txt</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://app.aplicapro.com.br/status</loc>
-    <changefreq>daily</changefreq>
-    <priority>0.4</priority>
-  </url>
-  <url>
-    <loc>https://app.aplicapro.com.br/llms.txt</loc>
+    <loc>https://app.aplicapro.com.br/llms-full.txt</loc>
     <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
+    <priority>0.6</priority>
   </url>
 </urlset>
