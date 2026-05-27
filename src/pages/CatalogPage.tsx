@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Layers, FileSpreadsheet, Save, CheckCircle2 } from 'lucide-react';
+import { Plus, Layers, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { databaseService } from '../services/databaseService';
 import { Material, MaterialType } from '../types';
@@ -10,6 +10,7 @@ import PagePanel from '../components/settings/PagePanel';
 import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlock';
 import MaterialCatalogTable from '../components/settings/MaterialCatalogTable';
 import { mergeMaterials, parseMaterialsFromExcel } from '../utils/materialImport';
+import { downloadMaterialsTemplate } from '../utils/spreadsheetTemplates';
 
 export default function CatalogPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -148,6 +149,13 @@ export default function CatalogPage() {
           <>
             <PageButton
               variant="secondary"
+              icon={<Download size={16} />}
+              onClick={() => downloadMaterialsTemplate()}
+            >
+              Baixar modelo
+            </PageButton>
+            <PageButton
+              variant="secondary"
               icon={<FileSpreadsheet size={16} />}
               loading={isImportingMaterials}
               onClick={() => materialsFileRef.current?.click()}
@@ -244,7 +252,7 @@ export default function CatalogPage() {
       <PagePanel>
         {materials.length === 0 ? (
           <div className="p-8">
-            <EmptyCatalog message="Nenhum material cadastrado. Importe uma planilha ou clique em Novo material." />
+            <EmptyCatalog message="Nenhum material cadastrado. Baixe o modelo, preencha e importe — ou clique em Novo material." />
           </div>
         ) : (
           <MaterialCatalogTable

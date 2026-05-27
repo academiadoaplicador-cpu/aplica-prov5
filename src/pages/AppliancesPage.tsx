@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, FileSpreadsheet, Save, CheckCircle2 } from 'lucide-react';
+import { Plus, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { Appliance } from '../types';
 import { generateId } from '../lib/utils';
@@ -9,6 +9,7 @@ import PagePanel from '../components/settings/PagePanel';
 import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlock';
 import ApplianceCatalogTable from '../components/settings/ApplianceCatalogTable';
 import { mergeAppliances, parseAppliancesFromExcel } from '../utils/applianceImport';
+import { downloadAppliancesTemplate } from '../utils/spreadsheetTemplates';
 
 export default function AppliancesPage() {
   const [appliances, setAppliances] = useState<Appliance[]>([]);
@@ -103,6 +104,13 @@ export default function AppliancesPage() {
           <>
             <PageButton
               variant="secondary"
+              icon={<Download size={16} />}
+              onClick={() => downloadAppliancesTemplate()}
+            >
+              Baixar modelo
+            </PageButton>
+            <PageButton
+              variant="secondary"
               icon={<FileSpreadsheet size={16} />}
               loading={isImporting}
               onClick={() => fileInputRef.current?.click()}
@@ -131,7 +139,7 @@ export default function AppliancesPage() {
       <PagePanel>
         {appliances.length === 0 ? (
           <div className="p-8">
-            <EmptyCatalog message="Nenhum eletro cadastrado. Importe uma planilha ou clique em Novo eletro." />
+            <EmptyCatalog message="Nenhum eletro cadastrado. Baixe o modelo, preencha e importe — ou clique em Novo eletro." />
           </div>
         ) : (
           <ApplianceCatalogTable
