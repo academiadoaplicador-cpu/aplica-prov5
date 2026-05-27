@@ -4,7 +4,9 @@ export const ROUTES = {
   costs: '/custos',
   automotive: '/automotivo',
   decorative: '/decorativo',
-  history: '/historico',
+  orcamento: '/orcamento',
+  /** @deprecated use orcamento */
+  history: '/orcamento',
   /** @deprecated use catalog */
   settings: '/configuracoes',
   catalog: '/catalogo',

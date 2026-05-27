@@ -73,7 +73,8 @@ export default function App() {
           <Route path="custos" element={<CostsOverview />} />
           <Route path="automotivo" element={<AutomotiveCalculator />} />
           <Route path="decorativo" element={<DecorativeCalculator />} />
-          <Route path="historico" element={<BudgetHistory />} />
+          <Route path="orcamento" element={<BudgetHistory />} />
+          <Route path="historico" element={<Navigate to={ROUTES.orcamento} replace />} />
           <Route path="perfil" element={<ProfileView user={user!} />} />
           <Route element={<AdminRoute user={user!} />}>
             <Route path="catalogo" element={<CatalogPage />} />

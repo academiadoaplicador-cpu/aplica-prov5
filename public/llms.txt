@@ -31,7 +31,7 @@ Atende aplicadores autônomos, estúdios e oficinas de estética automotiva, e p
 - [Dashboard](https://app.aplicapro.com.br/) — KPIs financeiros em tempo real
 - [Calculadora Automotiva](https://app.aplicapro.com.br/automotivo) — orçamentos de PPF, envelopamento e insulfilm
 - [Calculadora Decorativa](https://app.aplicapro.com.br/decorativo) — orçamentos para eletrodomésticos e superfícies
-- [Histórico](https://app.aplicapro.com.br/historico) — todos os orçamentos gerados
+- [Orçamentos](https://app.aplicapro.com.br/orcamento) — todos os orçamentos gerados
 - [Custos](https://app.aplicapro.com.br/custos) — gestão de despesas e configurações financeiras
 - [Perfil](https://app.aplicapro.com.br/perfil) — dados do usuário
 - [Status](https://app.aplicapro.com.br/status) — status do sistema

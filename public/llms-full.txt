@@ -67,7 +67,7 @@ KPIs em tempo real do mês corrente:
 - **Em Negociação** — valor dos orçamentos pendentes
 - **Orçamentos no mês** — contagem total
 
-### 3.4 Histórico (`/historico`)
+### 3.4 Orçamentos (`/orcamento`)
 - Lista cronológica de todos os orçamentos
 - Filtros por status, tipo (automotivo/decorativo) e cliente
 - Geração de PDF do orçamento via jsPDF (no navegador, sem upload)
@@ -141,7 +141,7 @@ O total do orçamento soma todos os itens. O PDF reflete o resumo apresentado ao
 | https://app.aplicapro.com.br/entrar | Público | Login e cadastro |
 | https://app.aplicapro.com.br/automotivo | Logado | Calculadora automotiva (PPF / envelopamento / insulfilm) |
 | https://app.aplicapro.com.br/decorativo | Logado | Calculadora decorativa / eletrodomésticos |
-| https://app.aplicapro.com.br/historico | Logado | Histórico de orçamentos |
+| https://app.aplicapro.com.br/orcamento | Logado | Histórico de orçamentos |
 | https://app.aplicapro.com.br/custos | Logado | Despesas, margem, impostos |
 | https://app.aplicapro.com.br/catalogo | Logado | Materiais, veículos e bases |
 | https://app.aplicapro.com.br/base-veiculos | Logado | Base de veículos |

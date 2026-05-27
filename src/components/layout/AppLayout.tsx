@@ -107,7 +107,7 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
               <NavItem to={ROUTES.appliancesBase} icon={<Refrigerator size={20} />} label="Base de Eletros" onNavigate={closeSidebar} />
             </>
           )}
-          <NavItem to={ROUTES.history} icon={<History size={20} />} label="Histórico" onNavigate={closeSidebar} />
+          <NavItem to={ROUTES.orcamento} icon={<History size={20} />} label="Orçamento" onNavigate={closeSidebar} />
         </nav>
 
         <div className="mt-auto shrink-0 p-4 border-t border-slate-900 space-y-1">

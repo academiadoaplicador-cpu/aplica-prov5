@@ -111,7 +111,7 @@ export default function DashboardOverview() {
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold text-white">Orçamentos Recentes</h3>
             <button 
-              onClick={() => navigate(ROUTES.history)}
+              onClick={() => navigate(ROUTES.orcamento)}
               className="text-xs font-mono uppercase tracking-widest text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
             >
               Ver Tudo <ChevronRight size={14} />

@@ -138,7 +138,7 @@ As páginas de **Catálogo Profissional**, **Base de Veículos** e **Base de Ele
 | Gestão | Catálogo Profissional | `/catalogo` | Admin |
 | Gestão | Base de Veículos | `/base-veiculos` | Admin |
 | Gestão | Base de Eletros | `/base-eletros` | Admin |
-| Gestão | Histórico | `/historico` | Todos |
+| Gestão | Orçamento | `/orcamento` | Todos |
 | Rodapé | Perfil | `/perfil` | Todos |
 | — | Entrar | `/entrar` | Visitante |
 
