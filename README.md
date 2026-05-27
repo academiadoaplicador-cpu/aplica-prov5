@@ -31,7 +31,7 @@ Sistema de orçamentos e gestão para aplicadores de película (PPF, envelopamen
    ```powershell
    npm run docker:prod
    ```
-5. No **Coolify**, associe o domínio ao serviço `app-prod` (porta do container **80**). Não defina `APP_PORT` — o proxy do Coolify não precisa de bind na 8080 do host.
+5. No **Coolify**, associe o domínio **somente** ao serviço `app-prod` (porta **80**). Em produção, frontend e API rodam no **mesmo container** (Nginx → API em `localhost:4000`). Não exponha `api-prod` separado.
 
 Para teste local com porta no host, use `docker-compose.override.yml` com `ports: ["8080:80"]` no serviço `app-prod`.
 

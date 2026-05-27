@@ -14,8 +14,8 @@ EXPOSE 3000
 
 CMD ["npm", "run", "dev"]
 
-# --- Build de produção ---
-FROM node:22-alpine AS builder
+# --- Build do frontend ---
+FROM node:22-alpine AS web-builder
 
 WORKDIR /app
 
@@ -29,12 +29,39 @@ ENV GEMINI_API_KEY=${GEMINI_API_KEY}
 
 RUN npm run build
 
-# --- Servidor estático (produção) ---
-FROM nginx:1.27-alpine AS production
+# --- Build da API ---
+FROM node:22-alpine AS api-builder
 
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist /usr/share/nginx/html
+WORKDIR /api
+
+COPY server/package.json server/package-lock.json ./
+RUN npm ci
+
+COPY server/ ./
+
+RUN npm run build && npm ci --omit=dev
+
+# --- Produção: Nginx + API no mesmo container (compatível com Coolify) ---
+FROM node:22-alpine AS production
+
+RUN apk add --no-cache nginx wget
+
+WORKDIR /srv/api
+
+COPY --from=api-builder /api/package.json /api/package-lock.json ./
+COPY --from=api-builder /api/node_modules ./node_modules
+COPY --from=api-builder /api/dist ./dist
+COPY --from=api-builder /api/migrations ./migrations
+
+COPY --from=web-builder /app/dist /srv/public
+
+COPY docker/nginx.prod.conf /etc/nginx/http.d/default.conf
+COPY docker/start-prod.sh /start-prod.sh
+RUN chmod +x /start-prod.sh
+
+ENV NODE_ENV=production
+ENV PORT=4000
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/start-prod.sh"]
