@@ -56,11 +56,15 @@ O Nginx serve o frontend e encaminha `/api` para a API.
 
 ### Health check
 
+**Página de status (navegador):** `/status` ou `/api/health` — painel no estilo status page (componentes, operacional/indisponível).
+
+**Monitoramento (JSON):**
+
 ```powershell
-curl http://localhost:8080/api/health
+curl -H "Accept: application/json" https://app.aplicapro.com.br/api/health
 ```
 
-Resposta esperada: `{"status":"ok","database":"connected"}`
+Resposta esperada: `{"status":"ok","database":"connected",...}`
 
 ## Repositório
 

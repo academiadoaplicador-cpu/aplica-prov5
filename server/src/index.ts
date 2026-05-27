@@ -18,6 +18,7 @@ import {
 } from './admin.js';
 import { ensureDatabase, pool, waitForDb } from './db.js';
 import { isValidEmail, normalizeEmail } from './email.js';
+import { getHealthReport, handleHealthRequest, renderStatusPageHtml } from './healthStatus.js';
 import { runMigrations } from './migrate.js';
 import { seedUserData } from './seed/seedUser.js';
 import {
@@ -162,13 +163,15 @@ declare global {
   }
 }
 
-app.get('/api/health', async (_req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.json({ status: 'ok', database: 'connected' });
-  } catch {
-    res.status(503).json({ status: 'error', database: 'disconnected' });
-  }
+app.get('/api/health', (req, res) => handleHealthRequest(req, res, pool));
+
+app.get('/status', async (req, res) => {
+  const report = await getHealthReport(pool);
+  const httpStatus = report.database === 'connected' ? 200 : 503;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+  const baseUrl = process.env.APP_URL || `${proto}://${host}`;
+  res.status(httpStatus).type('html').send(renderStatusPageHtml(report, baseUrl));
 });
 
 app.post('/api/auth/register', async (req, res) => {
