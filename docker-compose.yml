@@ -80,14 +80,17 @@ services:
         GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     container_name: aplica-pro-prod
     env_file:
+      - path: .env.local
+        required: false
       - path: .env.production
         required: false
     environment:
       NODE_ENV: production
       PORT: 4000
       DATABASE_URL: postgresql://${POSTGRES_USER:-aplica}:${POSTGRES_PASSWORD:-aplica}@db:5432/${POSTGRES_DB:-aplica_pro}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://app.aplicapro.com.br}
-      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET com pelo menos 32 caracteres}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # Coolify: defina JWT_SECRET nas variáveis. Local: use .env ou .env.local
+      JWT_SECRET: ${JWT_SECRET:-dev-only-aplica-pro-jwt-secret-change-in-production-32chars}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ENABLE_ADMIN_BOOTSTRAP: ${ENABLE_ADMIN_BOOTSTRAP:-false}

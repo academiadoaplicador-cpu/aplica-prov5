@@ -17,6 +17,7 @@ import {
   userIsAdmin,
 } from './admin.js';
 import { ensureDatabase, pool, waitForDb } from './db.js';
+import { isValidEmail, normalizeEmail } from './email.js';
 import { runMigrations } from './migrate.js';
 import { seedUserData } from './seed/seedUser.js';
 import {
@@ -188,6 +189,10 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(400).json({ error: 'Empresa, e-mail e senha são obrigatórios' });
     return;
   }
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: 'Informe um e-mail válido' });
+    return;
+  }
   if (password.length < 6) {
     res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
     return;
@@ -211,7 +216,7 @@ app.post('/api/auth/register', async (req, res) => {
     return;
   }
 
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = normalizeEmail(email);
 
   if (isAdminEmail(normalizedEmail)) {
     res.status(403).json({ error: reservedEmailMessage() });
@@ -278,10 +283,14 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(400).json({ error: 'E-mail e senha são obrigatórios' });
     return;
   }
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: 'Informe um e-mail válido' });
+    return;
+  }
 
   const result = await pool.query(
     'SELECT id, email, business_name, password_hash FROM users WHERE email = $1',
-    [email.trim().toLowerCase()],
+    [normalizeEmail(email)],
   );
 
   if (result.rows.length === 0) {

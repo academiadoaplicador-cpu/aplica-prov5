@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, MapPin, Search } from 'lucide-react';
+import { Loader2, Search } from 'lucide-react';
 import { ApplicatorAddress, formatCepInput } from '../types/address';
 import { fetchAddressByCep } from '../services/viaCep';
 import { cn } from '../lib/utils';
@@ -157,19 +157,6 @@ export function AddressFields({ value, onChange, inputClass, labelClass }: Addre
         />
       </div>
 
-      <p className="text-[10px] text-slate-600 flex items-start gap-1.5">
-        <MapPin size={12} className="shrink-0 mt-0.5" />
-        Endereço preenchido via{' '}
-        <a
-          href="https://viacep.com.br"
-          target="_blank"
-          rel="noreferrer"
-          className="text-indigo-400 hover:underline"
-        >
-          ViaCEP
-        </a>
-        . Região, IBGE e demais dados ficam salvos no cadastro.
-      </p>
     </div>
   );
 }
