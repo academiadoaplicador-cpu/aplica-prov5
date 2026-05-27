@@ -81,7 +81,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 60s
+      start_period: 90s
     restart: unless-stopped
     expose:
       - "4000"
@@ -125,7 +125,7 @@ services:
       - "80"
     depends_on:
       api-prod:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ >/dev/null 2>&1 || exit 1"]
       interval: 15s

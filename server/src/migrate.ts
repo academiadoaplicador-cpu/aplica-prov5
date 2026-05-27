@@ -5,19 +5,10 @@ import { pool } from './db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const CORE_MIGRATIONS = [
-  `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
-];
-
 export async function runMigrations(): Promise<void> {
-  for (const sql of CORE_MIGRATIONS) {
-    await pool.query(sql);
-  }
-
   const migrationsDir = join(__dirname, '../migrations');
   if (!existsSync(migrationsDir)) {
-    console.warn('Pasta de migrations não encontrada:', migrationsDir);
-    return;
+    throw new Error(`Pasta de migrations não encontrada: ${migrationsDir}`);
   }
 
   const files = readdirSync(migrationsDir)
