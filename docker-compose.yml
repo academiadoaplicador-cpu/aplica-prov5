@@ -112,8 +112,9 @@ services:
       args:
         GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     container_name: aplica-pro-prod
-    ports:
-      - "${APP_PORT:-8080}:80"
+    # Porta 80 só na rede Docker (Coolify encaminha o domínio sem usar 8080 no host).
+    expose:
+      - "80"
     depends_on:
       - api-prod
     restart: unless-stopped

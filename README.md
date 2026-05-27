@@ -31,9 +31,11 @@ Sistema de orçamentos e gestão para aplicadores de película (PPF, envelopamen
    ```powershell
    npm run docker:prod
    ```
-5. Acesse: **http://localhost:8080** (ou a porta definida em `APP_PORT`).
+5. No **Coolify**, associe o domínio ao serviço `app-prod` (porta do container **80**). Não defina `APP_PORT` — o proxy do Coolify não precisa de bind na 8080 do host.
 
-O Nginx serve o frontend e encaminha `/api` para a API. Banco e API não precisam ficar expostos publicamente se você usar apenas a porta do `app-prod`.
+Para teste local com porta no host, use `docker-compose.override.yml` com `ports: ["8080:80"]` no serviço `app-prod`.
+
+O Nginx serve o frontend e encaminha `/api` para a API.
 
 ### Checklist de produção
 
