@@ -19,6 +19,18 @@ import { motion } from 'motion/react';
 import { pdfService } from '../services/pdfService';
 import PageHeader from './settings/PageHeader';
 import BudgetSavePdfActions from './BudgetSavePdfActions';
+import BudgetFlowStepper, { type BudgetFlowStep } from './BudgetFlowStepper';
+import BudgetWizardNavBar from './BudgetWizardNavBar';
+import { useBudgetWizard } from '../hooks/useBudgetWizard';
+import { useMobileBottomExtras } from '../contexts/MobileBottomExtrasContext';
+import BudgetMobileStepHeader from './budget-mobile/BudgetMobileStepHeader';
+import BudgetMobileTotalHero from './budget-mobile/BudgetMobileTotalHero';
+import {
+  mobileStepPanelClass,
+  mobileFieldLabel,
+  mobileFieldInput,
+  mobileSelectInput,
+} from './budget-mobile/budgetMobileStyles';
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
@@ -239,31 +251,115 @@ export default function DecorativeCalculator() {
 
   const canExportBudget = Boolean(customerName && selectedMaterialId && items.length > 0);
 
+  const flowSteps = useMemo((): BudgetFlowStep[] => {
+    const clientReady =
+      Boolean(customerName.trim()) &&
+      (subType !== 'Eletrodomésticos' || Boolean(selectedApplianceId));
+    const piecesReady = items.length > 0 && items.every((i) => i.width > 0 && i.height > 0);
+
+    return [
+      {
+        id: 'cliente',
+        label:
+          subType === 'Eletrodomésticos'
+            ? 'Informe o cliente e escolha o eletrodoméstico'
+            : 'Informe o cliente e a categoria do projeto',
+        shortLabel: 'Cliente',
+        complete: clientReady,
+      },
+      {
+        id: 'pecas',
+        label: 'Confira ou ajuste as medidas das peças',
+        shortLabel: 'Peças',
+        complete: piecesReady,
+      },
+      {
+        id: 'material',
+        label: 'Selecione o material e o rolo',
+        shortLabel: 'Material',
+        complete: Boolean(selectedMaterialId),
+      },
+      {
+        id: 'resumo',
+        label: 'Revise valores e salve o orçamento',
+        shortLabel: 'Revisar',
+        complete: canExportBudget,
+      },
+    ];
+  }, [customerName, subType, selectedApplianceId, items, selectedMaterialId, canExportBudget]);
+
+  const wizard = useBudgetWizard(flowSteps);
+
+  const wizardNavBar = useMemo(
+    () => (
+      <BudgetWizardNavBar
+        activeStep={wizard.activeStep}
+        totalSteps={flowSteps.length}
+        stepLabel={flowSteps[wizard.activeStep]?.shortLabel ?? ''}
+        total={totals.price}
+        showTotal={wizard.activeStep >= 2}
+        canGoBack={wizard.canGoBack}
+        canGoNext={wizard.canGoNext}
+        onBack={wizard.goBack}
+        onNext={wizard.goNext}
+        accent="emerald"
+      />
+    ),
+    [
+      wizard.activeStep,
+      wizard.canGoBack,
+      wizard.canGoNext,
+      wizard.goBack,
+      wizard.goNext,
+      flowSteps,
+      totals.price,
+    ],
+  );
+
+  useMobileBottomExtras(wizardNavBar);
+
   return (
-    <div className="space-y-8 w-full pb-20">
-      <PageHeader
-        title="Decorativo"
-        description="Orçamentos para móveis, eletrodomésticos e paredes"
+    <div className="space-y-4 lg:space-y-8 w-full pb-4 lg:pb-20">
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Decorativo"
+          description="Orçamentos para móveis, eletrodomésticos e paredes"
+        />
+      </div>
+
+      <BudgetFlowStepper
+        steps={flowSteps}
+        activeStep={wizard.activeStep}
+        onStepChange={wizard.goToStep}
+        canGoToStep={wizard.canGoToStep}
+        accent="emerald"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
         <div className="lg:col-span-2 space-y-6">
-          {/* Main Config */}
-          <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <section
+            className={cn(mobileStepPanelClass('emerald', wizard.stepPanelClass(0)), 'space-y-6')}
+          >
+            <BudgetMobileStepHeader
+              step={1}
+              title="Cliente e projeto"
+              description="Identifique o cliente e o tipo de aplicação."
+              accent="emerald"
+            />
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-widest ml-1">Nome do Cliente</label>
+                <label className={mobileFieldLabel}>Nome do Cliente</label>
                 <input 
                   type="text" 
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Ex: João da Silva"
-                  className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-4 text-base sm:text-sm text-white focus:ring-2 focus:ring-indigo-500"
+                  className={cn(mobileFieldInput, 'focus:ring-emerald-500')}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-widest ml-1">Categoria</label>
-                <div className="flex flex-col sm:flex-row gap-2">
+                <label className={mobileFieldLabel}>Categoria</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-2">
                   {(['Eletrodomésticos', 'Móveis', 'Parede'] as SubType[]).map(cat => (
                     <button
                       key={cat}
@@ -272,8 +368,10 @@ export default function DecorativeCalculator() {
                         setSelectedApplianceId('');
                       }}
                       className={cn(
-                        "w-full sm:flex-1 p-3 rounded-xl border text-[10px] font-bold uppercase transition-all",
-                        subType === cat ? "bg-emerald-600/10 border-emerald-500 text-emerald-400" : "bg-slate-950 border-slate-800 text-slate-500"
+                        "w-full min-h-[4rem] sm:min-h-0 sm:p-3 p-3.5 rounded-2xl border text-[10px] font-bold uppercase transition-all active:scale-[0.98]",
+                        subType === cat
+                          ? "bg-emerald-600/15 border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/20 shadow-lg shadow-emerald-950/20"
+                          : "bg-slate-950/80 border-slate-800 text-slate-500"
                       )}
                     >
                       {cat === 'Eletrodomésticos' && <Refrigerator size={14} className="mx-auto mb-1" />}
@@ -363,26 +461,36 @@ export default function DecorativeCalculator() {
             )}
           </section>
 
-          {/* Parts List */}
-          <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-sm font-mono uppercase tracking-widest text-slate-500">Detalhes das Peças</h3>
-              <button 
+          <section
+            className={cn(mobileStepPanelClass('emerald', wizard.stepPanelClass(1)))}
+          >
+            <BudgetMobileStepHeader
+              step={2}
+              title="Peças e medidas"
+              description="Ajuste faces, dimensões e dificuldade."
+              accent="emerald"
+            />
+            <div className="flex justify-end -mt-2 mb-4 lg:mb-6">
+              <button
+                type="button"
                 onClick={addItem}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-[10px] font-bold rounded-lg border border-slate-700 transition-colors uppercase tracking-widest"
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 text-xs font-bold rounded-xl border border-emerald-500/30 transition-colors uppercase tracking-widest active:scale-[0.98]"
               >
-                <Plus size={14} /> Adicionar
+                <Plus size={16} /> Adicionar peça
               </button>
             </div>
+            <h3 className="hidden lg:block text-sm font-mono uppercase tracking-widest text-slate-500 mb-4">
+              Detalhes das peças
+            </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3 lg:space-y-4">
               {items.map((item) => (
-                <motion.div 
+                <motion.div
                   layout
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  key={item.id} 
-                  className="grid grid-cols-1 md:grid-cols-12 gap-4 p-5 bg-slate-950 rounded-2xl border border-slate-800 group transition-all hover:border-slate-700 shadow-sm"
+                  key={item.id}
+                  className="grid grid-cols-1 md:grid-cols-12 gap-3 lg:gap-4 p-4 lg:p-5 bg-slate-950/90 rounded-2xl border border-slate-800/90 group transition-all hover:border-slate-700 shadow-sm"
                 >
                   <div className="md:col-span-4">
                     <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Nome da Face</label>
@@ -433,48 +541,117 @@ export default function DecorativeCalculator() {
               ))}
             </div>
           </section>
-
-          {/* Material Suggestion Card */}
-          {selectedMaterialId && (
-            <div className={cn(
-              "p-6 rounded-2xl border flex flex-col sm:flex-row gap-6 transition-all",
-              isRecommended ? "bg-emerald-500/5 border-emerald-500/20" : "bg-amber-500/5 border-amber-500/20"
-            )}>
-              <div className="w-16 h-16 bg-slate-950 rounded-xl flex items-center justify-center border border-slate-800 shrink-0">
-                 <Package className={cn(isRecommended ? "text-emerald-500" : "text-amber-500")} size={24} />
-              </div>
-              <div className="flex-1">
-                 <div className="flex justify-between items-start mb-1">
-                    <h4 className="font-bold text-white text-lg">{selectedMaterial?.name}</h4>
-                    <span className={cn(
-                      "px-2 py-0.5 rounded text-[10px] font-bold uppercase h-fit mt-1",
-                      isRecommended ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
-                    )}>
-                      {isRecommended ? 'Uso Recomendado' : 'Consulte Fabricante'}
-                    </span>
-                 </div>
-                 <p className="text-xs text-slate-400 mb-2">
-                   {selectedMaterial?.brand} • {selectedMaterial?.line} • {selectedMaterial?.colorTexture} • {selectedMaterial?.type}
-                 </p>
-                 <div className="flex items-center gap-2 pt-2 border-t border-slate-800/30">
-                    <Info size={14} className="text-indigo-400" />
-                    <p className="text-[10px] italic text-slate-500">{selectedMaterial?.details}</p>
-                 </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Totals side */}
         <div className="space-y-6">
-          <section className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-6 shadow-2xl shadow-emerald-900/10 lg:sticky lg:top-8">
-            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+          <section
+            className={cn(
+              mobileStepPanelClass('emerald', wizard.stepPanelClass(2)),
+              'lg:sticky lg:top-8 lg:bg-slate-900 lg:border-emerald-500/30 lg:shadow-2xl lg:shadow-emerald-900/10',
+            )}
+          >
+            <BudgetMobileStepHeader
+              step={3}
+              title="Material"
+              description="Escolha o vinil e as dimensões do rolo."
+              accent="emerald"
+            />
+            <h3 className="hidden lg:flex text-lg font-bold text-white mb-6 items-center gap-2">
+              <Package className="text-emerald-500" size={20} />
+              Escolha do material
+            </h3>
+
+            <div className="space-y-4">
+              <MaterialCascadeSelect
+                materials={materials}
+                context={{ mode: 'decorative', subType }}
+                selectedMaterialId={selectedMaterialId}
+                onSelectMaterialId={setSelectedMaterialId}
+                onSelectionChange={() => setCustomPricePerM2(null)}
+                accent="emerald"
+              />
+
+              <MaterialRollDimensionSelect
+                material={selectedMaterial}
+                selectedWidth={selectedRollWidth}
+                selectedLength={selectedRollLength}
+                onSelectWidth={setSelectedRollWidth}
+                onSelectLength={setSelectedRollLength}
+                accent="emerald"
+              />
+
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Valor por m² (Personalizar)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
+                    onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
+                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-emerald-400 focus:ring-1 focus:ring-emerald-500 font-mono"
+                  />
+                  <Zap size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500/50" />
+                </div>
+                {customPricePerM2 !== null && (
+                  <button
+                    onClick={() => setCustomPricePerM2(null)}
+                    className="text-[9px] text-emerald-400 underline hover:text-emerald-300 ml-1"
+                  >
+                    Restaurar valor do sistema
+                  </button>
+                )}
+              </div>
+
+              {selectedMaterialId && selectedMaterial && (
+                <div
+                  className={cn(
+                    'pt-4 border-t border-slate-800 p-4 rounded-xl flex flex-col sm:flex-row gap-4',
+                    isRecommended ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-amber-500/5 border-amber-500/20',
+                  )}
+                >
+                  <div className="w-14 h-14 bg-slate-950 rounded-xl flex items-center justify-center border border-slate-800 shrink-0">
+                    <Package className={cn(isRecommended ? 'text-emerald-500' : 'text-amber-500')} size={22} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between gap-2">
+                      <h4 className="font-bold text-white truncate">{selectedMaterial.name}</h4>
+                      <span
+                        className={cn(
+                          'px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0',
+                          isRecommended ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400',
+                        )}
+                      >
+                        {isRecommended ? 'Recomendado' : 'Atenção'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 truncate">
+                      {selectedMaterial.brand} • {selectedMaterial.line}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section
+            id="budget-summary"
+            className={cn(
+              mobileStepPanelClass('emerald', wizard.stepPanelClass(3)),
+              'lg:bg-slate-900 lg:border-emerald-500/30 lg:shadow-2xl lg:shadow-emerald-900/10',
+            )}
+          >
+            <BudgetMobileStepHeader
+              step={4}
+              title="Revisar e salvar"
+              description="Confira valores antes de gerar o PDF."
+              accent="emerald"
+            />
+            <h3 className="hidden lg:flex text-lg font-bold text-white mb-6 items-center gap-2">
               <LayoutDashboard className="text-emerald-500" size={20} />
               Resumo do Projeto
             </h3>
 
             <div className="space-y-6">
-              <div className="space-y-4">
+              <div className="hidden lg:block space-y-4">
                 <MaterialCascadeSelect
                   materials={materials}
                   context={{ mode: 'decorative', subType }}
@@ -483,7 +660,6 @@ export default function DecorativeCalculator() {
                   onSelectionChange={() => setCustomPricePerM2(null)}
                   accent="emerald"
                 />
-
                 <MaterialRollDimensionSelect
                   material={selectedMaterial}
                   selectedWidth={selectedRollWidth}
@@ -492,11 +668,10 @@ export default function DecorativeCalculator() {
                   onSelectLength={setSelectedRollLength}
                   accent="emerald"
                 />
-
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Valor por m² (Personalizar)</label>
                   <div className="relative">
-                    <input 
+                    <input
                       type="number"
                       value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
                       onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
@@ -504,17 +679,10 @@ export default function DecorativeCalculator() {
                     />
                     <Zap size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500/50" />
                   </div>
-                  {customPricePerM2 !== null && (
-                    <button 
-                      onClick={() => setCustomPricePerM2(null)}
-                      className="text-[9px] text-emerald-400 underline hover:text-emerald-300 ml-1"
-                    >
-                      Restaurar valor do sistema
-                    </button>
-                  )}
                 </div>
+              </div>
 
-                <div className="pt-6 border-t border-slate-800 space-y-4">
+              <div className="pt-0 lg:pt-6 border-t-0 lg:border-t border-slate-800 space-y-4">
                   {totals.hasRollPricing ? (
                     <>
                       <div className="flex justify-between items-center text-xs">
@@ -541,15 +709,16 @@ export default function DecorativeCalculator() {
                     <span className="text-slate-400 font-bold">Mão de Obra</span>
                     <span className="font-mono text-emerald-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
                   </div>
-                </div>
               </div>
 
-              <div className="bg-emerald-600/10 border border-emerald-500/20 p-5 rounded-2xl shadow-inner text-center">
+              <div className="bg-emerald-600/10 border border-emerald-500/20 p-5 rounded-2xl shadow-inner text-center hidden lg:block">
                 <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest mb-1 font-bold">Total Sugerido</p>
                 <h4 className="text-4xl font-black text-white tracking-tighter">
                   {formatCurrency(totals.price)}
                 </h4>
               </div>
+
+              <BudgetMobileTotalHero total={totals.price} label="Total sugerido" accent="emerald" />
 
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}
@@ -564,7 +733,8 @@ export default function DecorativeCalculator() {
       </div>
 
       {selectedMaterialId && nestingParts.length > 0 && (
-        rollDimensions ? (
+        <div className={cn(wizard.stepPanelClass(3))}>
+        {rollDimensions ? (
           <RollNestingPreview
             accent="emerald"
             rollWidth={rollDimensions.width}
@@ -584,7 +754,8 @@ export default function DecorativeCalculator() {
               </p>
             </div>
           </section>
-        )
+        )}
+        </div>
       )}
     </div>
   );

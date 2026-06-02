@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import { 
-  Car, 
-  Search, 
-  AlertCircle, 
+import {
+  Car,
+  Search,
+  AlertCircle,
   Package,
   Zap,
   LayoutDashboard,
@@ -20,11 +20,23 @@ import {
 import { VehicleSize, BudgetPiece, Budget, FinancialSettings, Material, Vehicle } from '../types';
 import { databaseService } from '../services/databaseService';
 import { formatCurrency, generateId, cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 
 import { pdfService } from '../services/pdfService';
 import PageHeader from './settings/PageHeader';
 import BudgetSavePdfActions from './BudgetSavePdfActions';
+import BudgetFlowStepper, { type BudgetFlowStep } from './BudgetFlowStepper';
+import BudgetWizardNavBar from './BudgetWizardNavBar';
+import { useBudgetWizard } from '../hooks/useBudgetWizard';
+import { useMobileBottomExtras } from '../contexts/MobileBottomExtrasContext';
+import BudgetMobileStepHeader from './budget-mobile/BudgetMobileStepHeader';
+import BudgetMobileTotalHero from './budget-mobile/BudgetMobileTotalHero';
+import {
+  mobileStepPanelClass,
+  mobileFieldLabel,
+  mobileFieldInput,
+  mobileSelectInput,
+} from './budget-mobile/budgetMobileStyles';
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
@@ -276,34 +288,112 @@ export default function AutomotiveCalculator() {
   const canExportBudget =
     Boolean(customerName && selectedMaterialId && selectedVehicleId && selectedPieces.length > 0);
 
+  const flowSteps = useMemo((): BudgetFlowStep[] => [
+    {
+      id: 'cliente',
+      label: 'Informe o cliente e selecione o veículo',
+      shortLabel: 'Cliente',
+      complete: Boolean(customerName.trim() && selectedVehicleId),
+    },
+    {
+      id: 'pecas',
+      label: 'Escolha completo ou parcial e selecione as peças',
+      shortLabel: 'Peças',
+      complete: selectedPieces.length > 0,
+    },
+    {
+      id: 'material',
+      label: 'Selecione o material e o rolo',
+      shortLabel: 'Material',
+      complete: Boolean(selectedMaterialId),
+    },
+    {
+      id: 'resumo',
+      label: 'Revise valores e salve o orçamento',
+      shortLabel: 'Revisar',
+      complete: canExportBudget,
+    },
+  ], [customerName, selectedVehicleId, selectedPieces.length, selectedMaterialId, canExportBudget]);
+
+  const wizard = useBudgetWizard(flowSteps);
+
+  const wizardNavBar = useMemo(
+    () => (
+      <BudgetWizardNavBar
+        activeStep={wizard.activeStep}
+        totalSteps={flowSteps.length}
+        stepLabel={flowSteps[wizard.activeStep]?.shortLabel ?? ''}
+        total={totals.price}
+        showTotal={wizard.activeStep >= 2}
+        canGoBack={wizard.canGoBack}
+        canGoNext={wizard.canGoNext}
+        onBack={wizard.goBack}
+        onNext={wizard.goNext}
+        accent="indigo"
+      />
+    ),
+    [
+      wizard.activeStep,
+      wizard.canGoBack,
+      wizard.canGoNext,
+      wizard.goBack,
+      wizard.goNext,
+      flowSteps,
+      totals.price,
+    ],
+  );
+
+  useMobileBottomExtras(wizardNavBar);
+
   return (
-    <div className="space-y-8 w-full pb-20">
-      <PageHeader
-        title="Automotivo"
-        description="Monte orçamentos com veículos e materiais do catálogo"
+    <div className="space-y-4 lg:space-y-8 w-full pb-4 lg:pb-20">
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Automotivo"
+          description="Monte orçamentos com veículos e materiais do catálogo"
+        />
+      </div>
+
+      <BudgetFlowStepper
+        steps={flowSteps}
+        activeStep={wizard.activeStep}
+        onStepChange={wizard.goToStep}
+        canGoToStep={wizard.canGoToStep}
+        accent="indigo"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
         {/* Left Col: Setup */}
         <div className="lg:col-span-2 space-y-6">
-          <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <section
+            className={cn(
+              mobileStepPanelClass('indigo', wizard.stepPanelClass(0)),
+              'space-y-6 shadow-sm',
+            )}
+          >
+            <BudgetMobileStepHeader
+              step={1}
+              title="Cliente e veículo"
+              description="Quem é o cliente e qual carro será envelopado?"
+              accent="indigo"
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
               <div className="space-y-2">
-                <label className="text-xs font-mono uppercase tracking-widest text-slate-500 ml-1">Cliente</label>
+                <label className={mobileFieldLabel}>Cliente</label>
                 <div className="relative">
                   <input 
                     type="text" 
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="Nome do cliente"
-                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-4 text-base sm:text-sm text-white focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                    className={cn(mobileFieldInput, 'focus:ring-indigo-500 pr-11')}
                   />
-                  <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600" />
+                  <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
                 </div>
               </div>
-              <div className="space-y-4">
-                <label className="text-xs font-mono uppercase tracking-widest text-slate-500 ml-1">Veículo (DB)</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-3">
+                <label className={mobileFieldLabel}>Veículo</label>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
                   <div className="relative">
                     <select 
                       value={selectedMake}
@@ -312,7 +402,7 @@ export default function AutomotiveCalculator() {
                         setSelectedModel('');
                         setSelectedYear('');
                       }}
-                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-base sm:text-xs text-white focus:ring-2 focus:ring-indigo-500 appearance-none transition-all font-sans"
+                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:text-xs')}
                     >
                       <option value="">Marca...</option>
                       {makes.map(m => <option key={m} value={m}>{m}</option>)}
@@ -327,7 +417,7 @@ export default function AutomotiveCalculator() {
                         setSelectedModel(e.target.value);
                         setSelectedYear('');
                       }}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:ring-2 focus:ring-indigo-500 appearance-none transition-all font-sans text-xs disabled:opacity-30"
+                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:p-3 sm:text-xs disabled:opacity-30')}
                     >
                       <option value="">Modelo...</option>
                       {models.map(m => <option key={m} value={m}>{m}</option>)}
@@ -339,7 +429,7 @@ export default function AutomotiveCalculator() {
                       value={selectedYear}
                       disabled={!selectedModel}
                       onChange={(e) => setSelectedYear(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:ring-2 focus:ring-indigo-500 appearance-none transition-all font-sans text-xs disabled:opacity-30"
+                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:p-3 sm:text-xs disabled:opacity-30')}
                     >
                       <option value="">Ano...</option>
                       {years.map(y => <option key={y} value={y}>{y}</option>)}
@@ -350,18 +440,18 @@ export default function AutomotiveCalculator() {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 border-t border-slate-800">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:gap-4 pt-4 border-t border-slate-800/80">
                <button
                   type="button"
                   disabled={!selectedVehicleId}
                   onClick={() => handleBudgetType('Completo')}
                   className={cn(
-                    "w-full sm:flex-1 p-4 rounded-xl border font-bold text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest",
-                    budgetType === 'Completo' ? "bg-indigo-600/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20" : "bg-slate-950 border-slate-800 text-slate-500",
+                    "w-full sm:flex-1 min-h-[4.5rem] sm:min-h-0 sm:p-4 p-4 rounded-2xl border font-bold text-xs transition-all flex flex-col sm:flex-row items-center justify-center gap-2 uppercase tracking-widest active:scale-[0.98]",
+                    budgetType === 'Completo' ? "bg-indigo-600/15 border-indigo-500/60 text-indigo-300 shadow-lg shadow-indigo-900/25 ring-1 ring-indigo-500/20" : "bg-slate-950/80 border-slate-800 text-slate-500",
                     !selectedVehicleId && "opacity-30 cursor-not-allowed",
                   )}
                >
-                 <Car size={16} /> Completo
+                 <Car size={20} className="shrink-0" /> Completo
                  {!isComplete && selectedVehicleId && (
                    <Info size={12} className="ml-1" title="Algumas medidas do veículo estão incompletas no cadastro" />
                  )}
@@ -371,27 +461,39 @@ export default function AutomotiveCalculator() {
                   disabled={!selectedVehicleId}
                   onClick={() => handleBudgetType('Parcial')}
                   className={cn(
-                    "w-full sm:flex-1 p-4 rounded-xl border font-bold text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest",
-                    budgetType === 'Parcial' ? "bg-indigo-600/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20" : "bg-slate-950 border-slate-800 text-slate-500",
+                    "w-full sm:flex-1 min-h-[4.5rem] sm:min-h-0 sm:p-4 p-4 rounded-2xl border font-bold text-xs transition-all flex flex-col sm:flex-row items-center justify-center gap-2 uppercase tracking-widest active:scale-[0.98]",
+                    budgetType === 'Parcial' ? "bg-indigo-600/15 border-indigo-500/60 text-indigo-300 shadow-lg shadow-indigo-900/25 ring-1 ring-indigo-500/20" : "bg-slate-950/80 border-slate-800 text-slate-500",
                     !selectedVehicleId && "opacity-30 cursor-not-allowed",
                   )}
                >
-                 <History size={16} /> Parcial
+                 <History size={20} className="shrink-0" /> Parcial
                </button>
             </div>
           </section>
 
-          <AnimatePresence>
+          <section
+            className={cn(
+              mobileStepPanelClass('indigo', wizard.stepPanelClass(1)),
+              budgetType === 'Completo' && 'lg:hidden',
+              'space-y-5',
+            )}
+          >
+            <BudgetMobileStepHeader
+              step={2}
+              title="Peças do orçamento"
+              description={
+                budgetType === 'Parcial'
+                  ? 'Toque nas peças que entram neste orçamento.'
+                  : 'Confira o que foi incluído automaticamente.'
+              }
+              accent="indigo"
+            />
+
             {budgetType === 'Parcial' && selectedVehicle && (
-              <motion.section 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-5"
-              >
+              <>
                 <div>
                   <h3 className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                    Seleção de peças
+                    Seleção parcial
                   </h3>
                   <p className="text-[10px] text-slate-600 mt-1 italic">
                     Peças do porte {selectedVehicle.size} — só é possível orçar as que têm medida cadastrada.
@@ -427,7 +529,7 @@ export default function AutomotiveCalculator() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3">
                   {partialPartsList.map((part) => {
                     const isSelected = selectedPieces.includes(part.id);
                     const canSelect = part.hasMeasurement;
@@ -438,7 +540,7 @@ export default function AutomotiveCalculator() {
                         disabled={!canSelect}
                         onClick={() => togglePiece(part.id)}
                         className={cn(
-                          'p-4 rounded-xl border transition-all text-left group flex flex-col gap-2 min-h-[72px]',
+                          'p-4 rounded-2xl border transition-all text-left group flex flex-col gap-2 min-h-[5rem] active:scale-[0.98]',
                           !canSelect &&
                             'bg-slate-950/80 border-amber-500/30 text-amber-200/60 cursor-not-allowed opacity-80',
                           canSelect &&
@@ -471,47 +573,136 @@ export default function AutomotiveCalculator() {
                     );
                   })}
                 </div>
-              </motion.section>
+              </>
             )}
-          </AnimatePresence>
 
-          {selectedMaterialId && (
-            <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col sm:flex-row gap-6 shadow-sm">
-              <div className="w-16 h-16 bg-slate-950 rounded-xl flex items-center justify-center border border-slate-800 shrink-0">
-                 <Package className="text-indigo-500" size={24} />
-              </div>
-              <div className="flex-1 space-y-1">
-                <div className="flex justify-between">
-                  <h4 className="font-bold text-white text-lg">{selectedMaterial?.name}</h4>
-                  <span className={cn(
-                    "px-2 py-0.5 rounded text-[10px] font-bold uppercase h-fit mt-1",
-                    isRecommended ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
-                  )}>
-                    {isRecommended ? 'Recomendado' : 'Não Recomendado'}
-                  </span>
+            {budgetType === 'Completo' && selectedVehicleId && (
+              <div className="rounded-2xl border border-indigo-500/30 bg-indigo-600/10 px-5 py-5 space-y-2 lg:hidden">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center shrink-0">
+                    <Zap size={18} className="text-indigo-400" />
+                  </div>
+                  <p className="text-base font-bold text-indigo-100">Orçamento completo</p>
                 </div>
-                <p className="text-xs text-slate-400">
-                  {selectedMaterial?.brand} • {selectedMaterial?.line} • {selectedMaterial?.colorTexture} • {selectedMaterial?.type}
+                <p className="text-sm text-indigo-200/80 pl-[3.25rem]">
+                  {selectedPieces.length} peças com medida incluídas automaticamente.
                 </p>
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-800/50">
-                  <Info size={14} className="text-indigo-400" />
-                  <p className="text-[10px] italic text-slate-500">{selectedMaterial?.details}</p>
-                </div>
               </div>
-            </section>
-          )}
+            )}
+
+            {!selectedVehicleId && (
+              <p className="text-sm text-slate-500 italic lg:hidden">
+                Volte à etapa anterior e selecione um veículo.
+              </p>
+            )}
+          </section>
         </div>
 
-        {/* Right Col: Dashboard de Resultado */}
+        {/* Right Col: Material (etapa 3) + Resumo (etapa 4) */}
         <div className="space-y-6">
-          <section className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-2xl shadow-indigo-900/20 lg:sticky lg:top-8">
-            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+          <section
+            className={cn(
+              mobileStepPanelClass('indigo', wizard.stepPanelClass(2)),
+              'lg:sticky lg:top-8 lg:bg-slate-900 lg:border-indigo-500/30 lg:shadow-2xl lg:shadow-indigo-900/20',
+            )}
+          >
+            <BudgetMobileStepHeader
+              step={3}
+              title="Material"
+              description="Escolha o vinil e as dimensões do rolo."
+              accent="indigo"
+            />
+            <h3 className="hidden lg:flex text-lg font-bold text-white mb-6 items-center gap-2">
+              <Package className="text-indigo-500" size={20} />
+              Escolha do material
+            </h3>
+
+            <div className="space-y-4">
+              <MaterialCascadeSelect
+                materials={materials}
+                context={{ mode: 'automotive' }}
+                selectedMaterialId={selectedMaterialId}
+                onSelectMaterialId={setSelectedMaterialId}
+                onSelectionChange={() => setCustomPricePerM2(null)}
+                accent="indigo"
+              />
+
+              <MaterialRollDimensionSelect
+                material={selectedMaterial}
+                selectedWidth={selectedRollWidth}
+                selectedLength={selectedRollLength}
+                onSelectWidth={setSelectedRollWidth}
+                onSelectLength={setSelectedRollLength}
+                accent="indigo"
+              />
+
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Preço por m² (Override)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
+                    onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
+                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-white focus:ring-1 focus:ring-indigo-500 font-mono"
+                  />
+                  <Zap size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500/50" />
+                </div>
+                {customPricePerM2 !== null && (
+                  <button
+                    onClick={() => setCustomPricePerM2(null)}
+                    className="text-[9px] text-indigo-400 underline hover:text-indigo-300 ml-1"
+                  >
+                    Restaurar preço do catálogo
+                  </button>
+                )}
+              </div>
+
+              {selectedMaterialId && selectedMaterial && (
+                <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-4">
+                  <div className="w-14 h-14 bg-slate-950 rounded-xl flex items-center justify-center border border-slate-800 shrink-0">
+                    <Package className="text-indigo-500" size={22} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between gap-2">
+                      <h4 className="font-bold text-white truncate">{selectedMaterial.name}</h4>
+                      <span
+                        className={cn(
+                          'px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0',
+                          isRecommended ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400',
+                        )}
+                      >
+                        {isRecommended ? 'Recomendado' : 'Atenção'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 truncate">
+                      {selectedMaterial.brand} • {selectedMaterial.line}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section
+            id="budget-summary"
+            className={cn(
+              mobileStepPanelClass('indigo', wizard.stepPanelClass(3)),
+              'lg:bg-slate-900 lg:border-indigo-500/30 lg:shadow-2xl lg:shadow-indigo-900/20',
+            )}
+          >
+            <BudgetMobileStepHeader
+              step={4}
+              title="Revisar e salvar"
+              description="Confira valores antes de gerar o PDF."
+              accent="indigo"
+            />
+            <h3 className="hidden lg:flex text-lg font-bold text-white mb-6 items-center gap-2">
               <LayoutDashboard className="text-indigo-500" size={20} />
               Resumo do Orçamento
             </h3>
 
             <div className="space-y-6">
-              <div className="space-y-4">
+              <div className="hidden lg:block space-y-4">
                 <MaterialCascadeSelect
                   materials={materials}
                   context={{ mode: 'automotive' }}
@@ -520,7 +711,6 @@ export default function AutomotiveCalculator() {
                   onSelectionChange={() => setCustomPricePerM2(null)}
                   accent="indigo"
                 />
-
                 <MaterialRollDimensionSelect
                   material={selectedMaterial}
                   selectedWidth={selectedRollWidth}
@@ -529,11 +719,10 @@ export default function AutomotiveCalculator() {
                   onSelectLength={setSelectedRollLength}
                   accent="indigo"
                 />
-
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Preço por m² (Override)</label>
                   <div className="relative">
-                    <input 
+                    <input
                       type="number"
                       value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
                       onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
@@ -541,17 +730,10 @@ export default function AutomotiveCalculator() {
                     />
                     <Zap size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500/50" />
                   </div>
-                  {customPricePerM2 !== null && (
-                    <button 
-                      onClick={() => setCustomPricePerM2(null)}
-                      className="text-[9px] text-indigo-400 underline hover:text-indigo-300 ml-1"
-                    >
-                      Restaurar preço do catálogo
-                    </button>
-                  )}
                 </div>
+              </div>
 
-                <div className="pt-4 border-t border-slate-800 space-y-3">
+              <div className="pt-0 lg:pt-4 border-t-0 lg:border-t border-slate-800 space-y-3">
                   {totals.hasRollPricing ? (
                     <>
                       <div className="flex justify-between items-center text-xs">
@@ -578,7 +760,6 @@ export default function AutomotiveCalculator() {
                     <span className="text-slate-400">Prazos e Mão de Obra</span>
                     <span className="font-mono text-indigo-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
                   </div>
-                </div>
               </div>
 
               {!isRecommended && selectedMaterialId && (
@@ -588,12 +769,14 @@ export default function AutomotiveCalculator() {
                 </div>
               )}
 
-              <div className="bg-indigo-600/10 border border-indigo-500/20 p-5 rounded-xl shadow-inner">
+              <div className="bg-indigo-600/10 border border-indigo-500/20 p-5 rounded-xl shadow-inner hidden lg:block">
                 <p className="text-[10px] font-mono text-indigo-400 uppercase tracking-widest mb-1 text-center font-bold">Investimento Sugerido</p>
                 <h4 className="text-4xl font-black text-white text-center tracking-tighter">
                   {formatCurrency(totals.price)}
                 </h4>
               </div>
+
+              <BudgetMobileTotalHero total={totals.price} accent="indigo" />
 
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}
@@ -608,7 +791,8 @@ export default function AutomotiveCalculator() {
       </div>
 
       {selectedVehicleId && selectedMaterialId && nestingParts.length > 0 && (
-        rollDimensions ? (
+        <div className={cn(wizard.stepPanelClass(3))}>
+        {rollDimensions ? (
           <RollNestingPreview
             rollWidth={rollDimensions.width}
             rollLength={rollDimensions.length}
@@ -627,7 +811,8 @@ export default function AutomotiveCalculator() {
               </p>
             </div>
           </section>
-        )
+        )}
+        </div>
       )}
     </div>
   );

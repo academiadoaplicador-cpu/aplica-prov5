@@ -58,16 +58,24 @@ text-base sm:text-sm
 │   + espaço inferior p/ bottom bar   │
 │                                     │
 ├─────────────────────────────────────┤
-│ Início │ Auto │ Orç. │ Deco │ Mais │  ← bottom navigation (fixa)
+│ Início │ Auto │ Deco │ Orç. │ Mais │  ← bottom navigation (fixa)
 └─────────────────────────────────────┘
          ↑ safe-area-inset-bottom
 
-[Menu "Mais" aberto]
-┌──────────┬──────────────────────────┐
-│ SIDEBAR  │░░░░ OVERLAY ░░░░░░░░░░░░░│
-│ 256px    │░░░░ (blur + escurece) ░░░│
-│ fixo     │░░░░ tap fecha ░░░░░░░░░░░│
-└──────────┴──────────────────────────┘
+[Menu "Mais" aberto — painel sobe acima da bottom bar]
+┌─────────────────────────────────────┐
+│░░░░░░░░ CONTEÚDO (overlay) ░░░░░░░░│
+├─────────────────────────────────────┤
+│ 🔍 Buscar no menu...                │  ← barra de pesquisa
+├─────────────────────────────────────┤
+│ Custos                              │
+│ Administração (se admin)            │
+│ Catálogo / Bases (se admin)         │
+│ Perfil                              │
+│ Sair                                │
+├─────────────────────────────────────┤
+│ Início │ Auto │ Deco │ Orç. │ Mais │  ← tabs permanecem fixas
+└─────────────────────────────────────┘
 ```
 
 ### 2.2 Bottom navigation bar
@@ -78,9 +86,17 @@ Barra fixa na parte inferior (`fixed inset-x-0 bottom-0`), visível apenas abaix
 |-----|------|-------|-------|
 | **Início** | `/` | `LayoutDashboard` | Dashboard |
 | **Auto** | `/automotivo` | `Car` | Calculadora automotiva |
-| **Orçamento** | `/orcamento` | `History` | Histórico de orçamentos |
 | **Deco** | `/decorativo` | `Home` | Calculadora decorativa |
-| **Mais** | — (abre drawer) | `MoreHorizontal` | Custos, perfil, admin, gestão, logout |
+| **Orçamento** | `/orcamento` | `History` | Histórico de orçamentos |
+| **Mais** | — (expande painel) | `MoreHorizontal` | Custos, perfil, admin, gestão, logout |
+
+**Painel "Mais" (expandível):**
+
+- Ao tocar em **Mais**, um painel **sobe acima da bottom bar** (não abre drawer lateral).
+- Topo do painel: **campo de busca** (`Buscar no menu...`) com filtro em tempo real por título e palavras-chave.
+- Lista scrollável (`max-h` ~50vh): Custos, itens de gestão (admin), Perfil e **Sair**.
+- Bottom bar **permanece visível** na base; tocar em **Mais** novamente ou no overlay fecha o painel.
+- Animação: slide/fade com Motion (`200ms`).
 
 **Estilo:**
 
@@ -99,18 +115,18 @@ Barra fixa na parte inferior (`fixed inset-x-0 bottom-0`), visível apenas abaix
 
 | Elemento | Mobile / tablet (&lt; lg) | Desktop (≥ lg) |
 |----------|---------------------------|----------------|
-| Bottom bar | 5 abas fixas na base; rotas secundárias via **Mais** | Oculta (`lg:hidden`) |
-| Sidebar (drawer) | Abre pela aba **Mais**; `fixed`, slide da esquerda | `static`, sempre visível (`w-64`) |
-| Overlay | `fixed inset-0`, `bg-slate-950/70`, blur; fecha ao tocar | Não renderizado (`lg:hidden`) |
+| Bottom bar | 5 abas fixas; ordem: Início → Auto → Deco → Orçamento → Mais | Oculta (`lg:hidden`) |
+| Painel **Mais** | Sobe acima da bottom bar com busca + lista filtrável | — |
+| Sidebar | Oculta (`hidden lg:flex`) | `static`, sempre visível (`w-64`) |
+| Overlay | Escurece conteúdo quando painel **Mais** aberto; tap fecha | Não renderizado |
 | Top bar | Título da página + logo; sticky no topo | Oculta |
-| Botão fechar (X) | No topo da sidebar | Oculto |
 | Main padding | `p-4` → `sm:p-6`; inferior extra `pb-[calc(4.5rem+safe-area)]` | `lg:p-8` |
-| Troca de rota | Fecha o drawer automaticamente | — |
-| Aba **Mais** ativa | Destacada em rotas do drawer: custos, perfil, catálogo, bases, `/admin/*` | — |
+| Troca de rota | Fecha o painel **Mais** automaticamente | — |
+| Aba **Mais** ativa | Destacada em rotas secundárias: custos, perfil, catálogo, bases, `/admin/*` | — |
 
 ### 2.4 Animações
 
-- Sidebar: `transition-transform 200ms ease-in-out`.
+- Painel **Mais**: fade + `translateY(16px)` ao abrir/fechar (Motion, 200ms).
 - Conteúdo: fade + `translateY(10px)` ao mudar de rota (200ms).
 
 ---
@@ -159,29 +175,61 @@ Barra fixa na parte inferior (`fixed inset-x-0 bottom-0`), visível apenas abaix
 
 ### 4.3 Calculadoras — Automotivo e Decorativo
 
-**Arquivos:** `AutomotiveCalculator.tsx`, `DecorativeCalculator.tsx`
+**Arquivos:** `AutomotiveCalculator.tsx`, `DecorativeCalculator.tsx`, `BudgetFlowStepper.tsx`, `BudgetMobileSummaryBar.tsx`
 
-Padrão compartilhado:
+**Orientação no mobile (fluxo de orçamento — wizard):**
+
+- Top bar: **“Novo orçamento”** + subtítulo (Automotivo / Decorativo).
+- **Uma etapa por tela** abaixo de `lg`: só o painel da etapa ativa é exibido; as demais ficam ocultas (`hidden lg:block` no desktop mantém layout completo).
+- **Stepper** no topo: indica etapa atual; permite voltar a etapas já concluídas.
+- **Barra Voltar/Próximo** integrada ao rodapé fixo, **colada acima** da bottom navigation (mesmo bloco, sem flutuar no meio da tela).
+- Ao mudar de etapa, o scroll do `<main>` volta ao topo.
+
+| # | Etapa | Conteúdo exclusivo |
+|---|--------|-------------------|
+| 1 | Cliente | Nome, veículo/eletro, tipo de orçamento |
+| 2 | Peças | Seleção parcial ou confirmação do completo |
+| 3 | Material | Cascata de material, rolo, preço |
+| 4 | Revisar | Totais, encaixe, salvar e PDF |
+
+Etapas (automotivo):
+
+| # | ID | Concluída quando |
+|---|-----|------------------|
+| 1 | `cliente` | Nome do cliente + veículo selecionado |
+| 2 | `pecas` | Ao menos uma peça no orçamento |
+| 3 | `material` | Material selecionado |
+| 4 | `resumo` | Pronto para salvar/PDF |
+
+Padrão de layout:
 
 ```
-┌─ Header (coluna → sm: linha) ─────────────┐
-│ Título + ícone    [Salvar — full width]  │
-└──────────────────────────────────────────┘
-┌─ Grid principal ─────────────────────────┐
-│  MOBILE: 1 coluna                        │
-│  LG: 2/3 formulário + 1/3 resumo sticky  │
-└──────────────────────────────────────────┘
+┌─ Stepper sticky (só mobile) ────────────┐
+│ Novo orçamento · 2/4 · Agora: Peças    │
+│ [1 Cliente][2 Peças][3 Material][4 …]  │
+└─────────────────────────────────────────┘
+┌─ Formulário (scroll) ───────────────────┐
+│ 1. Cliente e veículo                    │
+│ 2. Peças (ou aviso “completo”)         │
+│ 3. Material e resumo (id=budget-summary)│
+└─────────────────────────────────────────┘
+┌─ Barra resumo fixa (só mobile) ─────────┐
+│ R$ 1.234 · Etapa 3 · [Resumo ↑]        │
+└─────────────────────────────────────────┘
+┌─ Bottom navigation ─────────────────────┘
 ```
 
 | Área | Mobile | Tablet (sm/md) | Desktop (lg+) |
 |------|--------|----------------|---------------|
-| Header | Coluna; botão salvar largura total | Linha; botão auto | Igual tablet |
+| Stepper + barra resumo | Visíveis | Visíveis | Ocultos |
+| Header da página | Stepper substitui `PageHeader` | Idem | `PageHeader` + grid 3 colunas |
 | Cliente / veículo | 1 coluna | `md:grid-cols-2` | — |
 | Selects marca/modelo/ano | 1 coluna | `sm:grid-cols-3` | — |
 | Tipo orçamento (Completo/Parcial) | Botões empilhados (`flex-col`) | `sm:flex-row` | — |
 | Grade de peças | `grid-cols-2` | `md:grid-cols-3` | — |
 | Itens decorativos (linha de medidas) | 1 coluna | `md:grid-cols-12` (colunas proporcionais) | — |
-| Painel de totais | Abaixo do formulário | — | `lg:sticky lg:top-8` na coluna direita |
+| Painel de totais | Abaixo do formulário; acesso rápido pela barra **Resumo** | — | `lg:sticky lg:top-8` na coluna direita |
+| Padding inferior | `pb-36` (barra resumo + bottom nav) | — | `pb-20` |
 
 ### 4.4 Histórico de orçamentos (`/orcamento`)
 
@@ -271,7 +319,7 @@ Estratégia atual: **não** transformar tabela em cards — usar **scroll horizo
 | Componente | Comportamento mobile |
 |------------|----------------------|
 | `BudgetDetailDrawer` | Full-height, `max-w-md`, slide da direita, spring animation |
-| Sidebar menu | Slide da esquerda + overlay; aberto via aba **Mais** |
+| Sidebar menu | Painel **Mais** expandível acima da bottom bar |
 | Bottom navigation | Fixa na base; 4 rotas diretas + **Mais** |
 | Sem bottom sheet nativo | — |
 
@@ -292,13 +340,13 @@ Estratégia atual: **não** transformar tabela em cards — usar **scroll horizo
 ```mermaid
 flowchart LR
   subgraph mobile ["&lt; 640px"]
-    M1[Bottom bar + drawer Mais]
+    M1[Bottom bar + painel Mais]
     M2[Coluna única]
     M3[Tabela scroll H]
     M4[Inputs 16px]
   end
   subgraph tablet ["640px – 1023px"]
-    T1[Bottom bar + drawer Mais]
+    T1[Bottom bar + painel Mais]
     T2[Grids 2–3 cols]
     T3[Tabela pode scroll]
     T4[Headers em linha sm+]
@@ -324,7 +372,7 @@ Itens observados no código atual — úteis para backlog de design/dev:
 | Calculadora — muitas peças | Grade `grid-cols-2` pode ficar apertada em telas &lt; 360px |
 | Hover-only | Upload de foto no perfil depende de `group-hover` para mostrar câmera |
 | Touch targets | Bottom bar ~56px; ícones de ação na tabela ainda sem `min-h`/`min-w` explícitos de 44px |
-| Bottom bar — 5 abas | Labels curtos (“Auto”, “Deco”); telas &lt; 320px podem truncar rótulos |
+| Calculadoras | Stepper + barra de resumo no mobile; fluxo longo ainda em uma página |
 | Landscape phone | Não há layout específico; herda o mesmo que portrait |
 | Testes visuais | Não há documentação de dispositivos-alvo (ex.: iPhone SE, Galaxy A) |
 
@@ -335,7 +383,7 @@ Itens observados no código atual — úteis para backlog de design/dev:
 Ao propor telas mobile no Figma, alinhar com o implementado:
 
 1. **Largura de referência:** 375px (iPhone) e 390px; validar também 320px.
-2. **Navegação:** bottom bar com 5 abas (Início, Auto, Orçamento, Deco, Mais) + drawer lateral 256px para o restante.
+2. **Navegação:** bottom bar (Início, Auto, Deco, Orçamento, Mais) + painel expandível com busca para demais rotas.
 3. **CTAs principais:** largura total abaixo de `sm`.
 4. **Inputs:** altura ~40px (`h-10`), fonte 16px no mobile.
 5. **Tabelas:** prever scroll horizontal ou colunas ocultas com `hidden sm:table-cell`.
@@ -349,12 +397,13 @@ Ao propor telas mobile no Figma, alinhar com o implementado:
 
 | Responsabilidade | Arquivo |
 |------------------|---------|
-| Shell + bottom bar + drawer | `src/components/layout/AppLayout.tsx` |
+| Shell + bottom bar + painel Mais | `src/components/layout/AppLayout.tsx` |
 | Estilos globais + scrollbar | `src/index.css` |
 | Login / cadastro | `src/components/AuthPage.tsx` |
 | Endereço responsivo | `src/components/AddressFields.tsx` |
 | Tabela com scroll | `src/components/settings/DataTable.tsx` |
 | Drawer de orçamento | `src/components/BudgetDetailDrawer.tsx` |
+| Stepper + barra resumo (mobile) | `src/components/BudgetFlowStepper.tsx`, `BudgetWizardNavBar.tsx`, `src/hooks/useBudgetWizard.ts` |
 | Histórico + tabela | `src/components/BudgetHistory.tsx` |
 | Calculadoras | `src/components/AutomotiveCalculator.tsx`, `DecorativeCalculator.tsx` |
 | Header gestão | `src/components/settings/PageHeader.tsx` |
@@ -365,7 +414,9 @@ Ao propor telas mobile no Figma, alinhar com o implementado:
 
 | Data | Alteração |
 |------|-----------|
-| 2026-06-02 | Bottom navigation bar no mobile/tablet; top bar sem hamburger; safe-area insets; drawer via aba **Mais**. |
+| 2026-06-02 | Visual mobile do orçamento: stepper com trilha de progresso, cards com gradiente, headers de etapa, total hero, campos h-12. |
+| 2026-06-02 | Ordem das abas: Deco antes de Orçamento; **Mais** expande painel com busca (sem drawer lateral no mobile). |
+| 2026-06-02 | Bottom navigation bar no mobile/tablet; top bar sem hamburger; safe-area insets. |
 | 2026-05-27 | Documento inicial descrevendo o estado mobile implementado no repositório. |
 
 ---

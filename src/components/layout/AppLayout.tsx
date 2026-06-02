@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Calculator,
@@ -11,21 +11,33 @@ import {
   Package,
   Refrigerator,
   MoreHorizontal,
-  X,
+  Search,
   Shield,
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../../types';
 import { databaseService } from '../../services/databaseService';
 import { ROUTES } from '../../routes/paths';
 import { cn } from '../../lib/utils';
+import {
+  MobileBottomExtrasProvider,
+  useMobileBottomExtrasContent,
+} from '../../contexts/MobileBottomExtrasContext';
 
 interface AppLayoutProps {
   user: User;
   onLogout: () => void;
 }
 
-const DRAWER_ONLY_PREFIXES = [
+type MoreMenuEntry = {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  searchTerms: string;
+  end?: boolean;
+};
+
+const MORE_MENU_PREFIXES = [
   ROUTES.costs,
   ROUTES.profile,
   ROUTES.catalog,
@@ -34,8 +46,8 @@ const DRAWER_ONLY_PREFIXES = [
   '/admin',
 ] as const;
 
-function isDrawerOnlyRoute(pathname: string): boolean {
-  return DRAWER_ONLY_PREFIXES.some(
+function isMoreMenuRoute(pathname: string): boolean {
+  return MORE_MENU_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
@@ -43,8 +55,8 @@ function isDrawerOnlyRoute(pathname: string): boolean {
 function getMobilePageTitle(pathname: string): string {
   if (pathname === ROUTES.dashboard) return 'Início';
   if (pathname.startsWith(ROUTES.costs)) return 'Custos';
-  if (pathname.startsWith(ROUTES.automotive)) return 'Automotivo';
-  if (pathname.startsWith(ROUTES.decorative)) return 'Decorativo';
+  if (pathname.startsWith(ROUTES.automotive)) return 'Novo orçamento';
+  if (pathname.startsWith(ROUTES.decorative)) return 'Novo orçamento';
   if (pathname.startsWith(ROUTES.orcamento)) return 'Orçamento';
   if (pathname.startsWith(ROUTES.profile)) return 'Perfil';
   if (pathname.startsWith(ROUTES.catalog)) return 'Catálogo';
@@ -54,13 +66,82 @@ function getMobilePageTitle(pathname: string): string {
   return 'Aplica Pro';
 }
 
+function getMobilePageSubtitle(pathname: string): string {
+  if (pathname.startsWith(ROUTES.automotive)) return 'Automotivo';
+  if (pathname.startsWith(ROUTES.decorative)) return 'Decorativo';
+  return 'Aplica Pro';
+}
+
+function buildMoreMenuItems(user: User): MoreMenuEntry[] {
+  const items: MoreMenuEntry[] = [
+    {
+      to: ROUTES.costs,
+      icon: <Calculator size={20} />,
+      label: 'Custos',
+      searchTerms: 'custos parâmetros preço',
+    },
+  ];
+
+  if (user.isAdmin) {
+    items.push(
+      {
+        to: ROUTES.admin.home,
+        icon: <Shield size={20} />,
+        label: 'Administração',
+        searchTerms: 'admin painel usuários',
+        end: true,
+      },
+      {
+        to: ROUTES.catalog,
+        icon: <Package size={20} />,
+        label: 'Catálogo Profissional',
+        searchTerms: 'catálogo materiais profissional',
+      },
+      {
+        to: ROUTES.vehiclesBase,
+        icon: <Car size={20} />,
+        label: 'Base de Veículos',
+        searchTerms: 'veículos carros base automotivo',
+      },
+      {
+        to: ROUTES.appliancesBase,
+        icon: <Refrigerator size={20} />,
+        label: 'Base de Eletros',
+        searchTerms: 'eletrodomésticos geladeira fogão',
+      },
+    );
+  }
+
+  items.push({
+    to: ROUTES.profile,
+    icon: <UserIcon size={20} />,
+    label: 'Perfil',
+    searchTerms: 'perfil conta usuário dados',
+  });
+
+  return items;
+}
+
 export default function AppLayout({ user, onLogout }: AppLayoutProps) {
+  return (
+    <MobileBottomExtrasProvider>
+      <AppLayoutShell user={user} onLogout={onLogout} />
+    </MobileBottomExtrasProvider>
+  );
+}
+
+function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
+  const bottomExtras = useMobileBottomExtrasContent();
   const navigate = useNavigate();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreSearch, setMoreSearch] = useState('');
+
+  const moreMenuItems = useMemo(() => buildMoreMenuItems(user), [user]);
 
   useEffect(() => {
-    setSidebarOpen(false);
+    setMoreOpen(false);
+    setMoreSearch('');
   }, [location.pathname]);
 
   const handleLogout = async () => {
@@ -69,80 +150,88 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
     navigate(ROUTES.login, { replace: true });
   };
 
-  const closeSidebar = () => setSidebarOpen(false);
+  const closeMore = () => {
+    setMoreOpen(false);
+    setMoreSearch('');
+  };
+
+  const toggleMore = () => {
+    setMoreOpen((open) => {
+      if (open) setMoreSearch('');
+      return !open;
+    });
+  };
+
+  const normalizedQuery = moreSearch.trim().toLowerCase();
+  const filteredMoreItems = useMemo(() => {
+    if (!normalizedQuery) return moreMenuItems;
+    return moreMenuItems.filter(
+      (item) =>
+        item.label.toLowerCase().includes(normalizedQuery) ||
+        item.searchTerms.toLowerCase().includes(normalizedQuery),
+    );
+  }, [moreMenuItems, normalizedQuery]);
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-200">
-      {/* Overlay — mobile/tablet only */}
+      {/* Overlay — mobile "Mais" panel only */}
       <button
         type="button"
         aria-label="Fechar menu"
-        onClick={closeSidebar}
+        onClick={closeMore}
         className={cn(
           'fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm transition-opacity duration-200 lg:hidden',
-          sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+          moreOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
         )}
       />
 
+      {/* Desktop sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 w-64',
-          'bg-slate-950/50 backdrop-blur-xl border-r border-slate-900',
-          'flex flex-col h-full min-h-0 shrink-0',
-          'transform transition-transform duration-200 ease-in-out',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-          'lg:translate-x-0 lg:relative lg:z-auto',
+          'hidden lg:flex',
+          'w-64 bg-slate-950/50 backdrop-blur-xl border-r border-slate-900',
+          'flex-col h-full min-h-0 shrink-0',
         )}
       >
-        <div className="p-6 border-b border-slate-900 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <img
-              src="/login.png"
-              alt="Aplica PRO"
-              className="w-10 h-10 rounded-lg object-contain shrink-0"
-              draggable={false}
-            />
-            <div className="min-w-0">
-              <h1 className="font-bold text-lg tracking-tight text-white leading-none">Aplica Pro</h1>
-              <span className="text-[10px] text-indigo-400 font-mono tracking-widest uppercase">
-                Instalação Inteligente
-              </span>
-            </div>
+        <div className="p-6 border-b border-slate-900 flex items-center gap-3 min-w-0">
+          <img
+            src="/login.png"
+            alt="Aplica PRO"
+            className="w-10 h-10 rounded-lg object-contain shrink-0"
+            draggable={false}
+          />
+          <div className="min-w-0">
+            <h1 className="font-bold text-lg tracking-tight text-white leading-none">Aplica Pro</h1>
+            <span className="text-[10px] text-indigo-400 font-mono tracking-widest uppercase">
+              Instalação Inteligente
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={closeSidebar}
-            className="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-            aria-label="Fechar menu"
-          >
-            <X size={20} />
-          </button>
         </div>
 
         <nav className="flex-1 min-h-0 p-4 space-y-1 overflow-y-auto">
-          <NavItem to={ROUTES.dashboard} icon={<LayoutDashboard size={20} />} label="Início" onNavigate={closeSidebar} />
-          <NavItem to={ROUTES.costs} icon={<Calculator size={20} />} label="Custos" onNavigate={closeSidebar} />
+          <NavItem to={ROUTES.dashboard} icon={<LayoutDashboard size={20} />} label="Início" />
+          <NavItem to={ROUTES.costs} icon={<Calculator size={20} />} label="Custos" />
           <div className="pt-4 pb-2 px-3">
             <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Calculadoras</span>
           </div>
-          <NavItem to={ROUTES.automotive} icon={<Car size={20} />} label="Automotivo" onNavigate={closeSidebar} />
-          <NavItem to={ROUTES.decorative} icon={<Home size={20} />} label="Decorativo" onNavigate={closeSidebar} />
+          <NavItem to={ROUTES.automotive} icon={<Car size={20} />} label="Automotivo" />
+          <NavItem to={ROUTES.decorative} icon={<Home size={20} />} label="Decorativo" />
           <div className="pt-4 pb-2 px-3">
             <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Gestão</span>
           </div>
           {user.isAdmin && (
             <>
-              <NavItem to={ROUTES.admin.home} icon={<Shield size={20} />} label="Administração" onNavigate={closeSidebar} />
-              <NavItem to={ROUTES.catalog} icon={<Package size={20} />} label="Catálogo Profissional" onNavigate={closeSidebar} />
-              <NavItem to={ROUTES.vehiclesBase} icon={<Car size={20} />} label="Base de Veículos" onNavigate={closeSidebar} />
-              <NavItem to={ROUTES.appliancesBase} icon={<Refrigerator size={20} />} label="Base de Eletros" onNavigate={closeSidebar} />
+              <NavItem to={ROUTES.admin.home} icon={<Shield size={20} />} label="Administração" />
+              <NavItem to={ROUTES.catalog} icon={<Package size={20} />} label="Catálogo Profissional" />
+              <NavItem to={ROUTES.vehiclesBase} icon={<Car size={20} />} label="Base de Veículos" />
+              <NavItem to={ROUTES.appliancesBase} icon={<Refrigerator size={20} />} label="Base de Eletros" />
             </>
           )}
-          <NavItem to={ROUTES.orcamento} icon={<History size={20} />} label="Orçamento" onNavigate={closeSidebar} />
+          <NavItem to={ROUTES.orcamento} icon={<History size={20} />} label="Orçamento" />
         </nav>
 
         <div className="mt-auto shrink-0 p-4 border-t border-slate-900 space-y-1">
-          <NavItem to={ROUTES.profile} icon={<UserIcon size={20} />} label="Perfil" onNavigate={closeSidebar} />
+          <NavItem to={ROUTES.profile} icon={<UserIcon size={20} />} label="Perfil" />
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -155,7 +244,6 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
       </aside>
 
       <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
-        {/* Top bar — mobile/tablet only (sem hamburger; nav principal fica na bottom bar) */}
         <header className="lg:hidden shrink-0 z-20 flex items-center gap-3 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] bg-slate-950/90 backdrop-blur-md border-b border-slate-900">
           <img
             src="/login.png"
@@ -169,12 +257,19 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
               {getMobilePageTitle(location.pathname)}
             </p>
             <p className="text-[10px] text-indigo-400 font-mono tracking-widest uppercase truncate">
-              Aplica Pro
+              {getMobilePageSubtitle(location.pathname)}
             </p>
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-8">
+        <main
+          className={cn(
+            'flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 lg:pb-8',
+            bottomExtras
+              ? 'pb-[calc(8.75rem+env(safe-area-inset-bottom))]'
+              : 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]',
+          )}
+        >
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, y: 10 }}
@@ -185,37 +280,110 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
           </motion.div>
         </main>
 
-        {/* Bottom navigation — mobile/tablet only */}
-        <nav
-          className="lg:hidden fixed inset-x-0 bottom-0 z-20 flex items-stretch border-t border-slate-900 bg-slate-950/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
-          aria-label="Navegação principal"
-        >
-          <BottomNavItem
-            to={ROUTES.dashboard}
-            icon={<LayoutDashboard size={20} />}
-            label="Início"
-            end
-          />
-          <BottomNavItem
-            to={ROUTES.automotive}
-            icon={<Car size={20} />}
-            label="Auto"
-          />
-          <BottomNavItem
-            to={ROUTES.orcamento}
-            icon={<History size={20} />}
-            label="Orçamento"
-          />
-          <BottomNavItem
-            to={ROUTES.decorative}
-            icon={<Home size={20} />}
-            label="Deco"
-          />
-          <BottomNavMore
-            active={isDrawerOnlyRoute(location.pathname) || sidebarOpen}
-            onClick={() => setSidebarOpen(true)}
-          />
-        </nav>
+        {/* Mobile bottom navigation + expandable "Mais" panel */}
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)]">
+          <AnimatePresence>
+            {moreOpen && (
+              <motion.div
+                key="more-panel"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 16 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="border-t border-slate-800 bg-slate-950/98 backdrop-blur-xl shadow-[0_-8px_32px_rgba(0,0,0,0.45)]"
+              >
+                <div className="p-3 border-b border-slate-900">
+                  <label className="sr-only" htmlFor="mobile-nav-search">
+                    Buscar no menu
+                  </label>
+                  <div className="relative">
+                    <Search
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+                    />
+                    <input
+                      id="mobile-nav-search"
+                      type="search"
+                      value={moreSearch}
+                      onChange={(e) => setMoreSearch(e.target.value)}
+                      placeholder="Buscar no menu..."
+                      autoFocus
+                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40"
+                    />
+                  </div>
+                </div>
+
+                <div className="max-h-[min(50vh,360px)] overflow-y-auto p-2 space-y-1">
+                  {filteredMoreItems.length === 0 ? (
+                    <p className="px-3 py-6 text-center text-sm text-slate-500">
+                      Nenhum item encontrado.
+                    </p>
+                  ) : (
+                    filteredMoreItems.map((item) => (
+                      <MorePanelItem
+                        key={item.to}
+                        to={item.to}
+                        icon={item.icon}
+                        label={item.label}
+                        end={item.end}
+                        onNavigate={closeMore}
+                      />
+                    ))
+                  )}
+
+                  {(!normalizedQuery || 'sair logout'.includes(normalizedQuery)) && (
+                    <button
+                      type="button"
+                      onClick={() => void handleLogout()}
+                      className="flex items-center gap-3 w-full px-3 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 active:bg-red-500/10 transition-colors"
+                    >
+                      <LogOut size={20} className="shrink-0" />
+                      <span className="text-sm font-medium">Sair</span>
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {bottomExtras}
+
+          <nav
+            className="flex items-stretch border-t border-slate-900 bg-slate-950/95 backdrop-blur-md"
+            aria-label="Navegação principal"
+          >
+            <BottomNavItem
+              to={ROUTES.dashboard}
+              icon={<LayoutDashboard size={20} />}
+              label="Início"
+              end
+              onClick={closeMore}
+            />
+            <BottomNavItem
+              to={ROUTES.automotive}
+              icon={<Car size={20} />}
+              label="Auto"
+              onClick={closeMore}
+            />
+            <BottomNavItem
+              to={ROUTES.decorative}
+              icon={<Home size={20} />}
+              label="Deco"
+              onClick={closeMore}
+            />
+            <BottomNavItem
+              to={ROUTES.orcamento}
+              icon={<History size={20} />}
+              label="Orçamento"
+              onClick={closeMore}
+            />
+            <BottomNavMore
+              active={isMoreMenuRoute(location.pathname) || moreOpen}
+              expanded={moreOpen}
+              onClick={toggleMore}
+            />
+          </nav>
+        </div>
       </div>
     </div>
   );
@@ -235,7 +403,7 @@ function NavItem({
   return (
     <NavLink
       to={to}
-      end={to === ROUTES.dashboard}
+      end={to === ROUTES.dashboard || to === ROUTES.admin.home}
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
@@ -259,21 +427,61 @@ function NavItem({
   );
 }
 
-function BottomNavItem({
+function MorePanelItem({
   to,
   icon,
   label,
   end,
+  onNavigate,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   end?: boolean;
+  onNavigate: () => void;
 }) {
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        cn(
+          'flex items-center gap-3 w-full px-3 py-3 rounded-lg transition-colors',
+          isActive
+            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20'
+            : 'text-slate-400 active:bg-slate-900',
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <div className={isActive ? 'text-indigo-400' : 'text-slate-500 shrink-0'}>{icon}</div>
+          <span className="text-sm font-medium">{label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+function BottomNavItem({
+  to,
+  icon,
+  label,
+  end,
+  onClick,
+}: {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  end?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      onClick={onClick}
       className={({ isActive }) =>
         cn(
           'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
@@ -291,20 +499,28 @@ function BottomNavItem({
           >
             {icon}
           </span>
-          <span className="text-[10px] font-medium leading-none truncate max-w-full">{label}</span>
+          <span className="text-[10px] font-medium leading-none truncate max-w-full px-0.5">{label}</span>
         </>
       )}
     </NavLink>
   );
 }
 
-function BottomNavMore({ active, onClick }: { active: boolean; onClick: () => void }) {
+function BottomNavMore({
+  active,
+  expanded,
+  onClick,
+}: {
+  active: boolean;
+  expanded: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="Abrir menu completo"
-      aria-expanded={active}
+      aria-label={expanded ? 'Fechar menu' : 'Abrir menu completo'}
+      aria-expanded={expanded}
       className={cn(
         'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
         active ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300',
