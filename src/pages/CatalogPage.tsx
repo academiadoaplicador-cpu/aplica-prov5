@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Layers, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { databaseService } from '../services/databaseService';
@@ -8,9 +8,12 @@ import PageHeader from '../components/settings/PageHeader';
 import PageButton from '../components/settings/PageButton';
 import PagePanel from '../components/settings/PagePanel';
 import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlock';
+import ImportProgressBar from '../components/settings/ImportProgressBar';
 import MaterialCatalogTable from '../components/settings/MaterialCatalogTable';
-import { mergeMaterials, parseMaterialsFromExcel } from '../utils/materialImport';
+import MaterialImportPreviewModal from '../components/settings/MaterialImportPreviewModal';
+import { mergeMaterials, parseMaterialsFromExcel, type MaterialImportResult } from '../utils/materialImport';
 import { downloadMaterialsTemplate } from '../utils/spreadsheetTemplates';
+import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
 export default function CatalogPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -18,8 +21,27 @@ export default function CatalogPage() {
   const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [materialsImportStatus, setMaterialsImportStatus] = useState<string | null>(null);
   const [materialsImportErrors, setMaterialsImportErrors] = useState<string[]>([]);
-  const [isImportingMaterials, setIsImportingMaterials] = useState(false);
-  const materialsFileRef = useRef<HTMLInputElement>(null);
+  const [importPreview, setImportPreview] = useState<MaterialImportResult | null>(null);
+
+  const {
+    fileInputRef: materialsFileRef,
+    isParsingFile: isParsingMaterials,
+    parseProgress: materialsParseProgress,
+    isPreviewOpen: isMaterialsPreviewOpen,
+    importFileName: materialsImportFileName,
+    isConfirmingImport: isConfirmingMaterialsImport,
+    importProgress: materialsImportProgress,
+    importProgressLabel: materialsImportProgressLabel,
+    importModalError: materialsImportModalError,
+    closePreview: closeMaterialsPreview,
+    handleFileSelect: handleMaterialsFileSelect,
+    handleConfirmImport: handleMaterialsConfirmImport,
+  } = useImportPreviewFlow();
+
+  const materialsMergePreview = useMemo(() => {
+    if (!importPreview) return { added: 0, updated: 0 };
+    return mergeMaterials(materials, importPreview.materials);
+  }, [materials, importPreview]);
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchData, setBatchData] = useState({
     brand: '',
@@ -101,32 +123,12 @@ export default function CatalogPage() {
   const handleImportMaterials = async (file: File) => {
     setMaterialsImportStatus(null);
     setMaterialsImportErrors([]);
-    setIsImportingMaterials(true);
-    try {
-      const buffer = await file.arrayBuffer();
-      const { materials: parsed, skipped, errors } = parseMaterialsFromExcel(buffer);
-      if (parsed.length === 0) {
-        setMaterialsImportStatus('Nenhum material válido encontrado na planilha.');
-        setMaterialsImportErrors(errors);
-        return;
-      }
-      const { added, updated } = mergeMaterials(materials, parsed);
-      const saved = await databaseService.importMaterials(parsed);
-      setMaterials(saved);
-      const parts = [
-        `${parsed.length} material(is) lido(s)`,
-        `${added} novo(s)`,
-        updated > 0 ? `${updated} atualizado(s)` : null,
-        skipped > 0 ? `${skipped} linha(s) ignorada(s)` : null,
-      ].filter(Boolean);
-      setMaterialsImportStatus(`Importação concluída: ${parts.join(' • ')}.`);
-      setMaterialsImportErrors(errors.slice(0, 5));
-    } catch (e) {
-      setMaterialsImportStatus(e instanceof Error ? e.message : 'Erro ao importar materiais.');
-    } finally {
-      setIsImportingMaterials(false);
-      if (materialsFileRef.current) materialsFileRef.current.value = '';
-    }
+    await handleMaterialsFileSelect(
+      file,
+      parseMaterialsFromExcel,
+      (result) => setImportPreview(result),
+      (message) => setMaterialsImportStatus(message),
+    );
   };
 
   return (
@@ -139,6 +141,43 @@ export default function CatalogPage() {
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void handleImportMaterials(file);
+        }}
+      />
+
+      <MaterialImportPreviewModal
+        open={isMaterialsPreviewOpen}
+        fileName={materialsImportFileName}
+        preview={importPreview}
+        existingMaterials={materials}
+        added={materialsMergePreview.added}
+        updated={materialsMergePreview.updated}
+        loading={isConfirmingMaterialsImport}
+        progress={materialsImportProgress}
+        progressLabel={materialsImportProgressLabel}
+        error={materialsImportModalError}
+        onConfirm={() => {
+          if (!importPreview || importPreview.materials.length === 0) return;
+          void handleMaterialsConfirmImport(
+            async () => {
+              const { materials: parsed, skipped, errors } = importPreview;
+              const { merged, added, updated } = mergeMaterials(materials, parsed);
+              await databaseService.setMaterials(merged);
+              setMaterials(merged);
+              const parts = [
+                `${parsed.length} material(is) importado(s)`,
+                `${added} novo(s)`,
+                updated > 0 ? `${updated} atualizado(s)` : null,
+                skipped > 0 ? `${skipped} linha(s) ignorada(s)` : null,
+              ].filter(Boolean);
+              setMaterialsImportStatus(`Importação concluída: ${parts.join(' • ')}.`);
+              setMaterialsImportErrors(errors.slice(0, 5));
+            },
+            { errorFallback: 'Erro ao importar materiais.' },
+          );
+        }}
+        onClose={() => {
+          closeMaterialsPreview();
+          setImportPreview(null);
         }}
       />
 
@@ -157,7 +196,7 @@ export default function CatalogPage() {
             <PageButton
               variant="secondary"
               icon={<FileSpreadsheet size={16} />}
-              loading={isImportingMaterials}
+              loading={isParsingMaterials}
               onClick={() => materialsFileRef.current?.click()}
             >
               Importar planilha
@@ -183,8 +222,11 @@ export default function CatalogPage() {
           </>
         }
         footer={
-          (materialsImportStatus || isBatchMode) ? (
+          (materialsImportStatus || isBatchMode || (isParsingMaterials && materialsParseProgress > 0)) ? (
             <div className="space-y-4">
+              {isParsingMaterials && materialsParseProgress > 0 && (
+                <ImportProgressBar progress={materialsParseProgress} label="Lendo planilha…" size="sm" />
+              )}
               <ImportFeedback status={materialsImportStatus} errors={materialsImportErrors} />
               <AnimatePresence>
                 {isBatchMode && (

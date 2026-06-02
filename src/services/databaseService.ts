@@ -8,6 +8,7 @@ import {
   Appliance,
 } from '../types';
 import { RegisterPayload } from '../types/auth';
+import { normalizeMaterialRollFields } from '../utils/materialRoll';
 
 const USER_CACHE_KEY = 'aplica_pro_user_cache';
 
@@ -29,7 +30,17 @@ function setCachedUser(user: User | null) {
 }
 
 function parseApiError(status: number, text: string): string {
-  let message = text;
+  let message = text.trim();
+
+  if (message.startsWith('<!DOCTYPE') || message.startsWith('<html')) {
+    const preMatch = message.match(/<pre>([\s\S]*?)<\/pre>/i);
+    if (preMatch?.[1]) message = preMatch[1].trim();
+    if (status === 404) {
+      return 'Recurso não encontrado na API. Verifique se o servidor está atualizado e reinicie-o.';
+    }
+    return message || `Erro no servidor (${status}). Tente novamente.`;
+  }
+
   try {
     const parsed = JSON.parse(text) as { error?: string };
     message = parsed.error ?? text;
@@ -142,7 +153,8 @@ export const databaseService = {
   },
 
   getMaterials: async (): Promise<Material[]> => {
-    return api<Material[]>('/materials');
+    const materials = await api<Material[]>('/materials');
+    return materials.map(normalizeMaterialRollFields);
   },
 
   setMaterials: async (materials: Material[]): Promise<void> => {
@@ -153,10 +165,11 @@ export const databaseService = {
   },
 
   importMaterials: async (materials: Material[]): Promise<Material[]> => {
-    return api<Material[]>('/materials/import', {
+    const imported = await api<Material[]>('/materials/import', {
       method: 'POST',
       body: JSON.stringify({ materials }),
     });
+    return imported.map(normalizeMaterialRollFields);
   },
 
   getBudgets: async (): Promise<Budget[]> => {
@@ -194,6 +207,13 @@ export const databaseService = {
   setVehicles: async (vehicles: Vehicle[]): Promise<void> => {
     await api('/vehicles', {
       method: 'PUT',
+      body: JSON.stringify({ vehicles }),
+    });
+  },
+
+  importVehicles: async (vehicles: Vehicle[]): Promise<Vehicle[]> => {
+    return api<Vehicle[]>('/vehicles/import', {
+      method: 'POST',
       body: JSON.stringify({ vehicles }),
     });
   },

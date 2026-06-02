@@ -29,6 +29,8 @@ CREATE TABLE materials (
   durability TEXT NOT NULL,
   recommended_for TEXT[] NOT NULL DEFAULT '{}',
   details TEXT,
+  roll_width_m NUMERIC(10, 3),
+  roll_length_m NUMERIC(10, 3),
   PRIMARY KEY (user_id, id)
 );
 

@@ -1,0 +1,3 @@
+ALTER TABLE materials
+  ADD COLUMN IF NOT EXISTS roll_width_m NUMERIC(10, 3),
+  ADD COLUMN IF NOT EXISTS roll_length_m NUMERIC(10, 3);

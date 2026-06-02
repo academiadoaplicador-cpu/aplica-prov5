@@ -13,7 +13,7 @@ import {
   AlertTriangle,
   History,
 } from 'lucide-react';
-import { VEHICLE_PARTS_DATA, VEHICLE_PRESETS, VEHICLES_DATABASE } from '../types/vehicleParts';
+import { VEHICLE_PARTS_DATA, VEHICLE_PRESETS } from '../types/vehicleParts';
 import { VehicleSize, BudgetPiece, Budget, FinancialSettings, Material, Vehicle } from '../types';
 import { databaseService } from '../services/databaseService';
 import { formatCurrency, generateId, cn } from '../lib/utils';
@@ -21,6 +21,11 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { pdfService } from '../services/pdfService';
 import GeneratePdfButton from './GeneratePdfButton';
+import MaterialCascadeSelect from './MaterialCascadeSelect';
+import RollNestingPreview from './RollNestingPreview';
+import { getMaterialRollDimensions } from '../utils/materialRoll';
+import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNesting';
+import type { NestingPartInput } from '../utils/rollNesting';
 export default function AutomotiveCalculator() {
   const [customerName, setCustomerName] = useState('');
   const [selectedMake, setSelectedMake] = useState<string>('');
@@ -82,7 +87,7 @@ export default function AutomotiveCalculator() {
   const isComplete = useMemo(() => {
     if (!selectedVehicle) return false;
     const preset = VEHICLE_PRESETS[selectedVehicle.size] || [];
-    return preset.every(partId => {
+    return preset.every((partId) => {
       const m = selectedVehicle.partMeasurements[partId];
       return m && m.width > 0 && m.length > 0;
     });
@@ -109,47 +114,94 @@ export default function AutomotiveCalculator() {
     );
   };
 
+  const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
+  const isRecommended = selectedMaterial?.recommendedFor.includes('Automotivo');
+  const rollDimensions = useMemo(
+    () => getMaterialRollDimensions(selectedMaterial),
+    [selectedMaterial],
+  );
+
+  const nestingParts = useMemo((): NestingPartInput[] => {
+    if (!selectedVehicle) return [];
+    return VEHICLE_PARTS_DATA.filter((p) => selectedPieces.includes(p.id))
+      .map((part) => {
+        const m = selectedVehicle.partMeasurements[part.id];
+        if (!m || m.width <= 0 || m.length <= 0) return null;
+        return {
+          id: part.id,
+          name: part.name,
+          width: m.width,
+          length: m.length,
+        };
+      })
+      .filter((p): p is NestingPartInput => p !== null);
+  }, [selectedVehicle, selectedPieces]);
+
   const totals = useMemo(() => {
-    if (!selectedVehicle) return { meters: 0, hours: 0, cost: 0, price: 0, profit: 0, materialM2: 0 };
+    const empty = {
+      usedLength: 0,
+      rollAreaM2: 0,
+      materialM2: 0,
+      hasRollPricing: false,
+      hours: 0,
+      cost: 0,
+      price: 0,
+      profit: 0,
+    };
 
-    const pieces = VEHICLE_PARTS_DATA.filter(p => selectedPieces.includes(p.id));
-    
-    let totalArea = 0;
-    let totalLength = 0;
+    if (!selectedVehicle) return empty;
 
-    pieces.forEach(p => {
-      const m = selectedVehicle.partMeasurements[p.id];
-      if (m) {
-        totalArea += (m.width * m.length);
-        totalLength += m.length;
-      }
-    });
-
-    // Adiciona margem de 15% para cortes e sobreposições
-    const materialM2 = totalArea * 1.15;
-
+    const pieces = VEHICLE_PARTS_DATA.filter((p) => selectedPieces.includes(p.id));
     const totalDifficulty = pieces.reduce((acc, p) => acc + p.difficulty, 0);
-    const estimatedHours = totalDifficulty * 0.75; 
+    const estimatedHours = totalDifficulty * 0.75;
 
     const material = materials.find(m => m.id === selectedMaterialId);
     const pricePerM2 = customPricePerM2 ?? (material?.pricePerM2 || 0);
 
+    let usedLength = 0;
+    let rollAreaM2 = 0;
+    let materialM2 = 0;
+    let hasRollPricing = false;
+
+    if (rollDimensions && nestingParts.length > 0) {
+      const usage = computeRollMaterialUsage(
+        nestingParts,
+        rollDimensions.width,
+        rollDimensions.length,
+      );
+      usedLength = usage.usedLength;
+      rollAreaM2 = usage.rollAreaM2;
+      materialM2 = usage.materialM2;
+      hasRollPricing = true;
+    }
+
     const materialCost = materialM2 * pricePerM2;
     const laborCost = estimatedHours * settings.hourlyRate;
-    
+
     const baseCost = materialCost + laborCost;
     const totalPrice = baseCost * (1 + (settings.profitMarginPercentage / 100)) * (1 + (settings.taxPercentage / 100));
     const profit = totalPrice - baseCost - (totalPrice * (settings.taxPercentage / 100));
 
     return {
-      meters: totalLength,
+      usedLength,
+      rollAreaM2,
       materialM2,
+      hasRollPricing,
       hours: estimatedHours,
       cost: baseCost,
       price: totalPrice,
-      profit
+      profit,
     };
-  }, [selectedVehicle, selectedPieces, selectedMaterialId, customPricePerM2, materials, settings]);
+  }, [
+    selectedVehicle,
+    selectedPieces,
+    nestingParts,
+    rollDimensions,
+    selectedMaterialId,
+    customPricePerM2,
+    materials,
+    settings,
+  ]);
 
   const currentBudget = useMemo(() => ({
     id: generateId(),
@@ -162,7 +214,7 @@ export default function AutomotiveCalculator() {
     materialId: selectedMaterialId,
     customPricePerM2: customPricePerM2 || undefined,
     totalHours: totals.hours,
-    totalMaterialMeters: totals.meters,
+    totalMaterialMeters: totals.usedLength,
     totalMaterialM2: totals.materialM2,
     totalCost: totals.cost,
     totalPrice: totals.price,
@@ -178,12 +230,11 @@ export default function AutomotiveCalculator() {
   };
 
   const handleGeneratePDF = async () => {
-    if (!customerName || !selectedMaterialId || !selectedVehicleId) return;
-    await pdfService.generateBudgetPDF(currentBudget);
+    if (!customerName || !selectedMaterialId || !selectedVehicleId) {
+      throw new Error('Preencha cliente, veículo e material antes de gerar o PDF.');
+    }
+    await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
   };
-
-  const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
-  const isRecommended = selectedMaterial?.recommendedFor.includes('Automotivo');
 
   return (
     <div className="space-y-8 w-full pb-20">
@@ -311,7 +362,7 @@ export default function AutomotiveCalculator() {
               >
                 <h3 className="text-xs font-mono uppercase tracking-widest text-slate-500 mb-6">Seleção de Peças</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {VEHICLE_PARTS_DATA.map(part => (
+                  {VEHICLE_PARTS_DATA.map((part) => (
                     <button
                       key={part.id}
                       onClick={() => togglePiece(part.id)}
@@ -346,7 +397,9 @@ export default function AutomotiveCalculator() {
                     {isRecommended ? 'Recomendado' : 'Não Recomendado'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400">{selectedMaterial?.brand} • {selectedMaterial?.type} • Linha {selectedMaterial?.line}</p>
+                <p className="text-xs text-slate-400">
+                  {selectedMaterial?.brand} • {selectedMaterial?.line} • {selectedMaterial?.colorTexture} • {selectedMaterial?.type}
+                </p>
                 <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-800/50">
                   <Info size={14} className="text-indigo-400" />
                   <p className="text-[10px] italic text-slate-500">{selectedMaterial?.details}</p>
@@ -366,22 +419,14 @@ export default function AutomotiveCalculator() {
 
             <div className="space-y-6">
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Material Selecionado</label>
-                  <select 
-                    value={selectedMaterialId}
-                    onChange={(e) => {
-                      setSelectedMaterialId(e.target.value);
-                      setCustomPricePerM2(null);
-                    }}
-                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-white focus:ring-1 focus:ring-indigo-500 appearance-none font-sans"
-                  >
-                    <option value="">Escolher Vinil...</option>
-                    {materials.map(m => (
-                      <option key={m.id} value={m.id}>{m.name} ({m.brand})</option>
-                    ))}
-                  </select>
-                </div>
+                <MaterialCascadeSelect
+                  materials={materials}
+                  context={{ mode: 'automotive' }}
+                  selectedMaterialId={selectedMaterialId}
+                  onSelectMaterialId={setSelectedMaterialId}
+                  onSelectionChange={() => setCustomPricePerM2(null)}
+                  accent="indigo"
+                />
 
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Preço por m² (Override)</label>
@@ -405,14 +450,28 @@ export default function AutomotiveCalculator() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-800 space-y-3">
-                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 italic">Consumo Linear Estimado</span>
-                    <span className="font-mono text-white">{totals.meters.toFixed(2)}m</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 italic">Área Total Calculada</span>
-                    <span className="font-mono text-white">{totals.materialM2.toFixed(2)} m²</span>
-                  </div>
+                  {totals.hasRollPricing ? (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 italic">Comprimento usado no rolo</span>
+                        <span className="font-mono text-white">{totals.usedLength.toFixed(2)} m</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 italic">Área usada no rolo</span>
+                        <span className="font-mono text-white">{totals.rollAreaM2.toFixed(2)} m²</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 italic">
+                          Material faturado (usado + {Math.round((ROLL_WASTE_FACTOR - 1) * 100)}%)
+                        </span>
+                        <span className="font-mono text-indigo-300 font-bold">{totals.materialM2.toFixed(2)} m²</span>
+                      </div>
+                    </>
+                  ) : selectedMaterialId && nestingParts.length > 0 ? (
+                    <p className="text-[10px] text-amber-400/90 italic leading-snug">
+                      Cadastre largura e comprimento do rolo no material para calcular o consumo (usado + 15%).
+                    </p>
+                  ) : null}
                   <div className="flex justify-between items-center text-sm border-t border-slate-800/50 pt-2">
                     <span className="text-slate-400">Prazos e Mão de Obra</span>
                     <span className="font-mono text-indigo-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
@@ -446,6 +505,29 @@ export default function AutomotiveCalculator() {
           </section>
         </div>
       </div>
+
+      {selectedVehicleId && selectedMaterialId && nestingParts.length > 0 && (
+        rollDimensions ? (
+          <RollNestingPreview
+            rollWidth={rollDimensions.width}
+            rollLength={rollDimensions.length}
+            parts={nestingParts}
+            materialLabel={selectedMaterial?.name}
+          />
+        ) : (
+          <section className="bg-slate-900/50 border border-amber-500/20 rounded-2xl p-6 flex gap-4 items-start">
+            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
+            <div>
+              <h3 className="text-sm font-bold text-amber-200">Dimensões do rolo não disponíveis</h3>
+              <p className="text-xs text-amber-200/70 mt-1">
+                Este material não possui largura e comprimento do rolo cadastrados. Reimporte a planilha
+                &quot;Materiais e aplicações.xlsx&quot; com as colunas &quot;Larguras Disponíveis (m)&quot; e
+                &quot;Comprimento do Rolo (m)&quot; para visualizar o encaixe das peças.
+              </p>
+            </div>
+          </section>
+        )
+      )}
     </div>
   );
 }

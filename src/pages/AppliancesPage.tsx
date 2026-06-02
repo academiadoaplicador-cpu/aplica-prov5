@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { Appliance } from '../types';
@@ -7,9 +7,12 @@ import PageHeader from '../components/settings/PageHeader';
 import PageButton from '../components/settings/PageButton';
 import PagePanel from '../components/settings/PagePanel';
 import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlock';
+import ImportProgressBar from '../components/settings/ImportProgressBar';
 import ApplianceCatalogTable from '../components/settings/ApplianceCatalogTable';
-import { mergeAppliances, parseAppliancesFromExcel } from '../utils/applianceImport';
+import ApplianceImportPreviewModal from '../components/settings/ApplianceImportPreviewModal';
+import { mergeAppliances, parseAppliancesFromExcel, type ApplianceImportResult } from '../utils/applianceImport';
 import { downloadAppliancesTemplate } from '../utils/spreadsheetTemplates';
+import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
 export default function AppliancesPage() {
   const [appliances, setAppliances] = useState<Appliance[]>([]);
@@ -17,8 +20,27 @@ export default function AppliancesPage() {
   const [editingApplianceId, setEditingApplianceId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importPreview, setImportPreview] = useState<ApplianceImportResult | null>(null);
+
+  const {
+    fileInputRef,
+    isParsingFile,
+    parseProgress,
+    isPreviewOpen,
+    importFileName,
+    isConfirmingImport,
+    importProgress,
+    importProgressLabel,
+    importModalError,
+    closePreview,
+    handleFileSelect,
+    handleConfirmImport,
+  } = useImportPreviewFlow();
+
+  const mergePreview = useMemo(() => {
+    if (!importPreview) return { added: 0, updated: 0 };
+    return mergeAppliances(appliances, importPreview.appliances);
+  }, [appliances, importPreview]);
 
   useEffect(() => {
     databaseService.getAppliances().then(setAppliances);
@@ -53,37 +75,6 @@ export default function AppliancesPage() {
     if (editingApplianceId === id) setEditingApplianceId(null);
   };
 
-  const handleImport = async (file: File) => {
-    setImportStatus(null);
-    setImportErrors([]);
-    setIsImporting(true);
-    try {
-      const buffer = await file.arrayBuffer();
-      const { appliances: parsed, skipped, errors } = parseAppliancesFromExcel(buffer);
-      if (parsed.length === 0) {
-        setImportStatus('Nenhum eletro válido encontrado na planilha.');
-        setImportErrors(errors);
-        return;
-      }
-      const { added, updated } = mergeAppliances(appliances, parsed);
-      const saved = await databaseService.importAppliances(parsed);
-      setAppliances(saved);
-      const parts = [
-        `${parsed.length} linha(s) lida(s)`,
-        `${added} novo(s)`,
-        updated > 0 ? `${updated} atualizado(s)` : null,
-        skipped > 0 ? `${skipped} linha(s) ignorada(s)` : null,
-      ].filter(Boolean);
-      setImportStatus(`Importação concluída: ${parts.join(' • ')}.`);
-      setImportErrors(errors.slice(0, 5));
-    } catch (e) {
-      setImportStatus(e instanceof Error ? e.message : 'Erro ao importar eletros.');
-    } finally {
-      setIsImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   return (
     <div className="space-y-6 w-full pb-20">
       <input
@@ -93,7 +84,51 @@ export default function AppliancesPage() {
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) void handleImport(file);
+          if (file) {
+            void handleFileSelect(
+              file,
+              parseAppliancesFromExcel,
+              (result) => setImportPreview(result),
+              (message) => setImportStatus(message),
+            );
+          }
+        }}
+      />
+
+      <ApplianceImportPreviewModal
+        open={isPreviewOpen}
+        fileName={importFileName}
+        preview={importPreview}
+        existingAppliances={appliances}
+        added={mergePreview.added}
+        updated={mergePreview.updated}
+        loading={isConfirmingImport}
+        progress={importProgress}
+        progressLabel={importProgressLabel}
+        error={importModalError}
+        onConfirm={() => {
+          if (!importPreview || importPreview.appliances.length === 0) return;
+          void handleConfirmImport(
+            async () => {
+              const { appliances: parsed, skipped, errors } = importPreview;
+              const { merged, added, updated } = mergeAppliances(appliances, parsed);
+              await databaseService.setAppliances(merged);
+              setAppliances(merged);
+              const parts = [
+                `${parsed.length} eletro(s) importado(s)`,
+                `${added} novo(s)`,
+                updated > 0 ? `${updated} atualizado(s)` : null,
+                skipped > 0 ? `${skipped} linha(s) ignorada(s)` : null,
+              ].filter(Boolean);
+              setImportStatus(`Importação concluída: ${parts.join(' • ')}.`);
+              setImportErrors(errors.slice(0, 5));
+            },
+            { errorFallback: 'Erro ao importar eletros.' },
+          );
+        }}
+        onClose={() => {
+          closePreview();
+          setImportPreview(null);
         }}
       />
 
@@ -112,7 +147,7 @@ export default function AppliancesPage() {
             <PageButton
               variant="secondary"
               icon={<FileSpreadsheet size={16} />}
-              loading={isImporting}
+              loading={isParsingFile}
               onClick={() => fileInputRef.current?.click()}
             >
               Importar planilha
@@ -130,8 +165,13 @@ export default function AppliancesPage() {
           </>
         }
         footer={
-          importStatus ? (
-            <ImportFeedback status={importStatus} errors={importErrors} />
+          importStatus || (isParsingFile && parseProgress > 0) ? (
+            <div className="space-y-2">
+              {isParsingFile && parseProgress > 0 && (
+                <ImportProgressBar progress={parseProgress} label="Lendo planilha…" size="sm" />
+              )}
+              {importStatus ? <ImportFeedback status={importStatus} errors={importErrors} /> : null}
+            </div>
           ) : undefined
         }
       />

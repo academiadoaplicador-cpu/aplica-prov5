@@ -108,7 +108,38 @@ function mapFinancial(row: Record<string, unknown>) {
   };
 }
 
+function parseWidthsFromDetails(details?: string): number[] {
+  if (!details) return [];
+  const match = details.match(/Larguras dispon[ií]veis:\s*([^•]+)/i);
+  if (!match?.[1]) return [];
+  return match[1]
+    .split(';')
+    .map((part) => parseFloat(part.replace(/[^\d.,]/g, '').replace(',', '.')))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function parseRollLengthFromDetails(details?: string): number | undefined {
+  if (!details) return undefined;
+  const match = details.match(/Comprimento do rolo:\s*([\d.,]+)\s*m/i);
+  if (!match?.[1]) return undefined;
+  const n = parseFloat(match[1].replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function mapMaterial(row: Record<string, unknown>) {
+  const details = (row.details as string) || undefined;
+  const rollWidthM =
+    row.roll_width_m != null
+      ? num(row.roll_width_m)
+      : (() => {
+          const widths = parseWidthsFromDetails(details);
+          return widths.length > 0 ? Math.max(...widths) : undefined;
+        })();
+  const rollLengthM =
+    row.roll_length_m != null
+      ? num(row.roll_length_m)
+      : parseRollLengthFromDetails(details);
+
   return {
     id: row.id as string,
     name: row.name as string,
@@ -119,7 +150,9 @@ function mapMaterial(row: Record<string, unknown>) {
     colorTexture: row.color_texture as string,
     durability: row.durability as string,
     recommendedFor: (row.recommended_for as string[]) || [],
-    details: (row.details as string) || undefined,
+    details,
+    rollWidthM,
+    rollLengthM,
   };
 }
 
@@ -130,8 +163,25 @@ function mapVehicle(row: Record<string, unknown>) {
     model: row.model as string,
     year: row.year as string,
     size: row.size as string,
-    partMeasurements: row.part_measurements as Record<string, { width: number; length: number }>,
+    partMeasurements: filterStandardPartMeasurements(
+      row.part_measurements as Record<string, { width: number; length: number }>,
+    ),
   };
+}
+
+const STANDARD_VEHICLE_PART_IDS = new Set([
+  'CAP', 'TET', 'MAL', 'PCD', 'PCE', 'PTD', 'PTE', 'PDD', 'PDE',
+  'PTD_DOOR', 'PTE_DOOR', 'PCD_BUMP', 'PCT_BUMP', 'SAI_D', 'SAI_E',
+  'RET_D', 'RET_E', 'MAC_D', 'AER', 'COL', 'GRA',
+]);
+
+function filterStandardPartMeasurements(
+  measurements: Record<string, { width: number; length: number }> | null | undefined,
+) {
+  if (!measurements || typeof measurements !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(measurements).filter(([id]) => STANDARD_VEHICLE_PART_IDS.has(id)),
+  );
 }
 
 function mapAppliance(row: Record<string, unknown>) {
@@ -459,8 +509,8 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
       await client.query(
         `INSERT INTO materials (
           user_id, id, name, brand, price_per_m2, type, line, color_texture,
-          durability, recommended_for, details
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          durability, recommended_for, details, roll_width_m, roll_length_m
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           req.userId,
           m.id,
@@ -473,6 +523,8 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
           m.durability,
           m.recommendedFor || [],
           m.details ?? null,
+          m.rollWidthM ?? null,
+          m.rollLengthM ?? null,
         ],
       );
     }
@@ -515,8 +567,8 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
           `UPDATE materials
            SET price_per_m2 = $1, type = $2, line = $3, color_texture = $4,
                durability = $5, recommended_for = $6, details = $7,
-               brand = $8, name = $9
-           WHERE user_id = $10 AND id = $11`,
+               brand = $8, name = $9, roll_width_m = $10, roll_length_m = $11
+           WHERE user_id = $12 AND id = $13`,
           [
             m.pricePerM2,
             m.type,
@@ -527,6 +579,8 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             m.details ?? null,
             brand,
             name,
+            m.rollWidthM ?? null,
+            m.rollLengthM ?? null,
             req.userId,
             existing.rows[0].id,
           ],
@@ -536,8 +590,8 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
         await client.query(
           `INSERT INTO materials (
             user_id, id, name, brand, price_per_m2, type, line, color_texture,
-            durability, recommended_for, details
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            durability, recommended_for, details, roll_width_m, roll_length_m
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [
             req.userId,
             id,
@@ -550,6 +604,8 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             m.durability,
             m.recommendedFor || [],
             m.details ?? null,
+            m.rollWidthM ?? null,
+            m.rollLengthM ?? null,
           ],
         );
       }
@@ -594,6 +650,81 @@ app.put('/api/vehicles', requireUser, requireAdmin, async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: 'Erro ao salvar veículos' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => {
+  const incoming = (req.body.vehicles || []) as Record<string, unknown>[];
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    res.status(400).json({ error: 'Nenhum veículo para importar' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const v of incoming) {
+      const make = String(v.make ?? '').trim();
+      const model = String(v.model ?? '').trim();
+      const year = String(v.year ?? '').trim();
+      if (!make || !model || !year) continue;
+
+      const existing = await client.query(
+        `SELECT id, part_measurements FROM vehicles
+         WHERE user_id = $1
+           AND LOWER(TRIM(make)) = LOWER(TRIM($2))
+           AND LOWER(TRIM(model)) = LOWER(TRIM($3))
+           AND LOWER(TRIM(year)) = LOWER(TRIM($4))`,
+        [req.userId, make, model, year],
+      );
+
+      const partMeasurements = filterStandardPartMeasurements({
+        ...(typeof existing.rows[0]?.part_measurements === 'object' && existing.rows[0]?.part_measurements !== null
+          ? (existing.rows[0].part_measurements as Record<string, { width: number; length: number }>)
+          : {}),
+        ...filterStandardPartMeasurements(
+          (v.partMeasurements as Record<string, { width: number; length: number }>) || {},
+        ),
+      });
+
+      if (existing.rows.length > 0) {
+        await client.query(
+          `UPDATE vehicles
+           SET make = $1, model = $2, year = $3, size = $4, part_measurements = $5
+           WHERE user_id = $6 AND id = $7`,
+          [make, model, year, v.size, JSON.stringify(partMeasurements), req.userId, existing.rows[0].id],
+        );
+      } else {
+        const id = String(v.id ?? crypto.randomUUID());
+        await client.query(
+          `INSERT INTO vehicles (user_id, id, make, model, year, size, part_measurements)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            req.userId,
+            id,
+            make,
+            model,
+            year,
+            v.size,
+            JSON.stringify(filterStandardPartMeasurements(
+              (v.partMeasurements as Record<string, { width: number; length: number }>) || {},
+            )),
+          ],
+        );
+      }
+    }
+    await client.query('COMMIT');
+
+    const result = await pool.query('SELECT * FROM vehicles WHERE user_id = $1 ORDER BY make, model', [
+      req.userId,
+    ]);
+    res.json(result.rows.map(mapVehicle));
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Erro ao importar veículos' });
   } finally {
     client.release();
   }

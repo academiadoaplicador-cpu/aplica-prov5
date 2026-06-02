@@ -18,10 +18,11 @@ export function downloadMaterialsTemplate() {
     'Categoria',
     'Marca',
     'Linha / Produto',
+    'Preço Sugerido',
+    'Larguras Disponíveis (m)',
+    'Comprimento do Rolo (m)',
     'Cores',
-    'Preço sugerido',
-    'Larguras',
-    'Recomendado',
+    'Recomendado Para',
     'Dificuldade',
   ];
   const examples = [
@@ -29,9 +30,10 @@ export function downloadMaterialsTemplate() {
       'PPF',
       '3M',
       'Scotchgard Pro',
-      'Branco; Preto',
       120.5,
       '1,37; 1,52',
+      25,
+      'Branco; Preto',
       'Veículo; Geladeira',
       2,
     ],
@@ -39,9 +41,10 @@ export function downloadMaterialsTemplate() {
       'Cast',
       'Avery',
       'MPI 1105',
-      'Fosco',
       85,
       '1,22',
+      50,
+      'Fosco',
       'Veículo',
       1.5,
     ],
@@ -50,7 +53,7 @@ export function downloadMaterialsTemplate() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     workbook,
-    sheetWithRows([headers, ...examples], [14, 14, 22, 18, 14, 14, 22, 12]),
+    sheetWithRows([headers, ...examples], [14, 14, 22, 14, 22, 20, 18, 22, 12]),
     'Materiais',
   );
 
@@ -59,10 +62,11 @@ export function downloadMaterialsTemplate() {
     ['Categoria', 'Sim', 'PPF, Cast, Calandrado ou Poliéster'],
     ['Marca', 'Sim', 'Fabricante do material'],
     ['Linha / Produto', 'Sim', 'Nome comercial do produto'],
+    ['Preço Sugerido', 'Sim', 'Valor por m² (use ponto ou vírgula)'],
+    ['Larguras Disponíveis (m)', 'Não', 'Larguras em metros separadas por ; (usa a maior para encaixe)'],
+    ['Comprimento do Rolo (m)', 'Não', 'Comprimento total do rolo em metros (ex: 25)'],
     ['Cores', 'Não', 'Separe variantes com ; ou ,'],
-    ['Preço sugerido', 'Sim', 'Valor por m² (use ponto ou vírgula)'],
-    ['Larguras', 'Não', 'Larguras em metros separadas por ;'],
-    ['Recomendado', 'Não', 'Veículo; Geladeira; Parede; Móveis'],
+    ['Recomendado Para', 'Não', 'Veículo; Geladeira; Parede; Móveis'],
     ['Dificuldade', 'Não', 'Grau de 1 a 3 (opcional)'],
   ];
   XLSX.utils.book_append_sheet(
@@ -105,4 +109,41 @@ export function downloadAppliancesTemplate() {
   );
 
   downloadWorkbook(workbook, 'modelo-eletros-aplica-pro.xlsx');
+}
+
+/** Planilha modelo — base de veículos (importação em /base-veiculos) */
+export function downloadVehiclesTemplate() {
+  const headers = ['Marca', 'Modelo', 'Ano', 'Peça', 'Largura (m)', 'Altura (m)'];
+  const examples = [
+    ['BYD', 'TAN', 2025, 'Capô', 1.78, 1.15],
+    ['BYD', 'TAN', 2025, 'Teto', 1.52, 2.1],
+    ['BYD', 'TAN', 2025, 'Porta malas', 1.52, 1.4],
+    ['BYD', 'TAN', 2025, 'Paralama dianteiro direito', 1.52, 1.1],
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    sheetWithRows([headers, ...examples], [14, 18, 8, 32, 12, 12]),
+    'Base_de_Dados',
+  );
+
+  const instructions = [
+    ['Coluna', 'Obrigatório', 'Exemplo / observação'],
+    ['Marca', 'Sim', 'Fabricante do veículo (ex: BYD, Volkswagen)'],
+    ['Modelo', 'Sim', 'Nome do modelo (ex: Dolphin, T-Cross)'],
+    ['Ano', 'Sim', 'Ano do veículo (ex: 2025)'],
+    ['Peça', 'Sim', 'Capô, Teto, Porta malas, Paralama, Porta, Parachoque, etc.'],
+    ['Largura (m)', 'Sim', 'Largura em metros (use ponto ou vírgula)'],
+    ['Altura (m)', 'Sim', 'Altura/comprimento em metros'],
+    ['', '', 'Somente peças do catálogo automotivo são importadas'],
+    ['', '', 'Peças internas (Multimídia, Volante, Soleiras…) são ignoradas'],
+  ];
+  XLSX.utils.book_append_sheet(
+    workbook,
+    sheetWithRows(instructions, [18, 12, 48]),
+    'Instruções',
+  );
+
+  downloadWorkbook(workbook, 'modelo-veiculos-aplica-pro.xlsx');
 }

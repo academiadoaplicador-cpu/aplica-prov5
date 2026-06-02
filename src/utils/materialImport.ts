@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Material, MaterialType } from '../types';
 import { generateId } from '../lib/utils';
+import { pickRollWidth, parseWidthValues } from './materialRoll';
 
 export interface MaterialImportResult {
   materials: Material[];
@@ -140,7 +141,9 @@ function parseRow(
   const productRaw = String(
     getCell(row, 'linha / produto', 'linha', 'produto', 'line', 'linha produto') ?? '',
   ).trim();
-  const colorsRaw = sanitizeCellText(getCell(row, 'cores', 'cor', 'cores disponiveis'));
+  const colorsRaw = sanitizeCellText(
+    getCell(row, 'cores disponiveis', 'cores disponíveis', 'cores', 'cor'),
+  );
   const product = resolveProductName(category, brand, productRaw, colorsRaw);
   const warnings: string[] = [];
 
@@ -151,12 +154,47 @@ function parseRow(
   }
 
   const price = parseNumber(
-    getCell(row, 'preco sugerido', 'preço sugerido', 'preco', 'preço', 'price'),
+    getCell(
+      row,
+      'preco sugerido (r$/m)',
+      'preço sugerido (r$/m)',
+      'preco sugerido',
+      'preço sugerido',
+      'preco',
+      'preço',
+      'price',
+    ),
   );
-  const widths = splitSemicolonValues(getCell(row, 'larguras', 'largura'));
-  const recommendedParts = splitSemicolonValues(getCell(row, 'recomendado', 'recomendado para'));
+  const widths = parseWidthValues(
+    getCell(
+      row,
+      'larguras disponiveis (m)',
+      'larguras disponíveis (m)',
+      'larguras',
+      'largura',
+    ),
+  );
+  const rollLengthM = parseNumber(
+    getCell(
+      row,
+      'comprimento do rolo (m)',
+      'comprimento do rolo',
+      'comprimento rolo',
+    ),
+  );
+  const rollWidthM = pickRollWidth(widths);
+  const recommendedParts = splitSemicolonValues(
+    getCell(row, 'recomendado para', 'recomendado', 'recomendado para'),
+  );
   const difficulty = parseNumber(
-    getCell(row, 'dificuldade', 'grau de dificuldade', 'grau'),
+    getCell(
+      row,
+      'grau de dificuldade de aplicacao',
+      'grau de dificuldade de aplicação',
+      'dificuldade',
+      'grau de dificuldade',
+      'grau',
+    ),
   );
 
   if (!brand || !product) return { materials: [], warnings };
@@ -174,6 +212,9 @@ function parseRow(
   const detailParts: string[] = [];
   if (widths.length > 0) {
     detailParts.push(`Larguras disponíveis: ${widths.map((w) => `${w} m`).join('; ')}`);
+  }
+  if (rollLengthM !== null) {
+    detailParts.push(`Comprimento do rolo: ${rollLengthM} m`);
   }
   if (difficulty !== null) {
     detailParts.push(`Grau de dificuldade de aplicação: ${String(difficulty).replace('.', ',')}`);
@@ -193,11 +234,13 @@ function parseRow(
       brand,
       pricePerM2: price,
       type,
-      line: category || product,
+      line: product,
       colorTexture: color || colorsRaw || '—',
       durability: difficulty !== null ? `Dificuldade ${difficulty}` : 'Consultar fabricante',
       recommendedFor: recommendedFor.length > 0 ? recommendedFor : ['Automotivo'],
       details: details || undefined,
+      rollWidthM,
+      rollLengthM: rollLengthM ?? undefined,
     };
   });
 
@@ -264,6 +307,8 @@ export function mergeMaterials(existing: Material[], imported: Material[]): {
         durability: material.durability,
         recommendedFor: material.recommendedFor,
         details: material.details,
+        rollWidthM: material.rollWidthM,
+        rollLengthM: material.rollLengthM,
       });
       updated += 1;
     } else {

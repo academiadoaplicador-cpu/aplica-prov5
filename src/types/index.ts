@@ -39,6 +39,10 @@ export interface Material {
   durability: string;
   recommendedFor: string[]; // ['Automotivo', 'Móveis', 'Eletrodomésticos', ...]
   details?: string;
+  /** Largura útil do rolo em metros */
+  rollWidthM?: number;
+  /** Comprimento total do rolo em metros */
+  rollLengthM?: number;
 }
 
 export interface FinancialSettings {
@@ -51,6 +55,10 @@ export interface FinancialSettings {
 export interface BudgetPiece {
   partId: string;
   quantity: number;
+  /** Peças decorativas / eletros */
+  name?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface Budget {

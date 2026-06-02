@@ -1,6 +1,6 @@
 import { Trash2, Pencil, CheckCircle2, AlertCircle, Ruler } from 'lucide-react';
 import { Vehicle, VehicleSize } from '../../types';
-import { VEHICLE_PARTS_DATA, VEHICLE_PRESETS } from '../../types/vehicleParts';
+import { getVehiclePartList } from '../../utils/vehiclePartsUtils';
 import { cn } from '../../lib/utils';
 import DataTable, { type DataTableColumn } from './DataTable';
 
@@ -143,12 +143,11 @@ export default function VehicleCatalogTable({
                 <Ruler size={12} /> Medidas por peça (m)
               </h5>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(VEHICLE_PRESETS[vehicle.size] || []).map((partId) => {
-                  const part = VEHICLE_PARTS_DATA.find((p) => p.id === partId);
-                  const m = vehicle.partMeasurements[partId] || { width: 1.52, length: 0 };
+                {getVehiclePartList(vehicle).map((part) => {
+                  const m = vehicle.partMeasurements[part.id] || { width: 1.52, length: 0 };
                   return (
-                    <div key={partId} className="p-3 rounded-lg border border-slate-800 bg-slate-900/50 space-y-2">
-                      <span className="text-[9px] font-bold text-slate-500 uppercase block">{part?.name || partId}</span>
+                    <div key={part.id} className="p-3 rounded-lg border border-slate-800 bg-slate-900/50 space-y-2">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase block">{part.name}</span>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[8px] text-slate-600">Larg.</label>
@@ -161,7 +160,7 @@ export default function VehicleCatalogTable({
                               onUpdate(vehicle.id, {
                                 partMeasurements: {
                                   ...vehicle.partMeasurements,
-                                  [partId]: { ...m, width: val },
+                                  [part.id]: { ...m, width: val },
                                 },
                               });
                             }}
@@ -179,7 +178,7 @@ export default function VehicleCatalogTable({
                               onUpdate(vehicle.id, {
                                 partMeasurements: {
                                   ...vehicle.partMeasurements,
-                                  [partId]: { ...m, length: val },
+                                  [part.id]: { ...m, length: val },
                                 },
                               });
                             }}

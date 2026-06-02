@@ -22,15 +22,21 @@ export default function GeneratePdfButton({
 }: GeneratePdfButtonProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleClick = async () => {
     if (disabled || isGenerating) return;
     setIsGenerating(true);
     setJustGenerated(false);
+    setError(null);
     try {
       await onGenerate();
       setJustGenerated(true);
       setTimeout(() => setJustGenerated(false), 2200);
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : 'Não foi possível gerar o PDF. Tente novamente.';
+      setError(message);
     } finally {
       setIsGenerating(false);
     }
@@ -39,6 +45,7 @@ export default function GeneratePdfButton({
   const isSm = size === 'sm';
 
   return (
+    <div className={cn('space-y-2', className)}>
     <motion.button
       type="button"
       disabled={disabled || isGenerating}
@@ -60,7 +67,6 @@ export default function GeneratePdfButton({
         justGenerated
           ? 'bg-emerald-500 text-white'
           : 'bg-white text-slate-950 hover:bg-slate-100',
-        className,
       )}
     >
       {isGenerating && (
@@ -85,5 +91,11 @@ export default function GeneratePdfButton({
         {isGenerating ? 'Gerando PDF...' : justGenerated ? successLabel : label}
       </span>
     </motion.button>
+    {error && (
+      <p className="text-[10px] text-red-400 text-center leading-snug px-1" role="alert">
+        {error}
+      </p>
+    )}
+    </div>
   );
 }

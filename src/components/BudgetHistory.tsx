@@ -99,8 +99,11 @@ export default function BudgetHistory() {
   };
 
   const handleGeneratePDF = async () => {
-    if (!selectedBudget) return;
-    await pdfService.generateBudgetPDF(selectedBudget);
+    if (!selectedBudget) {
+      throw new Error('Nenhum orçamento selecionado.');
+    }
+    const material = materials.find((m) => m.id === selectedBudget.materialId);
+    await pdfService.generateBudgetPDF(selectedBudget, { material });
   };
 
   return (

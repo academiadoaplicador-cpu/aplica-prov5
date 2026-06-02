@@ -13,6 +13,7 @@ import {
   Zap,
   Refrigerator,
   Layout,
+  AlertTriangle,
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { FinancialSettings, Material, DecorativeItem, Appliance } from '../types';
@@ -20,6 +21,12 @@ import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { pdfService } from '../services/pdfService';
 import GeneratePdfButton from './GeneratePdfButton';
+import MaterialCascadeSelect from './MaterialCascadeSelect';
+import RollNestingPreview from './RollNestingPreview';
+import { filterMaterialsByContext } from '../utils/materialSelection';
+import { getMaterialRollDimensions } from '../utils/materialRoll';
+import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNesting';
+import type { NestingPartInput } from '../utils/rollNesting';
 type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
 
 export default function DecorativeCalculator() {
@@ -55,6 +62,15 @@ export default function DecorativeCalculator() {
       setSettings(s);
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedMaterialId) return;
+    const allowed = filterMaterialsByContext(materials, { mode: 'decorative', subType });
+    if (!allowed.some((m) => m.id === selectedMaterialId)) {
+      setSelectedMaterialId('');
+      setCustomPricePerM2(null);
+    }
+  }, [subType, materials, selectedMaterialId]);
 
   // Filter options for 3-level select
   const applianceMakes = useMemo(() => Array.from(new Set(appliances.map(a => a.make))), [appliances]);
@@ -95,11 +111,28 @@ export default function DecorativeCalculator() {
     setItems(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
   };
 
+  const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
+  const selectedAppliance = appliances.find((a) => a.id === selectedApplianceId);
+  const isRecommended = selectedMaterial?.recommendedFor.includes(subType);
+  const rollDimensions = useMemo(
+    () => getMaterialRollDimensions(selectedMaterial),
+    [selectedMaterial],
+  );
+
+  const nestingParts = useMemo((): NestingPartInput[] => {
+    return items
+      .filter((item) => item.width > 0 && item.height > 0)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        width: item.width,
+        length: item.height,
+      }));
+  }, [items]);
+
   const totals = useMemo(() => {
     const totalM2 = items.reduce((acc, item) => acc + (item.width * item.height), 0);
-    const wasteFactor = 1.15; 
-    const finalM2 = totalM2 * wasteFactor;
-    
+
     const totalHours = items.reduce((acc, item) => {
       const baseTime = item.width * item.height;
       const multiplier = item.complexity === 1 ? 1.5 : item.complexity === 2 ? 2.5 : 4;
@@ -108,27 +141,51 @@ export default function DecorativeCalculator() {
 
     const material = materials.find(m => m.id === selectedMaterialId);
     const pricePerM2 = customPricePerM2 ?? (material?.pricePerM2 || 0);
-    
+
+    let usedLength = 0;
+    let rollAreaM2 = 0;
+    let finalM2 = 0;
+    let hasRollPricing = false;
+
+    if (rollDimensions && nestingParts.length > 0) {
+      const usage = computeRollMaterialUsage(
+        nestingParts,
+        rollDimensions.width,
+        rollDimensions.length,
+      );
+      usedLength = usage.usedLength;
+      rollAreaM2 = usage.rollAreaM2;
+      finalM2 = usage.materialM2;
+      hasRollPricing = true;
+    }
+
     const materialCost = finalM2 * pricePerM2;
     const laborCost = totalHours * settings.hourlyRate;
-    
+
     const baseCost = materialCost + laborCost;
     const totalPrice = baseCost * (1 + (settings.profitMarginPercentage / 100)) * (1 + (settings.taxPercentage / 100));
     const profit = totalPrice - baseCost - (totalPrice * (settings.taxPercentage / 100));
 
     return {
       m2: totalM2,
+      usedLength,
+      rollAreaM2,
       finalM2,
+      hasRollPricing,
       hours: totalHours,
       cost: baseCost,
       price: totalPrice,
-      profit
+      profit,
     };
-  }, [items, selectedMaterialId, customPricePerM2, materials, settings]);
-
-  const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
-  const selectedAppliance = appliances.find((a) => a.id === selectedApplianceId);
-  const isRecommended = selectedMaterial?.recommendedFor.includes(subType);
+  }, [
+    items,
+    nestingParts,
+    rollDimensions,
+    selectedMaterialId,
+    customPricePerM2,
+    materials,
+    settings,
+  ]);
 
   const currentBudget = useMemo(() => ({
     id: generateId(),
@@ -136,18 +193,24 @@ export default function DecorativeCalculator() {
     vehicleModel: `${subType}${selectedApplianceId ? ': ' + appliances.find(a => a.id === selectedApplianceId)?.model : ''}`,
     status: 'Pendente' as const,
     date: new Date().toISOString(),
-    items: [], 
+    items: items.map((item) => ({
+      partId: item.id,
+      quantity: 1,
+      name: item.name,
+      width: item.width,
+      height: item.height,
+    })),
     materialId: selectedMaterialId,
     customPricePerM2: customPricePerM2 || undefined,
     totalHours: totals.hours,
-    totalMaterialMeters: totals.finalM2,
+    totalMaterialMeters: totals.usedLength,
     totalMaterialM2: totals.finalM2,
     totalCost: totals.cost,
     totalPrice: totals.price,
     profit: totals.profit,
     type: 'Decorativo' as const,
     subType
-  }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances]);
+  }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances, items]);
 
   const handleSave = async () => {
     if (!customerName || !selectedMaterialId) return;
@@ -157,8 +220,10 @@ export default function DecorativeCalculator() {
   };
 
   const handleGeneratePDF = async () => {
-    if (!customerName || !selectedMaterialId) return;
-    await pdfService.generateBudgetPDF(currentBudget);
+    if (!customerName || !selectedMaterialId) {
+      throw new Error('Preencha cliente e material antes de gerar o PDF.');
+    }
+    await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
   };
 
   return (
@@ -392,7 +457,9 @@ export default function DecorativeCalculator() {
                       {isRecommended ? 'Uso Recomendado' : 'Consulte Fabricante'}
                     </span>
                  </div>
-                 <p className="text-xs text-slate-400 mb-2">{selectedMaterial?.brand} • {selectedMaterial?.type} • Durabilidade: {selectedMaterial?.durability}</p>
+                 <p className="text-xs text-slate-400 mb-2">
+                   {selectedMaterial?.brand} • {selectedMaterial?.line} • {selectedMaterial?.colorTexture} • {selectedMaterial?.type}
+                 </p>
                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800/30">
                     <Info size={14} className="text-indigo-400" />
                     <p className="text-[10px] italic text-slate-500">{selectedMaterial?.details}</p>
@@ -412,22 +479,14 @@ export default function DecorativeCalculator() {
 
             <div className="space-y-6">
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Vinil (Catálogo)</label>
-                  <select 
-                    value={selectedMaterialId}
-                    onChange={(e) => {
-                      setSelectedMaterialId(e.target.value);
-                      setCustomPricePerM2(null);
-                    }}
-                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-white focus:ring-1 focus:ring-emerald-500 appearance-none"
-                  >
-                    <option value="">Escolher Material...</option>
-                    {materials.map(m => (
-                      <option key={m.id} value={m.id}>{m.name} ({m.brand})</option>
-                    ))}
-                  </select>
-                </div>
+                <MaterialCascadeSelect
+                  materials={materials}
+                  context={{ mode: 'decorative', subType }}
+                  selectedMaterialId={selectedMaterialId}
+                  onSelectMaterialId={setSelectedMaterialId}
+                  onSelectionChange={() => setCustomPricePerM2(null)}
+                  accent="emerald"
+                />
 
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Valor por m² (Personalizar)</label>
@@ -451,14 +510,28 @@ export default function DecorativeCalculator() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-800 space-y-4">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 italic">Área Útil</span>
-                    <span className="font-mono text-white">{totals.m2.toFixed(2)} m²</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 italic">Consumo c/ Perda</span>
-                    <span className="font-mono text-white">{totals.finalM2.toFixed(2)} m²</span>
-                  </div>
+                  {totals.hasRollPricing ? (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 italic">Comprimento usado no rolo</span>
+                        <span className="font-mono text-white">{totals.usedLength.toFixed(2)} m</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 italic">Área usada no rolo</span>
+                        <span className="font-mono text-white">{totals.rollAreaM2.toFixed(2)} m²</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 italic">
+                          Material faturado (usado + {Math.round((ROLL_WASTE_FACTOR - 1) * 100)}%)
+                        </span>
+                        <span className="font-mono text-emerald-300 font-bold">{totals.finalM2.toFixed(2)} m²</span>
+                      </div>
+                    </>
+                  ) : selectedMaterialId && nestingParts.length > 0 ? (
+                    <p className="text-[10px] text-amber-400/90 italic leading-snug">
+                      Cadastre largura e comprimento do rolo no material para calcular o consumo (usado + 15%).
+                    </p>
+                  ) : null}
                   <div className="flex justify-between items-center text-sm border-t border-slate-800/50 pt-2">
                     <span className="text-slate-400 font-bold">Mão de Obra</span>
                     <span className="font-mono text-emerald-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
@@ -483,6 +556,30 @@ export default function DecorativeCalculator() {
           </section>
         </div>
       </div>
+
+      {selectedMaterialId && nestingParts.length > 0 && (
+        rollDimensions ? (
+          <RollNestingPreview
+            accent="emerald"
+            rollWidth={rollDimensions.width}
+            rollLength={rollDimensions.length}
+            parts={nestingParts}
+            materialLabel={selectedMaterial?.name}
+          />
+        ) : (
+          <section className="bg-slate-900/50 border border-amber-500/20 rounded-2xl p-6 flex gap-4 items-start">
+            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
+            <div>
+              <h3 className="text-sm font-bold text-amber-200">Dimensões do rolo não disponíveis</h3>
+              <p className="text-xs text-amber-200/70 mt-1">
+                Este material não possui largura e comprimento do rolo cadastrados. Reimporte a planilha
+                &quot;Materiais e aplicações.xlsx&quot; com as colunas &quot;Larguras Disponíveis (m)&quot; e
+                &quot;Comprimento do Rolo (m)&quot; para visualizar o encaixe das peças.
+              </p>
+            </div>
+          </section>
+        )
+      )}
     </div>
   );
 }
