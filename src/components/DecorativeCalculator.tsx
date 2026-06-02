@@ -22,6 +22,7 @@ import { motion } from 'motion/react';
 import { pdfService } from '../services/pdfService';
 import GeneratePdfButton from './GeneratePdfButton';
 import MaterialCascadeSelect from './MaterialCascadeSelect';
+import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
 import { filterMaterialsByContext } from '../utils/materialSelection';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
@@ -41,6 +42,8 @@ export default function DecorativeCalculator() {
   ]);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(null);
+  const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(null);
+  const [selectedRollLength, setSelectedRollLength] = useState<number | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [appliances, setAppliances] = useState<Appliance[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -114,9 +117,19 @@ export default function DecorativeCalculator() {
   const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
   const selectedAppliance = appliances.find((a) => a.id === selectedApplianceId);
   const isRecommended = selectedMaterial?.recommendedFor.includes(subType);
+
+  useEffect(() => {
+    setSelectedRollWidth(null);
+    setSelectedRollLength(null);
+  }, [selectedMaterialId]);
+
   const rollDimensions = useMemo(
-    () => getMaterialRollDimensions(selectedMaterial),
-    [selectedMaterial],
+    () =>
+      getMaterialRollDimensions(selectedMaterial, {
+        width: selectedRollWidth ?? undefined,
+        length: selectedRollLength ?? undefined,
+      }),
+    [selectedMaterial, selectedRollWidth, selectedRollLength],
   );
 
   const nestingParts = useMemo((): NestingPartInput[] => {
@@ -485,6 +498,15 @@ export default function DecorativeCalculator() {
                   selectedMaterialId={selectedMaterialId}
                   onSelectMaterialId={setSelectedMaterialId}
                   onSelectionChange={() => setCustomPricePerM2(null)}
+                  accent="emerald"
+                />
+
+                <MaterialRollDimensionSelect
+                  material={selectedMaterial}
+                  selectedWidth={selectedRollWidth}
+                  selectedLength={selectedRollLength}
+                  onSelectWidth={setSelectedRollWidth}
+                  onSelectLength={setSelectedRollLength}
                   accent="emerald"
                 />
 

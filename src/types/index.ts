@@ -39,10 +39,14 @@ export interface Material {
   durability: string;
   recommendedFor: string[]; // ['Automotivo', 'Móveis', 'Eletrodomésticos', ...]
   details?: string;
-  /** Largura útil do rolo em metros */
+  /** Largura padrão do rolo (m) — maior opção ou selecionada */
   rollWidthM?: number;
-  /** Comprimento total do rolo em metros */
+  /** Comprimento padrão do rolo (m) — maior opção ou selecionada */
   rollLengthM?: number;
+  /** Todas as larguras disponíveis (m), separadas por ; na planilha */
+  rollWidthsM?: number[];
+  /** Todos os comprimentos disponíveis (m), separados por ; na planilha */
+  rollLengthsM?: number[];
 }
 
 export interface FinancialSettings {

@@ -3,7 +3,7 @@ import { cn, formatCurrency } from '../../lib/utils';
 import { Material } from '../../types';
 import ImportPreviewModalLayout from './ImportPreviewModalLayout';
 import { materialKey, type MaterialImportResult } from '../../utils/materialImport';
-import { resolveMaterialRollDimensions } from '../../utils/materialRoll';
+import { formatRollOptionList, getMaterialRollOptions } from '../../utils/materialRoll';
 
 interface MaterialImportPreviewModalProps {
   open: boolean;
@@ -81,7 +81,7 @@ export default function MaterialImportPreviewModal({
             {preview.materials.map((item) => {
               const key = materialKey(item);
               const isUpdate = existingKeys.has(key);
-              const rollDims = resolveMaterialRollDimensions(item);
+              const rollOpts = getMaterialRollOptions(item);
               return (
                 <tr key={item.id} className="bg-slate-950/30">
                   <td className="px-3 py-2 text-slate-300">{item.brand}</td>
@@ -92,11 +92,11 @@ export default function MaterialImportPreviewModal({
                   <td className="px-3 py-2 text-slate-400 max-w-[100px] truncate" title={item.colorTexture}>
                     {item.colorTexture}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-400 tabular-nums">
-                    {rollDims ? `${rollDims.width.toFixed(2)} m` : '—'}
+                  <td className="px-3 py-2 text-right font-mono text-slate-400 tabular-nums text-[10px]">
+                    {formatRollOptionList(rollOpts.widths)}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-400 tabular-nums">
-                    {rollDims ? `${rollDims.length.toFixed(2)} m` : '—'}
+                  <td className="px-3 py-2 text-right font-mono text-slate-400 tabular-nums text-[10px]">
+                    {formatRollOptionList(rollOpts.lengths)}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-indigo-300 tabular-nums">
                     {formatCurrency(item.pricePerM2)}

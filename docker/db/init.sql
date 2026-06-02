@@ -31,6 +31,8 @@ CREATE TABLE materials (
   details TEXT,
   roll_width_m NUMERIC(10, 3),
   roll_length_m NUMERIC(10, 3),
+  roll_widths_m JSONB,
+  roll_lengths_m JSONB,
   PRIMARY KEY (user_id, id)
 );
 

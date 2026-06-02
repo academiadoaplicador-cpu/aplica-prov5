@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Material, MaterialType } from '../types';
 import { generateId } from '../lib/utils';
-import { pickRollWidth, parseWidthValues } from './materialRoll';
+import { pickRollWidth, pickRollLength, parseWidthValues, parseLengthValues } from './materialRoll';
 
 export interface MaterialImportResult {
   materials: Material[];
@@ -174,7 +174,7 @@ function parseRow(
       'largura',
     ),
   );
-  const rollLengthM = parseNumber(
+  const lengths = parseLengthValues(
     getCell(
       row,
       'comprimento do rolo (m)',
@@ -183,6 +183,7 @@ function parseRow(
     ),
   );
   const rollWidthM = pickRollWidth(widths);
+  const rollLengthM = pickRollLength(lengths);
   const recommendedParts = splitSemicolonValues(
     getCell(row, 'recomendado para', 'recomendado', 'recomendado para'),
   );
@@ -213,8 +214,8 @@ function parseRow(
   if (widths.length > 0) {
     detailParts.push(`Larguras disponíveis: ${widths.map((w) => `${w} m`).join('; ')}`);
   }
-  if (rollLengthM !== null) {
-    detailParts.push(`Comprimento do rolo: ${rollLengthM} m`);
+  if (lengths.length > 0) {
+    detailParts.push(`Comprimento do rolo: ${lengths.map((l) => `${l} m`).join('; ')}`);
   }
   if (difficulty !== null) {
     detailParts.push(`Grau de dificuldade de aplicação: ${String(difficulty).replace('.', ',')}`);
@@ -241,6 +242,8 @@ function parseRow(
       details: details || undefined,
       rollWidthM,
       rollLengthM: rollLengthM ?? undefined,
+      rollWidthsM: widths.length > 0 ? widths : undefined,
+      rollLengthsM: lengths.length > 0 ? lengths : undefined,
     };
   });
 
@@ -309,6 +312,8 @@ export function mergeMaterials(existing: Material[], imported: Material[]): {
         details: material.details,
         rollWidthM: material.rollWidthM,
         rollLengthM: material.rollLengthM,
+        rollWidthsM: material.rollWidthsM,
+        rollLengthsM: material.rollLengthsM,
       });
       updated += 1;
     } else {

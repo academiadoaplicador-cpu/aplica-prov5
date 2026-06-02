@@ -119,27 +119,66 @@ function parseWidthsFromDetails(details?: string): number[] {
     .filter((n) => Number.isFinite(n) && n > 0);
 }
 
-function parseRollLengthFromDetails(details?: string): number | undefined {
-  if (!details) return undefined;
-  const match = details.match(/Comprimento do rolo:\s*([\d.,]+)\s*m/i);
-  if (!match?.[1]) return undefined;
-  const n = parseFloat(match[1].replace(',', '.'));
-  return Number.isFinite(n) && n > 0 ? n : undefined;
+function parseRollLengthsFromDetails(details?: string): number[] {
+  if (!details) return [];
+  const match = details.match(/Comprimento do rolo:\s*([^•]+)/i);
+  if (!match?.[1]) return [];
+  return match[1]
+    .split(';')
+    .map((part) => parseFloat(part.replace(/[^\d.,]/g, '').replace(',', '.')))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function parseNumericJsonArray(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return value.map(num).filter((n) => Number.isFinite(n) && n > 0);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.map(num).filter((n) => Number.isFinite(n) && n > 0);
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function mapMaterial(row: Record<string, unknown>) {
   const details = (row.details as string) || undefined;
+  const widthsFromDetails = parseWidthsFromDetails(details);
+  const lengthsFromDetails = parseRollLengthsFromDetails(details);
+
+  const rollWidthsM = (() => {
+    const fromCol = parseNumericJsonArray(row.roll_widths_m);
+    if (fromCol.length > 0) return fromCol;
+    if (widthsFromDetails.length > 0) return widthsFromDetails;
+    if (row.roll_width_m != null) return [num(row.roll_width_m)];
+    return undefined;
+  })();
+
+  const rollLengthsM = (() => {
+    const fromCol = parseNumericJsonArray(row.roll_lengths_m);
+    if (fromCol.length > 0) return fromCol;
+    if (lengthsFromDetails.length > 0) return lengthsFromDetails;
+    if (row.roll_length_m != null) return [num(row.roll_length_m)];
+    return undefined;
+  })();
+
   const rollWidthM =
     row.roll_width_m != null
       ? num(row.roll_width_m)
-      : (() => {
-          const widths = parseWidthsFromDetails(details);
-          return widths.length > 0 ? Math.max(...widths) : undefined;
-        })();
+      : rollWidthsM && rollWidthsM.length > 0
+        ? Math.max(...rollWidthsM)
+        : undefined;
   const rollLengthM =
     row.roll_length_m != null
       ? num(row.roll_length_m)
-      : parseRollLengthFromDetails(details);
+      : rollLengthsM && rollLengthsM.length > 0
+        ? Math.max(...rollLengthsM)
+        : undefined;
 
   return {
     id: row.id as string,
@@ -154,6 +193,23 @@ function mapMaterial(row: Record<string, unknown>) {
     details,
     rollWidthM,
     rollLengthM,
+    rollWidthsM,
+    rollLengthsM,
+  };
+}
+
+function materialRollDbParams(m: Record<string, unknown>) {
+  const widths = Array.isArray(m.rollWidthsM)
+    ? (m.rollWidthsM as unknown[]).map(num).filter((n) => n > 0)
+    : [];
+  const lengths = Array.isArray(m.rollLengthsM)
+    ? (m.rollLengthsM as unknown[]).map(num).filter((n) => n > 0)
+    : [];
+  return {
+    rollWidthM: m.rollWidthM ?? null,
+    rollLengthM: m.rollLengthM ?? null,
+    rollWidthsM: widths.length > 0 ? JSON.stringify(widths) : null,
+    rollLengthsM: lengths.length > 0 ? JSON.stringify(lengths) : null,
   };
 }
 
@@ -514,11 +570,13 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
     await client.query('BEGIN');
     await client.query('DELETE FROM materials WHERE user_id = $1', [catalogUserId]);
     for (const m of materials) {
+      const roll = materialRollDbParams(m);
       await client.query(
         `INSERT INTO materials (
           user_id, id, name, brand, price_per_m2, type, line, color_texture,
-          durability, recommended_for, details, roll_width_m, roll_length_m
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          durability, recommended_for, details, roll_width_m, roll_length_m,
+          roll_widths_m, roll_lengths_m
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [
           catalogUserId,
           m.id,
@@ -531,8 +589,10 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
           m.durability,
           m.recommendedFor || [],
           m.details ?? null,
-          m.rollWidthM ?? null,
-          m.rollLengthM ?? null,
+          roll.rollWidthM,
+          roll.rollLengthM,
+          roll.rollWidthsM,
+          roll.rollLengthsM,
         ],
       );
     }
@@ -572,12 +632,14 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
       );
 
       if (existing.rows.length > 0) {
+        const roll = materialRollDbParams(m);
         await client.query(
           `UPDATE materials
            SET price_per_m2 = $1, type = $2, line = $3, color_texture = $4,
                durability = $5, recommended_for = $6, details = $7,
-               brand = $8, name = $9, roll_width_m = $10, roll_length_m = $11
-           WHERE user_id = $12 AND id = $13`,
+               brand = $8, name = $9, roll_width_m = $10, roll_length_m = $11,
+               roll_widths_m = $12, roll_lengths_m = $13
+           WHERE user_id = $14 AND id = $15`,
           [
             m.pricePerM2,
             m.type,
@@ -588,19 +650,23 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             m.details ?? null,
             brand,
             name,
-            m.rollWidthM ?? null,
-            m.rollLengthM ?? null,
+            roll.rollWidthM,
+            roll.rollLengthM,
+            roll.rollWidthsM,
+            roll.rollLengthsM,
             catalogUserId,
             existing.rows[0].id,
           ],
         );
       } else {
         const id = String(m.id ?? crypto.randomUUID());
+        const roll = materialRollDbParams(m);
         await client.query(
           `INSERT INTO materials (
             user_id, id, name, brand, price_per_m2, type, line, color_texture,
-            durability, recommended_for, details, roll_width_m, roll_length_m
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            durability, recommended_for, details, roll_width_m, roll_length_m,
+            roll_widths_m, roll_lengths_m
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [
             catalogUserId,
             id,
@@ -613,8 +679,10 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             m.durability,
             m.recommendedFor || [],
             m.details ?? null,
-            m.rollWidthM ?? null,
-            m.rollLengthM ?? null,
+            roll.rollWidthM,
+            roll.rollLengthM,
+            roll.rollWidthsM,
+            roll.rollLengthsM,
           ],
         );
       }
