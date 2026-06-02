@@ -30,7 +30,8 @@ import {
   registerFailedLogin,
   registerRateLimiter,
 } from './rateLimits.js';
-import { seedUserData } from './seed/seedUser.js';
+import { seedUserFinancialSettings, seedUserData } from './seed/seedUser.js';
+import { resolveCatalogUserId } from './catalog.js';
 import {
   buildAddressLine,
   buildPhoneStored,
@@ -353,7 +354,7 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
       [id, normalizedEmail, businessName.trim(), passwordHash],
     );
 
-    await seedUserData(client, id);
+    await seedUserFinancialSettings(client, id);
 
     const hasDocuments = ((profile.documentsUrls as string[])?.length ?? 0) > 0;
     const profileRow = {
@@ -492,19 +493,26 @@ app.put('/api/financial-settings', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/materials', requireUser, async (req, res) => {
-  const result = await pool.query('SELECT * FROM materials WHERE user_id = $1 ORDER BY name', [
-    req.userId,
-  ]);
-  res.json(result.rows.map(mapMaterial));
+app.get('/api/materials', requireUser, async (_req, res) => {
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    const result = await pool.query('SELECT * FROM materials WHERE user_id = $1 ORDER BY name', [
+      catalogUserId,
+    ]);
+    res.json(result.rows.map(mapMaterial));
+  } catch (e) {
+    console.error('[catalog/materials]', e);
+    res.status(503).json({ error: 'Catálogo de materiais indisponível.' });
+  }
 });
 
 app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
   const materials = (req.body.materials || []) as Record<string, unknown>[];
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
-    await client.query('DELETE FROM materials WHERE user_id = $1', [req.userId]);
+    await client.query('DELETE FROM materials WHERE user_id = $1', [catalogUserId]);
     for (const m of materials) {
       await client.query(
         `INSERT INTO materials (
@@ -512,7 +520,7 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
           durability, recommended_for, details, roll_width_m, roll_length_m
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
-          req.userId,
+          catalogUserId,
           m.id,
           m.name,
           m.brand,
@@ -548,6 +556,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
 
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
     for (const m of incoming) {
       const brand = String(m.brand ?? '').trim();
@@ -559,7 +568,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
          WHERE user_id = $1
            AND LOWER(TRIM(brand)) = LOWER(TRIM($2))
            AND LOWER(TRIM(name)) = LOWER(TRIM($3))`,
-        [req.userId, brand, name],
+        [catalogUserId, brand, name],
       );
 
       if (existing.rows.length > 0) {
@@ -581,7 +590,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             name,
             m.rollWidthM ?? null,
             m.rollLengthM ?? null,
-            req.userId,
+            catalogUserId,
             existing.rows[0].id,
           ],
         );
@@ -593,7 +602,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             durability, recommended_for, details, roll_width_m, roll_length_m
           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [
-            req.userId,
+            catalogUserId,
             id,
             name,
             brand,
@@ -613,7 +622,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
     await client.query('COMMIT');
 
     const result = await pool.query('SELECT * FROM materials WHERE user_id = $1 ORDER BY name', [
-      req.userId,
+      catalogUserId,
     ]);
     res.json(result.rows.map(mapMaterial));
   } catch (e) {
@@ -625,24 +634,31 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
   }
 });
 
-app.get('/api/vehicles', requireUser, async (req, res) => {
-  const result = await pool.query('SELECT * FROM vehicles WHERE user_id = $1 ORDER BY make, model', [
-    req.userId,
-  ]);
-  res.json(result.rows.map(mapVehicle));
+app.get('/api/vehicles', requireUser, async (_req, res) => {
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    const result = await pool.query('SELECT * FROM vehicles WHERE user_id = $1 ORDER BY make, model', [
+      catalogUserId,
+    ]);
+    res.json(result.rows.map(mapVehicle));
+  } catch (e) {
+    console.error('[catalog/vehicles]', e);
+    res.status(503).json({ error: 'Base de veículos indisponível.' });
+  }
 });
 
 app.put('/api/vehicles', requireUser, requireAdmin, async (req, res) => {
   const vehicles = (req.body.vehicles || []) as Record<string, unknown>[];
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
-    await client.query('DELETE FROM vehicles WHERE user_id = $1', [req.userId]);
+    await client.query('DELETE FROM vehicles WHERE user_id = $1', [catalogUserId]);
     for (const v of vehicles) {
       await client.query(
         `INSERT INTO vehicles (user_id, id, make, model, year, size, part_measurements)
          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [req.userId, v.id, v.make, v.model, v.year, v.size, JSON.stringify(v.partMeasurements || {})],
+        [catalogUserId, v.id, v.make, v.model, v.year, v.size, JSON.stringify(v.partMeasurements || {})],
       );
     }
     await client.query('COMMIT');
@@ -664,6 +680,7 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
 
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
     for (const v of incoming) {
       const make = String(v.make ?? '').trim();
@@ -677,7 +694,7 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
            AND LOWER(TRIM(make)) = LOWER(TRIM($2))
            AND LOWER(TRIM(model)) = LOWER(TRIM($3))
            AND LOWER(TRIM(year)) = LOWER(TRIM($4))`,
-        [req.userId, make, model, year],
+        [catalogUserId, make, model, year],
       );
 
       const partMeasurements = filterStandardPartMeasurements({
@@ -694,7 +711,7 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
           `UPDATE vehicles
            SET make = $1, model = $2, year = $3, size = $4, part_measurements = $5
            WHERE user_id = $6 AND id = $7`,
-          [make, model, year, v.size, JSON.stringify(partMeasurements), req.userId, existing.rows[0].id],
+          [make, model, year, v.size, JSON.stringify(partMeasurements), catalogUserId, existing.rows[0].id],
         );
       } else {
         const id = String(v.id ?? crypto.randomUUID());
@@ -702,7 +719,7 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
           `INSERT INTO vehicles (user_id, id, make, model, year, size, part_measurements)
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [
-            req.userId,
+            catalogUserId,
             id,
             make,
             model,
@@ -718,7 +735,7 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
     await client.query('COMMIT');
 
     const result = await pool.query('SELECT * FROM vehicles WHERE user_id = $1 ORDER BY make, model', [
-      req.userId,
+      catalogUserId,
     ]);
     res.json(result.rows.map(mapVehicle));
   } catch (e) {
@@ -730,24 +747,31 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
   }
 });
 
-app.get('/api/appliances', requireUser, async (req, res) => {
-  const result = await pool.query('SELECT * FROM appliances WHERE user_id = $1 ORDER BY make', [
-    req.userId,
-  ]);
-  res.json(result.rows.map(mapAppliance));
+app.get('/api/appliances', requireUser, async (_req, res) => {
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    const result = await pool.query('SELECT * FROM appliances WHERE user_id = $1 ORDER BY make', [
+      catalogUserId,
+    ]);
+    res.json(result.rows.map(mapAppliance));
+  } catch (e) {
+    console.error('[catalog/appliances]', e);
+    res.status(503).json({ error: 'Base de eletros indisponível.' });
+  }
 });
 
 app.put('/api/appliances', requireUser, requireAdmin, async (req, res) => {
   const appliances = (req.body.appliances || []) as Record<string, unknown>[];
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
-    await client.query('DELETE FROM appliances WHERE user_id = $1', [req.userId]);
+    await client.query('DELETE FROM appliances WHERE user_id = $1', [catalogUserId]);
     for (const a of appliances) {
       await client.query(
         `INSERT INTO appliances (user_id, id, make, model, type, width, height, depth)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [req.userId, a.id, a.make, a.model, a.type, a.width, a.height, a.depth],
+        [catalogUserId, a.id, a.make, a.model, a.type, a.width, a.height, a.depth],
       );
     }
     await client.query('COMMIT');
@@ -769,6 +793,7 @@ app.post('/api/appliances/import', requireUser, requireAdmin, async (req, res) =
 
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
     for (const a of incoming) {
       const make = String(a.make ?? '').trim();
@@ -782,7 +807,7 @@ app.post('/api/appliances/import', requireUser, requireAdmin, async (req, res) =
            AND LOWER(TRIM(make)) = LOWER(TRIM($2))
            AND LOWER(TRIM(model)) = LOWER(TRIM($3))
            AND LOWER(TRIM(type)) = LOWER(TRIM($4))`,
-        [req.userId, make, model, type],
+        [catalogUserId, make, model, type],
       );
 
       if (existing.rows.length > 0) {
@@ -797,7 +822,7 @@ app.post('/api/appliances/import', requireUser, requireAdmin, async (req, res) =
             make,
             model,
             type,
-            req.userId,
+            catalogUserId,
             existing.rows[0].id,
           ],
         );
@@ -806,14 +831,14 @@ app.post('/api/appliances/import', requireUser, requireAdmin, async (req, res) =
         await client.query(
           `INSERT INTO appliances (user_id, id, make, model, type, width, height, depth)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [req.userId, id, make, model, type, a.width, a.height, a.depth],
+          [catalogUserId, id, make, model, type, a.width, a.height, a.depth],
         );
       }
     }
     await client.query('COMMIT');
 
     const result = await pool.query('SELECT * FROM appliances WHERE user_id = $1 ORDER BY make', [
-      req.userId,
+      catalogUserId,
     ]);
     res.json(result.rows.map(mapAppliance));
   } catch (e) {

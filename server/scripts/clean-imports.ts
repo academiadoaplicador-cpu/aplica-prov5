@@ -1,38 +1,36 @@
 /**
- * Remove materiais e eletros importados e restaura o catálogo padrão por usuário.
+ * Restaura o catálogo global (conta admin) — materiais, veículos e eletros.
  * Uso: npx tsx scripts/clean-imports.ts
  */
+import { resolveCatalogUserId } from '../src/catalog.js';
 import { pool } from '../src/db.js';
-import { seedUserData } from '../src/seed/seedUser.js';
+import { seedCatalogData } from '../src/seed/seedUser.js';
 
 async function main() {
-  const users = await pool.query<{ id: string }>('SELECT id FROM users ORDER BY id');
-  if (users.rows.length === 0) {
-    console.log('Nenhum usuário encontrado.');
-    return;
-  }
-
   const client = await pool.connect();
   try {
+    const catalogUserId = await resolveCatalogUserId(client);
     await client.query('BEGIN');
 
-    for (const { id: userId } of users.rows) {
-      const mats = await client.query(
-        'DELETE FROM materials WHERE user_id = $1 RETURNING id',
-        [userId],
-      );
-      const apps = await client.query(
-        'DELETE FROM appliances WHERE user_id = $1 RETURNING id',
-        [userId],
-      );
-      await seedUserData(client, userId);
-      console.log(
-        `Usuário ${userId}: removidos ${mats.rowCount} materiais, ${apps.rowCount} eletros; catálogo padrão restaurado.`,
-      );
-    }
+    const mats = await client.query(
+      'DELETE FROM materials WHERE user_id = $1 RETURNING id',
+      [catalogUserId],
+    );
+    const vehicles = await client.query(
+      'DELETE FROM vehicles WHERE user_id = $1 RETURNING id',
+      [catalogUserId],
+    );
+    const apps = await client.query(
+      'DELETE FROM appliances WHERE user_id = $1 RETURNING id',
+      [catalogUserId],
+    );
+
+    await seedCatalogData(client, catalogUserId);
 
     await client.query('COMMIT');
-    console.log('Limpeza concluída.');
+    console.log(
+      `Catálogo global (${catalogUserId}): removidos ${mats.rowCount} materiais, ${vehicles.rowCount} veículos, ${apps.rowCount} eletros; padrão restaurado.`,
+    );
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('Erro na limpeza:', e);

@@ -1,12 +1,15 @@
 import type { PoolClient } from 'pg';
 import { APPLIANCES_DATABASE, DEFAULT_MATERIALS, VEHICLES_DATABASE } from './defaultData.js';
 
-export async function seedUserData(client: PoolClient, userId: string): Promise<void> {
+export async function seedUserFinancialSettings(client: PoolClient, userId: string): Promise<void> {
   await client.query(
     `INSERT INTO financial_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
     [userId],
   );
+}
 
+/** Catálogo global (materiais, veículos, eletros) — apenas na conta administrativa. */
+export async function seedCatalogData(client: PoolClient, userId: string): Promise<void> {
   for (const m of DEFAULT_MATERIALS) {
     await client.query(
       `INSERT INTO materials (
@@ -44,4 +47,10 @@ export async function seedUserData(client: PoolClient, userId: string): Promise<
       [userId, a.id, a.make, a.model, a.type, a.width, a.height, a.depth],
     );
   }
+}
+
+/** Conta admin: configurações + catálogo. Usuário comum: só configurações financeiras. */
+export async function seedUserData(client: PoolClient, userId: string): Promise<void> {
+  await seedUserFinancialSettings(client, userId);
+  await seedCatalogData(client, userId);
 }
