@@ -26,7 +26,7 @@ Documento de referência sobre **como a interface se comporta em telas pequenas*
 | `lg:` | ≥ 1024px | **Desktop** — sidebar fixa visível, sem hamburger, layout 2–3 colunas nas calculadoras |
 | `xl:` | ≥ 1280px | Grids extras (ex.: custos em 4 colunas), auth com painel lateral mais estreito |
 
-> O ponto de virada principal da **navegação** é **`lg` (1024px)**. Abaixo disso, o app usa menu off-canvas.
+> O ponto de virada principal da **navegação** é **`lg` (1024px)**. Abaixo disso, o app usa **bottom bar** para rotas principais + **drawer lateral** para o restante do menu.
 
 ### 1.3 Padrão mobile-first nos inputs
 
@@ -49,15 +49,20 @@ text-base sm:text-sm
 
 ```
 ┌─────────────────────────────────────┐
-│ [≡]  Aplica Pro          (sticky)   │  ← barra superior
+│ [logo]  Título da rota     (sticky) │  ← top bar (sem hamburger)
+│         Aplica Pro                    │
 ├─────────────────────────────────────┤
 │                                     │
 │   Conteúdo da rota                  │
 │   padding: 16px (p-4)               │
+│   + espaço inferior p/ bottom bar   │
 │                                     │
+├─────────────────────────────────────┤
+│ Início │ Auto │ Orç. │ Deco │ Mais │  ← bottom navigation (fixa)
 └─────────────────────────────────────┘
+         ↑ safe-area-inset-bottom
 
-[Menu aberto]
+[Menu "Mais" aberto]
 ┌──────────┬──────────────────────────┐
 │ SIDEBAR  │░░░░ OVERLAY ░░░░░░░░░░░░░│
 │ 256px    │░░░░ (blur + escurece) ░░░│
@@ -65,18 +70,45 @@ text-base sm:text-sm
 └──────────┴──────────────────────────┘
 ```
 
-### 2.2 Comportamento
+### 2.2 Bottom navigation bar
+
+Barra fixa na parte inferior (`fixed inset-x-0 bottom-0`), visível apenas abaixo de `lg`.
+
+| Aba | Rota | Ícone | Papel |
+|-----|------|-------|-------|
+| **Início** | `/` | `LayoutDashboard` | Dashboard |
+| **Auto** | `/automotivo` | `Car` | Calculadora automotiva |
+| **Orçamento** | `/orcamento` | `History` | Histórico de orçamentos |
+| **Deco** | `/decorativo` | `Home` | Calculadora decorativa |
+| **Mais** | — (abre drawer) | `MoreHorizontal` | Custos, perfil, admin, gestão, logout |
+
+**Estilo:**
+
+- Altura mínima ~56px (`min-h-[3.5rem]`) por item — área de toque confortável.
+- Ícone + rótulo `10px` empilhados; item ativo em `indigo-400` com fundo `indigo-600/15` no ícone.
+- Fundo `slate-950/95` + `backdrop-blur-md`, borda superior `border-slate-900`.
+- **`env(safe-area-inset-bottom)`** no padding inferior — respeita home indicator (iPhone).
+
+**Top bar (complementar):**
+
+- Sem botão hamburger — acesso ao menu completo só pela aba **Mais**.
+- Logo 32px + título dinâmico da rota atual + tagline “Aplica Pro”.
+- **`env(safe-area-inset-top)`** no padding superior.
+
+### 2.3 Comportamento
 
 | Elemento | Mobile / tablet (&lt; lg) | Desktop (≥ lg) |
 |----------|---------------------------|----------------|
-| Sidebar | `fixed`, fora da tela (`-translate-x-full`), abre com hamburger | `static`, sempre visível (`w-64`) |
+| Bottom bar | 5 abas fixas na base; rotas secundárias via **Mais** | Oculta (`lg:hidden`) |
+| Sidebar (drawer) | Abre pela aba **Mais**; `fixed`, slide da esquerda | `static`, sempre visível (`w-64`) |
 | Overlay | `fixed inset-0`, `bg-slate-950/70`, blur; fecha ao tocar | Não renderizado (`lg:hidden`) |
-| Top bar | Sticky com ícone **Menu** + título truncado | Oculta |
+| Top bar | Título da página + logo; sticky no topo | Oculta |
 | Botão fechar (X) | No topo da sidebar | Oculto |
-| Main padding | `p-4` → `sm:p-6` → `lg:p-8` | `lg:p-8` |
-| Troca de rota | Fecha o menu automaticamente | — |
+| Main padding | `p-4` → `sm:p-6`; inferior extra `pb-[calc(4.5rem+safe-area)]` | `lg:p-8` |
+| Troca de rota | Fecha o drawer automaticamente | — |
+| Aba **Mais** ativa | Destacada em rotas do drawer: custos, perfil, catálogo, bases, `/admin/*` | — |
 
-### 2.3 Animações
+### 2.4 Animações
 
 - Sidebar: `transition-transform 200ms ease-in-out`.
 - Conteúdo: fade + `translateY(10px)` ao mudar de rota (200ms).
@@ -239,12 +271,15 @@ Estratégia atual: **não** transformar tabela em cards — usar **scroll horizo
 | Componente | Comportamento mobile |
 |------------|----------------------|
 | `BudgetDetailDrawer` | Full-height, `max-w-md`, slide da direita, spring animation |
-| Sidebar menu | Slide da esquerda + overlay |
+| Sidebar menu | Slide da esquerda + overlay; aberto via aba **Mais** |
+| Bottom navigation | Fixa na base; 4 rotas diretas + **Mais** |
 | Sem bottom sheet nativo | — |
 
 ### 5.4 Espaçamento inferior
 
-Várias páginas usam `pb-20` no container principal para evitar que o último bloco fique colado na borda inferior em dispositivos com gestos/home indicator.
+- **`AppLayout`** reserva `pb-[calc(4.5rem+env(safe-area-inset-bottom))]` no `<main>` mobile — evita que conteúdo fique atrás da bottom bar.
+- Várias páginas mantêm **`pb-20`** adicional no container interno (legado / margem extra em formulários longos e home indicator).
+- A bottom bar já aplica `safe-area-inset-bottom`; a top bar usa `safe-area-inset-top`.
 
 ### 5.5 Colapsáveis
 
@@ -257,13 +292,13 @@ Várias páginas usam `pb-20` no container principal para evitar que o último b
 ```mermaid
 flowchart LR
   subgraph mobile ["&lt; 640px"]
-    M1[Menu drawer]
+    M1[Bottom bar + drawer Mais]
     M2[Coluna única]
     M3[Tabela scroll H]
     M4[Inputs 16px]
   end
   subgraph tablet ["640px – 1023px"]
-    T1[Menu drawer]
+    T1[Bottom bar + drawer Mais]
     T2[Grids 2–3 cols]
     T3[Tabela pode scroll]
     T4[Headers em linha sm+]
@@ -288,8 +323,8 @@ Itens observados no código atual — úteis para backlog de design/dev:
 | Tabelas | Scroll horizontal, sem variante “card list” para mobile |
 | Calculadora — muitas peças | Grade `grid-cols-2` pode ficar apertada em telas &lt; 360px |
 | Hover-only | Upload de foto no perfil depende de `group-hover` para mostrar câmera |
-| Touch targets | Nem todos os ícones de ação na tabela têm `min-h`/`min-w` explícitos de 44px |
-| PWA / safe-area | Sem `env(safe-area-inset-*)` no padding da top bar |
+| Touch targets | Bottom bar ~56px; ícones de ação na tabela ainda sem `min-h`/`min-w` explícitos de 44px |
+| Bottom bar — 5 abas | Labels curtos (“Auto”, “Deco”); telas &lt; 320px podem truncar rótulos |
 | Landscape phone | Não há layout específico; herda o mesmo que portrait |
 | Testes visuais | Não há documentação de dispositivos-alvo (ex.: iPhone SE, Galaxy A) |
 
@@ -300,12 +335,13 @@ Itens observados no código atual — úteis para backlog de design/dev:
 Ao propor telas mobile no Figma, alinhar com o implementado:
 
 1. **Largura de referência:** 375px (iPhone) e 390px; validar também 320px.
-2. **Menu:** drawer 256px + overlay, não bottom nav.
+2. **Navegação:** bottom bar com 5 abas (Início, Auto, Orçamento, Deco, Mais) + drawer lateral 256px para o restante.
 3. **CTAs principais:** largura total abaixo de `sm`.
 4. **Inputs:** altura ~40px (`h-10`), fonte 16px no mobile.
 5. **Tabelas:** prever scroll horizontal ou colunas ocultas com `hidden sm:table-cell`.
 6. **Detalhe de orçamento:** painel lateral direito (drawer), não página full.
-7. **Tema:** manter dark (`slate-950` / `slate-900`); indigo para ações gerais, emerald para gestão.
+7. **Tema:** manter dark (`slate-950` / `slate-900`); indigo para ações gerais e nav ativa, emerald para gestão.
+8. **Safe area:** reservar inset superior (top bar) e inferior (bottom bar + home indicator).
 
 ---
 
@@ -313,7 +349,7 @@ Ao propor telas mobile no Figma, alinhar com o implementado:
 
 | Responsabilidade | Arquivo |
 |------------------|---------|
-| Shell + menu mobile | `src/components/layout/AppLayout.tsx` |
+| Shell + bottom bar + drawer | `src/components/layout/AppLayout.tsx` |
 | Estilos globais + scrollbar | `src/index.css` |
 | Login / cadastro | `src/components/AuthPage.tsx` |
 | Endereço responsivo | `src/components/AddressFields.tsx` |
@@ -329,6 +365,7 @@ Ao propor telas mobile no Figma, alinhar com o implementado:
 
 | Data | Alteração |
 |------|-----------|
+| 2026-06-02 | Bottom navigation bar no mobile/tablet; top bar sem hamburger; safe-area insets; drawer via aba **Mais**. |
 | 2026-05-27 | Documento inicial descrevendo o estado mobile implementado no repositório. |
 
 ---

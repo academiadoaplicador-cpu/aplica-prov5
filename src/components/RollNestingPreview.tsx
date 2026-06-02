@@ -132,7 +132,7 @@ export default function RollNestingPreview({
 
       <div
         ref={scrollContainerRef}
-        className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 overflow-x-auto"
+        className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 overflow-x-auto overscroll-x-contain"
       >
         <div
           className="relative mx-auto"

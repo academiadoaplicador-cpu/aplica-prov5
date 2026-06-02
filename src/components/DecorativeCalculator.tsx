@@ -1,10 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { 
-  Home, 
   Plus, 
   Trash2, 
-  Save, 
-  CheckCircle2,
   Package,
   LayoutDashboard,
   Maximize,
@@ -20,7 +17,8 @@ import { FinancialSettings, Material, DecorativeItem, Appliance } from '../types
 import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { pdfService } from '../services/pdfService';
-import GeneratePdfButton from './GeneratePdfButton';
+import PageHeader from './settings/PageHeader';
+import BudgetSavePdfActions from './BudgetSavePdfActions';
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
@@ -239,29 +237,14 @@ export default function DecorativeCalculator() {
     await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
   };
 
+  const canExportBudget = Boolean(customerName && selectedMaterialId && items.length > 0);
+
   return (
     <div className="space-y-8 w-full pb-20">
-      <header className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-2xl shadow-xl">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center shrink-0">
-            <Home className="text-white" size={24} />
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Cálculo Decorativo</h2>
-            <p className="text-slate-400 text-sm italic">Móveis, Eletros e Paredes</p>
-          </div>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <button 
-            disabled={!customerName || items.length === 0 || !selectedMaterialId}
-            onClick={handleSave}
-            className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-all shadow-lg"
-          >
-            {isSaved ? <CheckCircle2 size={18} /> : <Save size={18} />}
-            {isSaved ? 'Salvo' : 'Salvar Orçamento'}
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Decorativo"
+        description="Orçamentos para móveis, eletrodomésticos e paredes"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
@@ -568,11 +551,12 @@ export default function DecorativeCalculator() {
                 </h4>
               </div>
 
-              <GeneratePdfButton
-                onGenerate={handleGeneratePDF}
-                disabled={!customerName || !selectedMaterialId}
-                label="Gerar PDF decor"
-                className="shadow-lg"
+              <BudgetSavePdfActions
+                saveDisabled={!canExportBudget}
+                pdfDisabled={!canExportBudget}
+                isSaved={isSaved}
+                onSave={handleSave}
+                onGeneratePDF={handleGeneratePDF}
               />
             </div>
           </section>

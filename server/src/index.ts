@@ -13,16 +13,13 @@ import {
 } from './auth.js';
 import {
   ensureAdminUser,
-  isAdminEmail,
   mapUserWithRole,
-  reservedEmailMessage,
   userIsAdmin,
 } from './admin.js';
 import { ensureDatabase, pool, waitForDb } from './db.js';
 import { isValidEmail, normalizeEmail } from './email.js';
 import { getHealthReport, handleHealthRequest, renderStatusPageHtml } from './healthStatus.js';
 import { runMigrations } from './migrate.js';
-import { getPasswordValidationMessage } from './password.js';
 import {
   clearFailedLogins,
   isAccountLocked,
@@ -30,14 +27,14 @@ import {
   registerFailedLogin,
   registerRateLimiter,
 } from './rateLimits.js';
-import { seedUserFinancialSettings, seedUserData } from './seed/seedUser.js';
+import { seedUserData } from './seed/seedUser.js';
 import { resolveCatalogUserId } from './catalog.js';
+import { createAdminRouter } from './adminRoutes.js';
+import { mapBudget, mapFinancial } from './budgetMappers.js';
+import { createApplicatorUser } from './userProvisioning.js';
 import {
-  buildAddressLine,
-  buildPhoneStored,
   mapProfileRow,
   profileDbParams,
-  PROFILE_INSERT_SQL,
   PROFILE_UPSERT_SQL,
   type ProfileAddressInput,
 } from './profileData.js';
@@ -98,15 +95,6 @@ function sendAuthResponse(res: Response, userRow: Record<string, unknown>, statu
 
 function num(value: unknown): number {
   return Number(value);
-}
-
-function mapFinancial(row: Record<string, unknown>) {
-  return {
-    hourlyRate: num(row.hourly_rate),
-    profitMarginPercentage: num(row.profit_margin_percentage),
-    taxPercentage: num(row.tax_percentage),
-    fixedCosts: num(row.fixed_costs),
-  };
 }
 
 function parseWidthsFromDetails(details?: string): number[] {
@@ -253,29 +241,6 @@ function mapAppliance(row: Record<string, unknown>) {
   };
 }
 
-function mapBudget(row: Record<string, unknown>) {
-  return {
-    id: row.id as string,
-    customerName: row.customer_name as string,
-    vehicleModel: (row.vehicle_model as string) || undefined,
-    applianceModel: (row.appliance_model as string) || undefined,
-    vehicleId: (row.vehicle_id as string) || undefined,
-    status: row.status as string,
-    date: row.date as string,
-    items: row.items as unknown[],
-    materialId: row.material_id as string,
-    customPricePerM2: row.custom_price_per_m2 != null ? num(row.custom_price_per_m2) : undefined,
-    totalHours: num(row.total_hours),
-    totalMaterialMeters: num(row.total_material_meters),
-    totalMaterialM2: row.total_material_m2 != null ? num(row.total_material_m2) : undefined,
-    totalCost: num(row.total_cost),
-    totalPrice: num(row.total_price),
-    profit: num(row.profit),
-    type: row.type as string,
-    subType: (row.sub_type as string) || undefined,
-  };
-}
-
 function requireUser(req: Request, res: Response, next: NextFunction) {
   const token = getTokenFromRequest(req.cookies, req.header('authorization'));
   if (!token) {
@@ -314,6 +279,8 @@ declare global {
 
 app.get('/api/health', (req, res) => handleHealthRequest(req, res, pool));
 
+app.use('/api/admin', requireUser, requireAdmin, createAdminRouter(pool));
+
 app.get('/status', async (req, res) => {
   const report = await getHealthReport(pool);
   const httpStatus = report.database === 'connected' ? 200 : 503;
@@ -337,101 +304,37 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
     };
   };
 
-  if (!businessName?.trim() || !email?.trim() || !password) {
-    res.status(400).json({ error: 'Empresa, e-mail e senha são obrigatórios' });
-    return;
-  }
-  if (!isValidEmail(email)) {
-    res.status(400).json({ error: 'Informe um e-mail válido' });
-    return;
-  }
-  const passwordError = getPasswordValidationMessage(password);
-  if (passwordError) {
-    res.status(400).json({ error: passwordError });
-    return;
-  }
-  if (businessName.length > 120 || (profile?.fullName?.length ?? 0) > 120) {
-    res.status(400).json({ error: 'Nome muito longo' });
-    return;
-  }
-  const phoneStored = buildPhoneStored(profile || {});
-  const addressLine = buildAddressLine(profile || {});
-  if (!profile?.fullName?.trim() || !phoneStored) {
-    res.status(400).json({ error: 'Preencha nome e telefone do aplicador' });
-    return;
-  }
-  if (!profile?.street?.toString().trim() || !profile?.neighborhood?.toString().trim()) {
-    res.status(400).json({ error: 'Preencha o endereço (CEP, rua e bairro)' });
-    return;
-  }
-  if (!profile?.city?.toString().trim() || !profile?.stateCode?.toString().trim()) {
-    res.status(400).json({ error: 'Cidade e UF são obrigatórios' });
-    return;
-  }
-  if (!profile.areasOfExpertise?.length) {
-    res.status(400).json({ error: 'Selecione ao menos uma área de especialidade' });
-    return;
-  }
-  if (profile.photoUrl && profile.photoUrl.length > MAX_PROFILE_PHOTO_LENGTH) {
-    res.status(400).json({
-      error:
-        'A foto/logo é muito grande. Use uma imagem menor (recomendado até 200 KB).',
-    });
-    return;
-  }
-
-  const normalizedEmail = normalizeEmail(email);
-
-  if (isAdminEmail(normalizedEmail)) {
-    res.status(403).json({ error: reservedEmailMessage() });
-    return;
-  }
-
   let client: PoolClient | undefined;
 
   try {
     client = await pool.connect();
     await client.query('BEGIN');
 
-    const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
-    if (existing.rows.length > 0) {
+    const result = await createApplicatorUser(client, {
+      businessName: businessName || '',
+      email: email || '',
+      password: password || '',
+      profile: profile || {},
+      createdBy: null,
+    });
+
+    if (!result.ok) {
       await client.query('ROLLBACK');
-      res.status(409).json({
-        error: 'Não foi possível concluir o cadastro com este e-mail.',
-      });
+      const message =
+        result.status === 409
+          ? 'Não foi possível concluir o cadastro com este e-mail.'
+          : result.error;
+      res.status(result.status).json({ error: message });
       return;
     }
-
-    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
-    await client.query(
-      'INSERT INTO users (id, email, business_name, password_hash) VALUES ($1, $2, $3, $4)',
-      [id, normalizedEmail, businessName.trim(), passwordHash],
-    );
-
-    await seedUserFinancialSettings(client, id);
-
-    const hasDocuments = ((profile.documentsUrls as string[])?.length ?? 0) > 0;
-    const profileRow = {
-      ...profile,
-      fullName: (profile.fullName as string).trim(),
-      rating: 5,
-      experienceYears: profile.experienceYears,
-      phone: phoneStored,
-      address: addressLine,
-      verifiedDocuments: hasDocuments,
-      documentsUrls: profile.documentsUrls ?? [],
-    };
-    await client.query(PROFILE_INSERT_SQL, [id, ...profileDbParams(profileRow)]);
 
     await client.query('COMMIT');
     sendAuthResponse(
       res,
       {
-        id,
-        email: normalizedEmail,
-        business_name: businessName.trim(),
+        id: result.id,
+        email: result.email,
+        business_name: result.businessName,
       },
       201,
     );
@@ -475,7 +378,9 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   }
 
   const result = await pool.query(
-    'SELECT id, email, business_name, password_hash FROM users WHERE email = $1',
+    `SELECT id, email, business_name, password_hash,
+            COALESCE(is_active, TRUE) AS is_active
+     FROM users WHERE email = $1`,
     [normalizedEmail],
   );
 
@@ -486,6 +391,12 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   }
 
   const row = result.rows[0];
+  if (row.is_active === false) {
+    res.status(403).json({
+      error: 'Conta desativada. Entre em contato com a administração da rede.',
+    });
+    return;
+  }
   if (!row.password_hash) {
     res.status(401).json({ error: 'E-mail ou senha incorretos' });
     return;
@@ -499,6 +410,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   }
 
   clearFailedLogins(normalizedEmail);
+  await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [row.id]);
   sendAuthResponse(res, row);
 });
 
@@ -1037,6 +949,7 @@ async function start() {
   await ensureAdminUser(pool);
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`API Aplica PRO rodando em http://0.0.0.0:${PORT}`);
+    console.log('[admin] Gestão de usuários: PUT/PATCH /api/admin/users/:id, POST .../active');
   });
 }
 

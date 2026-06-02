@@ -19,6 +19,12 @@ import VehiclesPage from './pages/VehiclesPage';
 import BudgetHistory from './components/BudgetHistory';
 import ProfileView from './components/ProfileView';
 import CostsOverview from './components/CostsOverview';
+import AdminLayout from './components/layout/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminUserDetailPage from './pages/admin/AdminUserDetailPage';
+import AdminCreateUserPage from './pages/admin/AdminCreateUserPage';
+import AdminBudgetsPage from './pages/admin/AdminBudgetsPage';
 import { AdminRoute, GuestRoute, ProtectedRoute } from './routes/ProtectedRoute';
 import { ROUTES } from './routes/paths';
 
@@ -81,6 +87,13 @@ export default function App() {
             <Route path="base-eletros" element={<AppliancesPage />} />
             <Route path="base-veiculos" element={<VehiclesPage />} />
             <Route path="configuracoes" element={<Navigate to={ROUTES.catalog} replace />} />
+            <Route path="admin" element={<AdminLayout />}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="usuarios" element={<AdminUsersPage />} />
+              <Route path="usuarios/novo" element={<AdminCreateUserPage />} />
+              <Route path="usuarios/:userId" element={<AdminUserDetailPage />} />
+              <Route path="orcamentos" element={<AdminBudgetsPage />} />
+            </Route>
           </Route>
         </Route>
       </Route>

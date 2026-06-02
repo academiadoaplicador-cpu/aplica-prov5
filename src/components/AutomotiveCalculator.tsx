@@ -2,9 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { 
   Car, 
   Search, 
-  CheckCircle2, 
   AlertCircle, 
-  Save, 
   Package,
   Zap,
   LayoutDashboard,
@@ -14,13 +12,19 @@ import {
   History,
 } from 'lucide-react';
 import { VEHICLE_PARTS_DATA, VEHICLE_PRESETS } from '../types/vehicleParts';
+import {
+  getMissingMeasurementParts,
+  getVehiclePartsWithMeasurementStatus,
+  isVehicleMeasurementsComplete,
+} from '../utils/vehiclePartsUtils';
 import { VehicleSize, BudgetPiece, Budget, FinancialSettings, Material, Vehicle } from '../types';
 import { databaseService } from '../services/databaseService';
 import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { pdfService } from '../services/pdfService';
-import GeneratePdfButton from './GeneratePdfButton';
+import PageHeader from './settings/PageHeader';
+import BudgetSavePdfActions from './BudgetSavePdfActions';
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
@@ -48,6 +52,8 @@ export default function AutomotiveCalculator() {
     taxPercentage: 6,
     fixedCosts: 1500,
   });
+
+  const isAdmin = databaseService.getCachedUser()?.isAdmin ?? false;
 
   useEffect(() => {
     Promise.all([
@@ -87,32 +93,50 @@ export default function AutomotiveCalculator() {
     [selectedVehicleId, vehicles]
   );
 
-  const isComplete = useMemo(() => {
-    if (!selectedVehicle) return false;
-    const preset = VEHICLE_PRESETS[selectedVehicle.size] || [];
-    return preset.every((partId) => {
-      const m = selectedVehicle.partMeasurements[partId];
-      return m && m.width > 0 && m.length > 0;
-    });
-  }, [selectedVehicle]);
+  const isComplete = useMemo(
+    () => (selectedVehicle ? isVehicleMeasurementsComplete(selectedVehicle) : false),
+    [selectedVehicle],
+  );
 
-  // Enforce partial if not complete
+  const partialPartsList = useMemo(
+    () => (selectedVehicle ? getVehiclePartsWithMeasurementStatus(selectedVehicle) : []),
+    [selectedVehicle],
+  );
+
+  const missingMeasurementParts = useMemo(
+    () => (selectedVehicle ? getMissingMeasurementParts(selectedVehicle) : []),
+    [selectedVehicle],
+  );
+
+  // Ao escolher o veículo, inicia em Completo (Parcial só se o usuário clicar)
   useEffect(() => {
-    if (selectedVehicle && !isComplete) {
-      setBudgetType('Parcial');
+    if (!selectedVehicleId) {
+      setSelectedPieces([]);
+      return;
     }
-  }, [selectedVehicle, isComplete]);
+    setBudgetType('Completo');
+  }, [selectedVehicleId]);
 
-  // Sync pieces if "Completo"
+  // Completo: marca todas as peças do preset
   useEffect(() => {
     if (budgetType === 'Completo' && selectedVehicle) {
       setSelectedPieces(VEHICLE_PRESETS[selectedVehicle.size] || []);
     }
   }, [budgetType, selectedVehicle]);
 
+  const handleBudgetType = (type: 'Completo' | 'Parcial') => {
+    setBudgetType(type);
+    if (type === 'Parcial') {
+      setSelectedPieces([]);
+    }
+  };
+
   const togglePiece = (id: string) => {
     if (budgetType === 'Completo') return;
-    setSelectedPieces(prev => 
+    if (!selectedVehicle) return;
+    const part = partialPartsList.find((p) => p.id === id);
+    if (!part?.hasMeasurement) return;
+    setSelectedPieces(prev =>
       prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
     );
   };
@@ -249,29 +273,15 @@ export default function AutomotiveCalculator() {
     await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
   };
 
+  const canExportBudget =
+    Boolean(customerName && selectedMaterialId && selectedVehicleId && selectedPieces.length > 0);
+
   return (
     <div className="space-y-8 w-full pb-20">
-      <header className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-2xl shadow-xl">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center shrink-0">
-            <Car className="text-white" size={24} />
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Cálculo Automotivo</h2>
-            <p className="text-slate-400 text-sm italic">Base de dados de veículos e materiais</p>
-          </div>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <button 
-            disabled={!customerName || selectedPieces.length === 0 || !selectedMaterialId}
-            onClick={handleSave}
-            className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-all shadow-lg shadow-indigo-900/20"
-          >
-            {isSaved ? <CheckCircle2 size={18} /> : <Save size={18} />}
-            {isSaved ? 'Salvo' : 'Salvar Orçamento'}
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Automotivo"
+        description="Monte orçamentos com veículos e materiais do catálogo"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Col: Setup */}
@@ -342,22 +352,28 @@ export default function AutomotiveCalculator() {
 
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 border-t border-slate-800">
                <button
-                  disabled={!isComplete && selectedVehicleId !== ''}
-                  onClick={() => setBudgetType('Completo')}
+                  type="button"
+                  disabled={!selectedVehicleId}
+                  onClick={() => handleBudgetType('Completo')}
                   className={cn(
                     "w-full sm:flex-1 p-4 rounded-xl border font-bold text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest",
                     budgetType === 'Completo' ? "bg-indigo-600/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20" : "bg-slate-950 border-slate-800 text-slate-500",
-                    !isComplete && selectedVehicleId !== '' && "opacity-30 cursor-not-allowed"
+                    !selectedVehicleId && "opacity-30 cursor-not-allowed",
                   )}
                >
                  <Car size={16} /> Completo
-                 {!isComplete && selectedVehicleId !== '' && <Info size={12} className="ml-1" title="Medidas insuficientes para plano completo" />}
+                 {!isComplete && selectedVehicleId && (
+                   <Info size={12} className="ml-1" title="Algumas medidas do veículo estão incompletas no cadastro" />
+                 )}
                </button>
                <button
-                  onClick={() => setBudgetType('Parcial')}
+                  type="button"
+                  disabled={!selectedVehicleId}
+                  onClick={() => handleBudgetType('Parcial')}
                   className={cn(
                     "w-full sm:flex-1 p-4 rounded-xl border font-bold text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest",
-                    budgetType === 'Parcial' ? "bg-indigo-600/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20" : "bg-slate-950 border-slate-800 text-slate-500"
+                    budgetType === 'Parcial' ? "bg-indigo-600/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20" : "bg-slate-950 border-slate-800 text-slate-500",
+                    !selectedVehicleId && "opacity-30 cursor-not-allowed",
                   )}
                >
                  <History size={16} /> Parcial
@@ -366,30 +382,94 @@ export default function AutomotiveCalculator() {
           </section>
 
           <AnimatePresence>
-            {budgetType === 'Parcial' && (
+            {budgetType === 'Parcial' && selectedVehicle && (
               <motion.section 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6"
+                className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-5"
               >
-                <h3 className="text-xs font-mono uppercase tracking-widest text-slate-500 mb-6">Seleção de Peças</h3>
+                <div>
+                  <h3 className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                    Seleção de peças
+                  </h3>
+                  <p className="text-[10px] text-slate-600 mt-1 italic">
+                    Peças do porte {selectedVehicle.size} — só é possível orçar as que têm medida cadastrada.
+                  </p>
+                </div>
+
+                {missingMeasurementParts.length > 0 && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                      <div>
+                        <p className="text-xs font-bold text-amber-200">
+                          {missingMeasurementParts.length} peça
+                          {missingMeasurementParts.length > 1 ? 's' : ''} sem medida neste veículo
+                        </p>
+                        <p className="text-[10px] text-amber-200/70 mt-1">
+                          {isAdmin
+                            ? 'Cadastre na base de veículos ou importe a planilha para incluir no orçamento.'
+                            : 'Estas peças não podem ser incluídas no orçamento para este veículo.'}
+                        </p>
+                      </div>
+                    </div>
+                    <ul className="flex flex-wrap gap-1.5 pl-6">
+                      {missingMeasurementParts.map((part) => (
+                        <li
+                          key={part.id}
+                          className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950/50 border border-amber-500/25 text-amber-300"
+                        >
+                          {part.name}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {VEHICLE_PARTS_DATA.map((part) => (
-                    <button
-                      key={part.id}
-                      onClick={() => togglePiece(part.id)}
-                      className={cn(
-                        "p-4 rounded-xl border transition-all text-left group flex items-center justify-between",
-                        selectedPieces.includes(part.id)
-                          ? "bg-indigo-600/10 border-indigo-500/50 text-indigo-200"
-                          : "bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700"
-                      )}
-                    >
-                      <span className="text-[11px] font-bold uppercase tracking-tight leading-tight">{part.name}</span>
-                      {selectedPieces.includes(part.id) && <Zap size={12} className="text-indigo-400 fill-indigo-400" />}
-                    </button>
-                  ))}
+                  {partialPartsList.map((part) => {
+                    const isSelected = selectedPieces.includes(part.id);
+                    const canSelect = part.hasMeasurement;
+                    return (
+                      <button
+                        key={part.id}
+                        type="button"
+                        disabled={!canSelect}
+                        onClick={() => togglePiece(part.id)}
+                        className={cn(
+                          'p-4 rounded-xl border transition-all text-left group flex flex-col gap-2 min-h-[72px]',
+                          !canSelect &&
+                            'bg-slate-950/80 border-amber-500/30 text-amber-200/60 cursor-not-allowed opacity-80',
+                          canSelect &&
+                            isSelected &&
+                            'bg-indigo-600/10 border-indigo-500/50 text-indigo-200',
+                          canSelect &&
+                            !isSelected &&
+                            'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700',
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-1 w-full">
+                          <span className="text-[11px] font-bold uppercase tracking-tight leading-tight">
+                            {part.name}
+                          </span>
+                          {canSelect && isSelected && (
+                            <Zap size={12} className="text-indigo-400 fill-indigo-400 shrink-0" />
+                          )}
+                        </div>
+                        {!canSelect ? (
+                          <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400/90">
+                            Sem medida
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-mono text-slate-600">
+                            {selectedVehicle.partMeasurements[part.id]?.width.toFixed(2)} ×{' '}
+                            {selectedVehicle.partMeasurements[part.id]?.length.toFixed(2)} m
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </motion.section>
             )}
@@ -515,14 +595,13 @@ export default function AutomotiveCalculator() {
                 </h4>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <GeneratePdfButton
-                  disabled={!customerName || !selectedMaterialId || !selectedVehicleId}
-                  onGenerate={handleGeneratePDF}
-                  label="Gerar PDF profissional"
-                  className="shadow-lg"
-                />
-              </div>
+              <BudgetSavePdfActions
+                saveDisabled={!canExportBudget}
+                pdfDisabled={!canExportBudget}
+                isSaved={isSaved}
+                onSave={handleSave}
+                onGeneratePDF={handleGeneratePDF}
+              />
             </div>
           </section>
         </div>

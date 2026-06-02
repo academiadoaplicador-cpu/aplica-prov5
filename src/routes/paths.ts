@@ -13,6 +13,13 @@ export const ROUTES = {
   appliancesBase: '/base-eletros',
   vehiclesBase: '/base-veiculos',
   profile: '/perfil',
+  admin: {
+    home: '/admin',
+    users: '/admin/usuarios',
+    userNew: '/admin/usuarios/novo',
+    user: (id: string) => `/admin/usuarios/${id}`,
+    budgets: '/admin/orcamentos',
+  },
 } as const;
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES];

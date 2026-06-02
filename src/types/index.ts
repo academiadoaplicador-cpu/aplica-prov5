@@ -103,6 +103,111 @@ export interface User {
   isAdmin?: boolean;
 }
 
+export interface AdminUserAccountFields {
+  isActive: boolean;
+  lastLoginAt?: string;
+  createdBy?: string;
+}
+
+export interface AdminStats {
+  totalApplicants: number;
+  inactiveApplicants: number;
+  newApplicantsThisMonth: number;
+  activeApplicantsLast30Days: number;
+  totalBudgets: number;
+  budgetsByStatus: Record<string, number>;
+  pendingBudgets: number;
+  finalizedBudgets: number;
+  gmvFinalized: number;
+  profitFinalized: number;
+  conversionRate: number;
+  budgetsByType: Record<string, number>;
+  catalog: {
+    materialsCount: number;
+    vehiclesCount: number;
+    appliancesCount: number;
+    vehiclesIncomplete: number;
+  };
+}
+
+export interface AdminUserListItem extends AdminUserAccountFields {
+  id: string;
+  email: string;
+  businessName: string;
+  fullName?: string;
+  city?: string;
+  stateCode?: string;
+  areasOfExpertise: string[];
+  verifiedDocuments: boolean;
+  createdAt: string;
+  budgetCount: number;
+  totalRevenue: number;
+  pendingCount: number;
+  lastBudgetDate?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface AdminCreateUserPayload {
+  businessName: string;
+  email: string;
+  password: string;
+  profile: {
+    fullName: string;
+    phoneCountryCode?: string;
+    phoneNational?: string;
+    phone?: string;
+    city?: string;
+    stateCode?: string;
+    street?: string;
+    neighborhood?: string;
+    cep?: string;
+    experienceYears?: number;
+    areasOfExpertise: AreaOfExpertise[];
+  };
+}
+
+export interface AdminUpdateUserPayload {
+  businessName?: string;
+  email?: string;
+  isActive?: boolean;
+  newPassword?: string;
+}
+
+export interface AdminUserDetail {
+  user: {
+    id: string;
+    email: string;
+    businessName: string;
+    createdAt: string;
+  } & AdminUserAccountFields;
+  profile: ApplicatorProfile | null;
+  financialSettings: FinancialSettings | null;
+  budgetSummary: {
+    total: number;
+    pending: number;
+    approved: number;
+    finalized: number;
+    canceled: number;
+    revenue: number;
+    profit: number;
+    avgTicket: number;
+    lastBudgetDate?: string;
+  };
+  recentBudgets: Budget[];
+}
+
+export interface AdminBudgetListItem extends Budget {
+  userId: string;
+  businessName: string;
+}
+
 export interface DecorativeItem {
   id: string;
   name: string;

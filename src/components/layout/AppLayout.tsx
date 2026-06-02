@@ -10,8 +10,9 @@ import {
   User as UserIcon,
   Package,
   Refrigerator,
-  Menu,
+  MoreHorizontal,
   X,
+  Shield,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { User } from '../../types';
@@ -22,6 +23,35 @@ import { cn } from '../../lib/utils';
 interface AppLayoutProps {
   user: User;
   onLogout: () => void;
+}
+
+const DRAWER_ONLY_PREFIXES = [
+  ROUTES.costs,
+  ROUTES.profile,
+  ROUTES.catalog,
+  ROUTES.appliancesBase,
+  ROUTES.vehiclesBase,
+  '/admin',
+] as const;
+
+function isDrawerOnlyRoute(pathname: string): boolean {
+  return DRAWER_ONLY_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+function getMobilePageTitle(pathname: string): string {
+  if (pathname === ROUTES.dashboard) return 'Início';
+  if (pathname.startsWith(ROUTES.costs)) return 'Custos';
+  if (pathname.startsWith(ROUTES.automotive)) return 'Automotivo';
+  if (pathname.startsWith(ROUTES.decorative)) return 'Decorativo';
+  if (pathname.startsWith(ROUTES.orcamento)) return 'Orçamento';
+  if (pathname.startsWith(ROUTES.profile)) return 'Perfil';
+  if (pathname.startsWith(ROUTES.catalog)) return 'Catálogo';
+  if (pathname.startsWith(ROUTES.vehiclesBase)) return 'Base de Veículos';
+  if (pathname.startsWith(ROUTES.appliancesBase)) return 'Base de Eletros';
+  if (pathname.startsWith('/admin')) return 'Administração';
+  return 'Aplica Pro';
 }
 
 export default function AppLayout({ user, onLogout }: AppLayoutProps) {
@@ -42,7 +72,7 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex">
+    <div className="flex h-[100dvh] max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-200">
       {/* Overlay — mobile/tablet only */}
       <button
         type="button"
@@ -58,10 +88,10 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
         className={cn(
           'fixed inset-y-0 left-0 z-40 w-64',
           'bg-slate-950/50 backdrop-blur-xl border-r border-slate-900',
-          'flex flex-col h-screen min-h-0',
+          'flex flex-col h-full min-h-0 shrink-0',
           'transform transition-transform duration-200 ease-in-out',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-          'lg:translate-x-0 lg:static lg:z-auto lg:min-h-screen',
+          'lg:translate-x-0 lg:relative lg:z-auto',
         )}
       >
         <div className="p-6 border-b border-slate-900 flex items-center justify-between">
@@ -102,6 +132,7 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
           </div>
           {user.isAdmin && (
             <>
+              <NavItem to={ROUTES.admin.home} icon={<Shield size={20} />} label="Administração" onNavigate={closeSidebar} />
               <NavItem to={ROUTES.catalog} icon={<Package size={20} />} label="Catálogo Profissional" onNavigate={closeSidebar} />
               <NavItem to={ROUTES.vehiclesBase} icon={<Car size={20} />} label="Base de Veículos" onNavigate={closeSidebar} />
               <NavItem to={ROUTES.appliancesBase} icon={<Refrigerator size={20} />} label="Base de Eletros" onNavigate={closeSidebar} />
@@ -123,21 +154,27 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
-        {/* Hamburger — mobile/tablet only */}
-        <div className="lg:hidden sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-slate-950/90 backdrop-blur-md border-b border-slate-900">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            aria-label="Abrir menu"
-          >
-            <Menu size={20} />
-          </button>
-          <span className="text-sm font-semibold text-white truncate">Aplica Pro</span>
-        </div>
+      <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
+        {/* Top bar — mobile/tablet only (sem hamburger; nav principal fica na bottom bar) */}
+        <header className="lg:hidden shrink-0 z-20 flex items-center gap-3 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] bg-slate-950/90 backdrop-blur-md border-b border-slate-900">
+          <img
+            src="/login.png"
+            alt=""
+            aria-hidden
+            className="w-8 h-8 rounded-lg object-contain shrink-0"
+            draggable={false}
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white truncate leading-tight">
+              {getMobilePageTitle(location.pathname)}
+            </p>
+            <p className="text-[10px] text-indigo-400 font-mono tracking-widest uppercase truncate">
+              Aplica Pro
+            </p>
+          </div>
+        </header>
 
-        <main className="flex-1 min-h-screen p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-8">
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, y: 10 }}
@@ -147,6 +184,38 @@ export default function AppLayout({ user, onLogout }: AppLayoutProps) {
             <Outlet />
           </motion.div>
         </main>
+
+        {/* Bottom navigation — mobile/tablet only */}
+        <nav
+          className="lg:hidden fixed inset-x-0 bottom-0 z-20 flex items-stretch border-t border-slate-900 bg-slate-950/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
+          aria-label="Navegação principal"
+        >
+          <BottomNavItem
+            to={ROUTES.dashboard}
+            icon={<LayoutDashboard size={20} />}
+            label="Início"
+            end
+          />
+          <BottomNavItem
+            to={ROUTES.automotive}
+            icon={<Car size={20} />}
+            label="Auto"
+          />
+          <BottomNavItem
+            to={ROUTES.orcamento}
+            icon={<History size={20} />}
+            label="Orçamento"
+          />
+          <BottomNavItem
+            to={ROUTES.decorative}
+            icon={<Home size={20} />}
+            label="Deco"
+          />
+          <BottomNavMore
+            active={isDrawerOnlyRoute(location.pathname) || sidebarOpen}
+            onClick={() => setSidebarOpen(true)}
+          />
+        </nav>
       </div>
     </div>
   );
@@ -187,5 +256,69 @@ function NavItem({
         </>
       )}
     </NavLink>
+  );
+}
+
+function BottomNavItem({
+  to,
+  icon,
+  label,
+  end,
+}: {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  end?: boolean;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        cn(
+          'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
+          isActive ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300',
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <span
+            className={cn(
+              'flex items-center justify-center rounded-lg p-1 transition-colors',
+              isActive && 'bg-indigo-600/15',
+            )}
+          >
+            {icon}
+          </span>
+          <span className="text-[10px] font-medium leading-none truncate max-w-full">{label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+function BottomNavMore({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Abrir menu completo"
+      aria-expanded={active}
+      className={cn(
+        'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
+        active ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300',
+      )}
+    >
+      <span
+        className={cn(
+          'flex items-center justify-center rounded-lg p-1 transition-colors',
+          active && 'bg-indigo-600/15',
+        )}
+      >
+        <MoreHorizontal size={20} />
+      </span>
+      <span className="text-[10px] font-medium leading-none">Mais</span>
+    </button>
   );
 }

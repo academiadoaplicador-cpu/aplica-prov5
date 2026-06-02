@@ -34,6 +34,9 @@ interface BudgetDetailDrawerProps {
   onStatusChange: (status: Budget['status']) => void;
   onDelete: () => void;
   onGeneratePDF: () => void;
+  /** Modo somente leitura (painel admin — orçamento de outro usuário) */
+  readOnly?: boolean;
+  officeLabel?: string;
 }
 
 function formatBudgetRef(id: string): string {
@@ -61,6 +64,8 @@ export default function BudgetDetailDrawer({
   onStatusChange,
   onDelete,
   onGeneratePDF,
+  readOnly = false,
+  officeLabel,
 }: BudgetDetailDrawerProps) {
   const material = budget ? materials.find((m) => m.id === budget.materialId) : null;
   const pieceNames = budget && budget.type === 'Automotivo' ? getPieceNames(budget) : [];
@@ -99,6 +104,11 @@ export default function BudgetDetailDrawer({
                     Orçamento #{formatBudgetRef(budget.id)}
                   </p>
                   <h3 className="text-lg font-bold text-white truncate">{budget.customerName}</h3>
+                  {officeLabel && (
+                    <p className="text-[10px] font-mono text-amber-400/90 truncate mt-0.5">
+                      {officeLabel}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-500 italic truncate mt-0.5">{projectLabel}</p>
                 </div>
                 <button
@@ -174,25 +184,42 @@ export default function BudgetDetailDrawer({
                 <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
                   Status
                 </span>
-                <select
-                  value={budget.status}
-                  onChange={(e) => onStatusChange(e.target.value as Budget['status'])}
-                  className={cn(
-                    'w-full text-xs font-mono font-bold uppercase py-2 px-3 rounded-xl bg-slate-950 border focus:outline-none focus:ring-1',
-                    budget.status === 'Finalizado'
-                      ? 'text-emerald-400 border-emerald-500/30'
-                      : budget.status === 'Pendente'
-                        ? 'text-amber-400 border-amber-500/30'
-                        : budget.status === 'Cancelado'
-                          ? 'text-red-400 border-red-500/30'
-                          : 'text-indigo-400 border-indigo-500/30',
-                  )}
-                >
-                  <option value="Pendente">Pendente</option>
-                  <option value="Aprovado">Aprovado</option>
-                  <option value="Finalizado">Finalizado</option>
-                  <option value="Cancelado">Cancelado</option>
-                </select>
+                {readOnly ? (
+                  <p
+                    className={cn(
+                      'text-xs font-mono font-bold uppercase py-2 px-3 rounded-xl bg-slate-950 border',
+                      budget.status === 'Finalizado'
+                        ? 'text-emerald-400 border-emerald-500/30'
+                        : budget.status === 'Pendente'
+                          ? 'text-amber-400 border-amber-500/30'
+                          : budget.status === 'Cancelado'
+                            ? 'text-red-400 border-red-500/30'
+                            : 'text-indigo-400 border-indigo-500/30',
+                    )}
+                  >
+                    {budget.status}
+                  </p>
+                ) : (
+                  <select
+                    value={budget.status}
+                    onChange={(e) => onStatusChange(e.target.value as Budget['status'])}
+                    className={cn(
+                      'w-full text-xs font-mono font-bold uppercase py-2 px-3 rounded-xl bg-slate-950 border focus:outline-none focus:ring-1',
+                      budget.status === 'Finalizado'
+                        ? 'text-emerald-400 border-emerald-500/30'
+                        : budget.status === 'Pendente'
+                          ? 'text-amber-400 border-amber-500/30'
+                          : budget.status === 'Cancelado'
+                            ? 'text-red-400 border-red-500/30'
+                            : 'text-indigo-400 border-indigo-500/30',
+                    )}
+                  >
+                    <option value="Pendente">Pendente</option>
+                    <option value="Aprovado">Aprovado</option>
+                    <option value="Finalizado">Finalizado</option>
+                    <option value="Cancelado">Cancelado</option>
+                  </select>
+                )}
               </div>
 
               {material && (
@@ -273,21 +300,30 @@ export default function BudgetDetailDrawer({
             </div>
 
             {/* Footer actions */}
-            <div className="shrink-0 p-5 border-t border-slate-800 space-y-2">
-              <GeneratePdfButton
-                onGenerate={onGeneratePDF}
-                label="Gerar PDF"
-                size="sm"
-              />
-              <button
-                type="button"
-                onClick={onDelete}
-                className="w-full flex items-center justify-center gap-2 py-2.5 text-red-400 hover:bg-red-500/10 rounded-xl text-xs font-bold transition-colors"
-              >
-                <Trash2 size={16} />
-                Excluir orçamento
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="shrink-0 p-5 border-t border-slate-800 space-y-2">
+                <GeneratePdfButton
+                  onGenerate={onGeneratePDF}
+                  label="Gerar PDF"
+                  size="sm"
+                />
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 text-red-400 hover:bg-red-500/10 rounded-xl text-xs font-bold transition-colors"
+                >
+                  <Trash2 size={16} />
+                  Excluir orçamento
+                </button>
+              </div>
+            )}
+            {readOnly && (
+              <div className="shrink-0 p-5 border-t border-slate-800">
+                <p className="text-[10px] text-center text-slate-500 font-mono uppercase">
+                  Visualização administrativa (somente leitura)
+                </p>
+              </div>
+            )}
           </motion.aside>
         </>
       )}

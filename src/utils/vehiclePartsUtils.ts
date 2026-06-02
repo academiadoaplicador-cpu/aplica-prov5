@@ -117,6 +117,31 @@ export function inferVehicleSize(partIds: string[]): VehicleSize {
   return VehicleSize.MEDIUM;
 }
 
+export interface VehiclePartMeasurementStatus extends VehiclePartInfo {
+  hasMeasurement: boolean;
+}
+
+export function hasPartMeasurement(vehicle: Vehicle, partId: string): boolean {
+  const m = vehicle.partMeasurements?.[partId];
+  return Boolean(m && m.width > 0 && m.length > 0);
+}
+
+export function getVehiclePartsWithMeasurementStatus(
+  vehicle: Vehicle,
+): VehiclePartMeasurementStatus[] {
+  const presetIds = VEHICLE_PRESETS[vehicle.size] || [];
+  return presetIds.map((id) => ({
+    ...getPartInfo(id),
+    hasMeasurement: hasPartMeasurement(vehicle, id),
+  }));
+}
+
+export function getMissingMeasurementParts(vehicle: Vehicle): VehiclePartInfo[] {
+  return getVehiclePartsWithMeasurementStatus(vehicle)
+    .filter((p) => !p.hasMeasurement)
+    .map(({ id, name, difficulty, isCustom }) => ({ id, name, difficulty, isCustom }));
+}
+
 export function isVehicleMeasurementsComplete(vehicle: Vehicle): boolean {
   const preset = VEHICLE_PRESETS[vehicle.size] || [];
   return preset.every((partId) => {
