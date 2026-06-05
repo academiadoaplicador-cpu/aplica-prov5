@@ -335,7 +335,7 @@ export default function DecorativeCalculator() {
         accent="emerald"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 lg:items-start">
         <div className="lg:col-span-2 space-y-6">
           <section
             className={cn(mobileStepPanelClass('emerald', wizard.stepPanelClass(0)), 'space-y-6')}
@@ -541,6 +541,32 @@ export default function DecorativeCalculator() {
               ))}
             </div>
           </section>
+
+          {selectedMaterialId && nestingParts.length > 0 && (
+            <div className={cn(wizard.stepPanelClass(3))}>
+              {rollDimensions ? (
+                <RollNestingPreview
+                  accent="emerald"
+                  rollWidth={rollDimensions.width}
+                  rollLength={rollDimensions.length}
+                  parts={nestingParts}
+                  materialLabel={selectedMaterial?.name}
+                />
+              ) : (
+                <section className="bg-slate-900/50 border border-amber-500/20 rounded-2xl p-6 flex gap-4 items-start">
+                  <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <h3 className="text-sm font-bold text-amber-200">Dimensões do rolo não disponíveis</h3>
+                    <p className="text-xs text-amber-200/70 mt-1">
+                      Este material não possui largura e comprimento do rolo cadastrados. Reimporte a planilha
+                      &quot;Materiais e aplicações.xlsx&quot; com as colunas &quot;Larguras Disponíveis (m)&quot; e
+                      &quot;Comprimento do Rolo (m)&quot; para visualizar o encaixe das peças.
+                    </p>
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -651,38 +677,7 @@ export default function DecorativeCalculator() {
             </h3>
 
             <div className="space-y-6">
-              <div className="hidden lg:block space-y-4">
-                <MaterialCascadeSelect
-                  materials={materials}
-                  context={{ mode: 'decorative', subType }}
-                  selectedMaterialId={selectedMaterialId}
-                  onSelectMaterialId={setSelectedMaterialId}
-                  onSelectionChange={() => setCustomPricePerM2(null)}
-                  accent="emerald"
-                />
-                <MaterialRollDimensionSelect
-                  material={selectedMaterial}
-                  selectedWidth={selectedRollWidth}
-                  selectedLength={selectedRollLength}
-                  onSelectWidth={setSelectedRollWidth}
-                  onSelectLength={setSelectedRollLength}
-                  accent="emerald"
-                />
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Valor por m² (Personalizar)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
-                      onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
-                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-emerald-400 focus:ring-1 focus:ring-emerald-500 font-mono"
-                    />
-                    <Zap size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500/50" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-0 lg:pt-6 border-t-0 lg:border-t border-slate-800 space-y-4">
+              <div className="space-y-4">
                   {totals.hasRollPricing ? (
                     <>
                       <div className="flex justify-between items-center text-xs">
@@ -731,32 +726,6 @@ export default function DecorativeCalculator() {
           </section>
         </div>
       </div>
-
-      {selectedMaterialId && nestingParts.length > 0 && (
-        <div className={cn(wizard.stepPanelClass(3))}>
-        {rollDimensions ? (
-          <RollNestingPreview
-            accent="emerald"
-            rollWidth={rollDimensions.width}
-            rollLength={rollDimensions.length}
-            parts={nestingParts}
-            materialLabel={selectedMaterial?.name}
-          />
-        ) : (
-          <section className="bg-slate-900/50 border border-amber-500/20 rounded-2xl p-6 flex gap-4 items-start">
-            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
-            <div>
-              <h3 className="text-sm font-bold text-amber-200">Dimensões do rolo não disponíveis</h3>
-              <p className="text-xs text-amber-200/70 mt-1">
-                Este material não possui largura e comprimento do rolo cadastrados. Reimporte a planilha
-                &quot;Materiais e aplicações.xlsx&quot; com as colunas &quot;Larguras Disponíveis (m)&quot; e
-                &quot;Comprimento do Rolo (m)&quot; para visualizar o encaixe das peças.
-              </p>
-            </div>
-          </section>
-        )}
-        </div>
-      )}
     </div>
   );
 }

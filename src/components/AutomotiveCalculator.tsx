@@ -362,8 +362,7 @@ export default function AutomotiveCalculator() {
         accent="indigo"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
-        {/* Left Col: Setup */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 lg:items-start">
         <div className="lg:col-span-2 space-y-6">
           <section
             className={cn(
@@ -394,44 +393,47 @@ export default function AutomotiveCalculator() {
               <div className="space-y-3">
                 <label className={mobileFieldLabel}>Veículo</label>
                 <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
-                  <div className="relative">
+                  <div className="relative min-w-0">
                     <select 
                       value={selectedMake}
+                      title={selectedMake || undefined}
                       onChange={(e) => {
                         setSelectedMake(e.target.value);
                         setSelectedModel('');
                         setSelectedYear('');
                       }}
-                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:text-xs')}
+                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:text-sm')}
                     >
-                      <option value="">Marca...</option>
+                      <option value="">Marca</option>
                       {makes.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
                   </div>
-                  <div className="relative">
+                  <div className="relative min-w-0">
                     <select 
                       value={selectedModel}
+                      title={selectedModel || undefined}
                       disabled={!selectedMake}
                       onChange={(e) => {
                         setSelectedModel(e.target.value);
                         setSelectedYear('');
                       }}
-                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:p-3 sm:text-xs disabled:opacity-30')}
+                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:text-sm disabled:opacity-30')}
                     >
-                      <option value="">Modelo...</option>
+                      <option value="">Modelo</option>
                       {models.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
                   </div>
-                  <div className="relative">
+                  <div className="relative min-w-0">
                     <select 
                       value={selectedYear}
+                      title={selectedYear || undefined}
                       disabled={!selectedModel}
                       onChange={(e) => setSelectedYear(e.target.value)}
-                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:p-3 sm:text-xs disabled:opacity-30')}
+                      className={cn(mobileSelectInput, 'focus:ring-indigo-500 sm:text-sm disabled:opacity-30')}
                     >
-                      <option value="">Ano...</option>
+                      <option value="">Ano</option>
                       {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
@@ -591,9 +593,33 @@ export default function AutomotiveCalculator() {
               </p>
             )}
           </section>
+
+          {selectedVehicleId && selectedMaterialId && nestingParts.length > 0 && (
+            <div className={cn(wizard.stepPanelClass(3))}>
+              {rollDimensions ? (
+                <RollNestingPreview
+                  rollWidth={rollDimensions.width}
+                  rollLength={rollDimensions.length}
+                  parts={nestingParts}
+                  materialLabel={selectedMaterial?.name}
+                />
+              ) : (
+                <section className="bg-slate-900/50 border border-amber-500/20 rounded-2xl p-6 flex gap-4 items-start">
+                  <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <h3 className="text-sm font-bold text-amber-200">Dimensões do rolo não disponíveis</h3>
+                    <p className="text-xs text-amber-200/70 mt-1">
+                      Este material não possui largura e comprimento do rolo cadastrados. Reimporte a planilha
+                      &quot;Materiais e aplicações.xlsx&quot; com as colunas &quot;Larguras Disponíveis (m)&quot; e
+                      &quot;Comprimento do Rolo (m)&quot; para visualizar o encaixe das peças.
+                    </p>
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Right Col: Material (etapa 3) + Resumo (etapa 4) */}
         <div className="space-y-6">
           <section
             className={cn(
@@ -697,38 +723,7 @@ export default function AutomotiveCalculator() {
             </h3>
 
             <div className="space-y-6">
-              <div className="hidden lg:block space-y-4">
-                <MaterialCascadeSelect
-                  materials={materials}
-                  context={{ mode: 'automotive' }}
-                  selectedMaterialId={selectedMaterialId}
-                  onSelectMaterialId={setSelectedMaterialId}
-                  onSelectionChange={() => setCustomPricePerM2(null)}
-                  accent="indigo"
-                />
-                <MaterialRollDimensionSelect
-                  material={selectedMaterial}
-                  selectedWidth={selectedRollWidth}
-                  selectedLength={selectedRollLength}
-                  onSelectWidth={setSelectedRollWidth}
-                  onSelectLength={setSelectedRollLength}
-                  accent="indigo"
-                />
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Preço por m² (Override)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={customPricePerM2 ?? (selectedMaterial?.pricePerM2 || 0)}
-                      onChange={(e) => setCustomPricePerM2(parseFloat(e.target.value))}
-                      className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base sm:text-sm text-white focus:ring-1 focus:ring-indigo-500 font-mono"
-                    />
-                    <Zap size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500/50" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-0 lg:pt-4 border-t-0 lg:border-t border-slate-800 space-y-3">
+              <div className="space-y-3">
                   {totals.hasRollPricing ? (
                     <>
                       <div className="flex justify-between items-center text-xs">
@@ -784,31 +779,6 @@ export default function AutomotiveCalculator() {
           </section>
         </div>
       </div>
-
-      {selectedVehicleId && selectedMaterialId && nestingParts.length > 0 && (
-        <div className={cn(wizard.stepPanelClass(3))}>
-        {rollDimensions ? (
-          <RollNestingPreview
-            rollWidth={rollDimensions.width}
-            rollLength={rollDimensions.length}
-            parts={nestingParts}
-            materialLabel={selectedMaterial?.name}
-          />
-        ) : (
-          <section className="bg-slate-900/50 border border-amber-500/20 rounded-2xl p-6 flex gap-4 items-start">
-            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
-            <div>
-              <h3 className="text-sm font-bold text-amber-200">Dimensões do rolo não disponíveis</h3>
-              <p className="text-xs text-amber-200/70 mt-1">
-                Este material não possui largura e comprimento do rolo cadastrados. Reimporte a planilha
-                &quot;Materiais e aplicações.xlsx&quot; com as colunas &quot;Larguras Disponíveis (m)&quot; e
-                &quot;Comprimento do Rolo (m)&quot; para visualizar o encaixe das peças.
-              </p>
-            </div>
-          </section>
-        )}
-        </div>
-      )}
     </div>
   );
 }

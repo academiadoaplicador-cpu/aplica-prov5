@@ -52,5 +52,5 @@ export const mobileFieldInput = cn(
 
 export const mobileSelectInput = cn(
   mobileFieldInput,
-  'appearance-none pr-10',
+  'appearance-none pl-3 pr-11 min-w-0',
 );
