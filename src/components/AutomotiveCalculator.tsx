@@ -598,7 +598,7 @@ export default function AutomotiveCalculator() {
           <section
             className={cn(
               mobileStepPanelClass('indigo', wizard.stepPanelClass(2)),
-              'lg:sticky lg:top-8 lg:bg-slate-900 lg:border-indigo-500/30 lg:shadow-2xl lg:shadow-indigo-900/20',
+              'lg:bg-slate-900 lg:border-indigo-500/30 lg:shadow-2xl lg:shadow-indigo-900/20',
             )}
           >
             <BudgetMobileStepHeader

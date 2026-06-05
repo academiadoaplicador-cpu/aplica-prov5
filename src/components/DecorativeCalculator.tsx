@@ -547,7 +547,7 @@ export default function DecorativeCalculator() {
           <section
             className={cn(
               mobileStepPanelClass('emerald', wizard.stepPanelClass(2)),
-              'lg:sticky lg:top-8 lg:bg-slate-900 lg:border-emerald-500/30 lg:shadow-2xl lg:shadow-emerald-900/10',
+              'lg:bg-slate-900 lg:border-emerald-500/30 lg:shadow-2xl lg:shadow-emerald-900/10',
             )}
           >
             <BudgetMobileStepHeader
