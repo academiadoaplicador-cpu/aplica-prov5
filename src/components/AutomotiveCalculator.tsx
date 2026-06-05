@@ -559,14 +559,9 @@ export default function AutomotiveCalculator() {
                             <Zap size={12} className="text-indigo-400 fill-indigo-400 shrink-0" />
                           )}
                         </div>
-                        {!canSelect ? (
+                        {!canSelect && (
                           <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400/90">
                             Sem medida
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-mono text-slate-600">
-                            {selectedVehicle.partMeasurements[part.id]?.width.toFixed(2)} ×{' '}
-                            {selectedVehicle.partMeasurements[part.id]?.length.toFixed(2)} m
                           </span>
                         )}
                       </button>
