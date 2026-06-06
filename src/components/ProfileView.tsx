@@ -18,6 +18,7 @@ import { EXPERTISE_OPTIONS, EXPERTISE_ICONS } from '../constants/profile';
 import { AddressFields } from './AddressFields';
 import { PhoneInput, phoneValueFromStored } from './PhoneInput';
 import { buildAddressSummary } from '../types/address';
+import IntegerInput from './IntegerInput';
 import { profileToAddress, mergeAddressIntoProfile } from '../utils/profileAddress';
 import type { PhoneInputValue } from './PhoneInput';
 import { compressImageFile } from '../lib/compressImage';
@@ -236,12 +237,11 @@ export default function ProfileView({ user }: ProfileViewProps) {
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-2 block font-mono">Anos de Profissão</label>
-              <input 
-                type="number"
-                min="0"
+              <IntegerInput
                 value={profile.experienceYears}
-                onChange={(e) => setProfile(prev => ({ ...prev, experienceYears: parseInt(e.target.value) || 0 }))}
+                onChange={(experienceYears) => setProfile((prev) => ({ ...prev, experienceYears }))}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="0"
               />
             </div>
 

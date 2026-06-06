@@ -25,6 +25,7 @@ import { RegisterPayload } from '../types/auth';
 import { databaseService } from '../services/databaseService';
 import { EXPERTISE_OPTIONS } from '../constants/profile';
 import { cn } from '../lib/utils';
+import IntegerInput from './IntegerInput';
 import { getEmailValidationMessage, normalizeEmail } from '../lib/email';
 import {
   checkPasswordRequirements,
@@ -574,12 +575,11 @@ function RegisterWizard({
               <PhoneInput value={phone} onChange={setPhone} />
             </Field>
             <Field label="Anos de experiência">
-              <input
-                type="number"
-                min={0}
+              <IntegerInput
                 value={experienceYears}
-                onChange={(e) => setExperienceYears(parseInt(e.target.value, 10) || 0)}
+                onChange={setExperienceYears}
                 className={inputClass}
+                placeholder="0"
               />
             </Field>
             <Field label="Áreas de especialidade">
