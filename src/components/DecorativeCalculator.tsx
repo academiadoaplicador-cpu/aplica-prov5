@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -40,6 +40,28 @@ import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNestin
 import type { NestingPartInput } from '../utils/rollNesting';
 type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
 
+type DimensionField = 'width' | 'height';
+type DimensionDrafts = Record<string, Partial<Record<DimensionField, string>>>;
+
+function normalizeDecimalInput(raw: string): string {
+  return raw.replace(',', '.').trim();
+}
+
+function isValidDecimalDraft(value: string): boolean {
+  return value === '' || /^\d*\.?\d*$/.test(value);
+}
+
+function formatDimensionForDisplay(value: number): string {
+  return value === 0 ? '' : String(value);
+}
+
+function parseDimensionDraft(raw: string): number {
+  const normalized = normalizeDecimalInput(raw);
+  if (normalized === '' || normalized === '.') return 0;
+  const parsed = parseFloat(normalized);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 export default function DecorativeCalculator() {
   const [customerName, setCustomerName] = useState('');
   const [subType, setSubType] = useState<SubType>('Eletrodomésticos');
@@ -50,6 +72,8 @@ export default function DecorativeCalculator() {
   const [items, setItems] = useState<DecorativeItem[]>([
     { id: generateId(), name: 'Peça Principal', width: 0.5, height: 0.5, complexity: 1 }
   ]);
+  const [dimensionDrafts, setDimensionDrafts] = useState<DimensionDrafts>({});
+  const syncedApplianceIdRef = useRef<string | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(null);
   const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(null);
@@ -96,20 +120,28 @@ export default function DecorativeCalculator() {
     return appliances.filter(a => a.make === selectedApplianceMake && a.type === selectedApplianceType as any);
   }, [selectedApplianceMake, selectedApplianceType, appliances]);
 
-  // Sync items if appliance is selected
+  // Preenche peças ao escolher eletrodoméstico; não sobrescreve edições manuais depois.
   useEffect(() => {
-    if (subType === 'Eletrodomésticos' && selectedApplianceId) {
-      const app = appliances.find(a => a.id === selectedApplianceId);
-      if (app) {
-        // Simple logic for appliance parts (frente + 2 laterais)
-        const parts: DecorativeItem[] = [
-          { id: generateId(), name: `Frente (${app.type})`, width: app.width, height: app.height, complexity: 2 },
-          { id: generateId(), name: 'Lateral Dir', width: app.depth, height: app.height, complexity: 1 },
-          { id: generateId(), name: 'Lateral Esq', width: app.depth, height: app.height, complexity: 1 }
-        ];
-        setItems(parts);
-      }
+    if (subType !== 'Eletrodomésticos') {
+      syncedApplianceIdRef.current = null;
+      return;
     }
+    if (!selectedApplianceId) {
+      syncedApplianceIdRef.current = null;
+      return;
+    }
+    if (syncedApplianceIdRef.current === selectedApplianceId) return;
+
+    const app = appliances.find((a) => a.id === selectedApplianceId);
+    if (!app) return;
+
+    syncedApplianceIdRef.current = selectedApplianceId;
+    setDimensionDrafts({});
+    setItems([
+      { id: generateId(), name: `Frente (${app.type})`, width: app.width, height: app.height, complexity: 2 },
+      { id: generateId(), name: 'Lateral Dir', width: app.depth, height: app.height, complexity: 1 },
+      { id: generateId(), name: 'Lateral Esq', width: app.depth, height: app.height, complexity: 1 },
+    ]);
   }, [selectedApplianceId, subType, appliances]);
 
   const addItem = () => {
@@ -118,11 +150,72 @@ export default function DecorativeCalculator() {
 
   const removeItem = (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
+    setDimensionDrafts((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
 
   const updateItem = (id: string, updates: Partial<DecorativeItem>) => {
     setItems(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
   };
+
+  const getDimensionDisplay = useCallback(
+    (itemId: string, field: DimensionField, value: number) => {
+      const draft = dimensionDrafts[itemId]?.[field];
+      if (draft !== undefined) return draft;
+      return formatDimensionForDisplay(value);
+    },
+    [dimensionDrafts],
+  );
+
+  const handleDimensionChange = useCallback(
+    (itemId: string, field: DimensionField, raw: string) => {
+      const normalized = normalizeDecimalInput(raw);
+      if (!isValidDecimalDraft(normalized)) return;
+
+      setDimensionDrafts((prev) => ({
+        ...prev,
+        [itemId]: { ...prev[itemId], [field]: normalized },
+      }));
+
+      if (normalized === '' || normalized === '.') {
+        updateItem(itemId, { [field]: 0 });
+        return;
+      }
+
+      const parsed = parseFloat(normalized);
+      if (!Number.isNaN(parsed)) {
+        updateItem(itemId, { [field]: parsed });
+      }
+    },
+    [],
+  );
+
+  const handleDimensionBlur = useCallback((itemId: string, field: DimensionField) => {
+    let committed: number | undefined;
+
+    setDimensionDrafts((prev) => {
+      const draft = prev[itemId]?.[field];
+      if (draft !== undefined) {
+        committed = parseDimensionDraft(draft);
+      }
+
+      if (!prev[itemId]) return prev;
+      const entry = { ...prev[itemId] };
+      delete entry[field];
+      const next = { ...prev };
+      if (Object.keys(entry).length === 0) delete next[itemId];
+      else next[itemId] = entry;
+      return next;
+    });
+
+    if (committed !== undefined) {
+      updateItem(itemId, { [field]: committed });
+    }
+  }, []);
 
   const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
   const selectedAppliance = appliances.find((a) => a.id === selectedApplianceId);
@@ -503,21 +596,25 @@ export default function DecorativeCalculator() {
                   <div className="md:col-span-2">
                      <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Largura (m)</label>
                     <input 
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white w-full font-mono"
-                      value={item.width}
-                      step="0.01"
-                      onChange={(e) => updateItem(item.id, { width: parseFloat(e.target.value) || 0 })}
+                      value={getDimensionDisplay(item.id, 'width', item.width)}
+                      placeholder="0,00"
+                      onChange={(e) => handleDimensionChange(item.id, 'width', e.target.value)}
+                      onBlur={() => handleDimensionBlur(item.id, 'width')}
                     />
                   </div>
                   <div className="md:col-span-2">
                     <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Altura (m)</label>
                     <input 
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white w-full font-mono"
-                      value={item.height}
-                      step="0.01"
-                      onChange={(e) => updateItem(item.id, { height: parseFloat(e.target.value) || 0 })}
+                      value={getDimensionDisplay(item.id, 'height', item.height)}
+                      placeholder="0,00"
+                      onChange={(e) => handleDimensionChange(item.id, 'height', e.target.value)}
+                      onBlur={() => handleDimensionBlur(item.id, 'height')}
                     />
                   </div>
                   <div className="md:col-span-3">
