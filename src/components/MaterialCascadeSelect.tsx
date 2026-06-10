@@ -22,6 +22,12 @@ interface MaterialCascadeSelectProps {
   className?: string;
 }
 
+function contextKey(context: MaterialSelectionContext): string {
+  return context.mode === 'decorative'
+    ? `decorative:${context.subType ?? ''}`
+    : 'automotive';
+}
+
 export default function MaterialCascadeSelect({
   materials,
   context,
@@ -34,9 +40,11 @@ export default function MaterialCascadeSelect({
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedLine, setSelectedLine] = useState('');
 
+  const filterKey = contextKey(context);
+
   const filteredMaterials = useMemo(
     () => filterMaterialsByContext(materials, context),
-    [materials, context],
+    [materials, filterKey, context],
   );
 
   const brands = useMemo(
@@ -69,7 +77,7 @@ export default function MaterialCascadeSelect({
     if (selectedMaterialId) return;
     setSelectedBrand('');
     setSelectedLine('');
-  }, [filteredMaterials, selectedMaterialId]);
+  }, [filterKey, selectedMaterialId]);
 
   const focusRing =
     accent === 'emerald' ? 'focus:ring-emerald-500' : 'focus:ring-indigo-500';
@@ -79,7 +87,7 @@ export default function MaterialCascadeSelect({
   };
 
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn('relative z-10 space-y-3', className)}>
       <div className="space-y-1">
         <label className="text-[10px] uppercase font-mono text-slate-500 ml-1">Marca</label>
         <div className="relative">

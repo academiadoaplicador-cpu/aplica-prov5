@@ -1,5 +1,5 @@
 import { Vehicle, VehicleSize } from '../types';
-import { VEHICLE_PARTS_DATA, VEHICLE_PRESETS } from '../types/vehicleParts';
+import { VEHICLE_PARTS_DATA } from '../types/vehicleParts';
 
 export interface VehiclePartInfo {
   id: string;
@@ -59,10 +59,50 @@ export function slugifyPartName(name: string): string {
 }
 
 export function mapPartNameToId(partName: string): { id: string; isCustom: boolean } | null {
-  const normalized = normalizeKey(partName);
+  const trimmed = partName.trim();
+  if (!trimmed) return null;
+  const normalized = normalizeKey(trimmed);
   const standardId = STANDARD_PART_ALIASES[normalized];
   if (standardId) return { id: standardId, isCustom: false };
+  const slug = slugifyPartName(trimmed);
+  if (!slug) return null;
+  return { id: slug, isCustom: true };
+}
+
+export function normalizePartName(value: string): string {
+  return normalizeKey(value);
+}
+
+export function findVehiclePartWithSameName(
+  vehicle: Vehicle,
+  name: string,
+  excludePartId?: string,
+): VehiclePartInfo | null {
+  const target = normalizePartName(name);
+  if (!target) return null;
+
+  for (const partId of getVehicleConfiguredPartIds(vehicle)) {
+    if (partId === excludePartId) continue;
+    const info = getPartInfo(partId, vehicle);
+    if (normalizePartName(info.name) === target) return info;
+  }
+
+  const mapped = mapPartNameToId(name);
+  if (mapped && !mapped.isCustom && mapped.id !== excludePartId && vehicle.partMeasurements?.[mapped.id]) {
+    return getPartInfo(mapped.id, vehicle);
+  }
+
   return null;
+}
+
+export function resolveCustomPartId(name: string, existingIds: Iterable<string>): string {
+  const taken = new Set(existingIds);
+  let base = slugifyPartName(name);
+  if (!base) base = 'peca_custom';
+  if (!taken.has(base) && !STANDARD_PART_IDS.has(base)) return base;
+  let suffix = 2;
+  while (taken.has(`${base}_${suffix}`)) suffix += 1;
+  return `${base}_${suffix}`;
 }
 
 export const STANDARD_PART_IDS = new Set(VEHICLE_PARTS_DATA.map((p) => p.id));
@@ -83,27 +123,42 @@ export function humanizePartId(id: string): string {
     .join(' ');
 }
 
-export function getPartInfo(partId: string): VehiclePartInfo {
+export function getPartInfo(partId: string, vehicle?: Vehicle): VehiclePartInfo {
   const known = VEHICLE_PARTS_DATA.find((p) => p.id === partId);
   if (known) {
     return { id: known.id, name: known.name, difficulty: known.difficulty, isCustom: false };
   }
-  return { id: partId, name: humanizePartId(partId), difficulty: 2, isCustom: true };
+  const customName = vehicle?.partMeasurements?.[partId]?.name?.trim();
+  return {
+    id: partId,
+    name: customName || humanizePartId(partId),
+    difficulty: 2,
+    isCustom: true,
+  };
+}
+
+export function getVehicleConfiguredPartIds(vehicle: Vehicle): string[] {
+  return Object.keys(vehicle.partMeasurements || {});
 }
 
 export function getVehiclePartList(vehicle: Vehicle): VehiclePartInfo[] {
-  const presetIds = VEHICLE_PRESETS[vehicle.size] || [];
-  return presetIds.map((id) => getPartInfo(id));
+  return getVehicleConfiguredPartIds(vehicle)
+    .map((id) => getPartInfo(id, vehicle))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
+
+export function getAvailableStandardPartsToAdd(vehicle: Vehicle): VehiclePartInfo[] {
+  const configured = new Set(getVehicleConfiguredPartIds(vehicle));
+  return VEHICLE_PARTS_DATA.filter((p) => !configured.has(p.id)).map((p) => ({
+    id: p.id,
+    name: p.name,
+    difficulty: p.difficulty,
+    isCustom: false,
+  }));
 }
 
 export function getVehiclePartsWithMeasurements(vehicle: Vehicle): VehiclePartInfo[] {
-  const presetIds = VEHICLE_PRESETS[vehicle.size] || [];
-  return presetIds
-    .filter((id) => {
-      const m = vehicle.partMeasurements?.[id];
-      return m && m.width > 0 && m.length > 0;
-    })
-    .map((id) => getPartInfo(id));
+  return getVehiclePartList(vehicle).filter((p) => hasPartMeasurement(vehicle, p.id));
 }
 
 export function inferVehicleSize(partIds: string[]): VehicleSize {
@@ -129,10 +184,9 @@ export function hasPartMeasurement(vehicle: Vehicle, partId: string): boolean {
 export function getVehiclePartsWithMeasurementStatus(
   vehicle: Vehicle,
 ): VehiclePartMeasurementStatus[] {
-  const presetIds = VEHICLE_PRESETS[vehicle.size] || [];
-  return presetIds.map((id) => ({
-    ...getPartInfo(id),
-    hasMeasurement: hasPartMeasurement(vehicle, id),
+  return getVehiclePartList(vehicle).map((p) => ({
+    ...p,
+    hasMeasurement: hasPartMeasurement(vehicle, p.id),
   }));
 }
 
@@ -143,9 +197,7 @@ export function getMissingMeasurementParts(vehicle: Vehicle): VehiclePartInfo[] 
 }
 
 export function isVehicleMeasurementsComplete(vehicle: Vehicle): boolean {
-  const preset = VEHICLE_PRESETS[vehicle.size] || [];
-  return preset.every((partId) => {
-    const m = vehicle.partMeasurements?.[partId];
-    return m && m.width > 0 && m.length > 0;
-  });
+  const configured = getVehicleConfiguredPartIds(vehicle);
+  if (configured.length === 0) return false;
+  return configured.every((partId) => hasPartMeasurement(vehicle, partId));
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Car,
   Search,
@@ -11,10 +11,12 @@ import {
   AlertTriangle,
   History,
 } from 'lucide-react';
-import { VEHICLE_PARTS_DATA, VEHICLE_PRESETS } from '../types/vehicleParts';
 import {
   getMissingMeasurementParts,
+  getPartInfo,
   getVehiclePartsWithMeasurementStatus,
+  getVehiclePartsWithMeasurements,
+  hasPartMeasurement,
   isVehicleMeasurementsComplete,
 } from '../utils/vehiclePartsUtils';
 import { VehicleSize, BudgetPiece, Budget, FinancialSettings, Material, Vehicle } from '../types';
@@ -30,6 +32,7 @@ import BudgetWizardNavBar from './BudgetWizardNavBar';
 import { useBudgetWizard } from '../hooks/useBudgetWizard';
 import { useMobileBottomExtras } from '../contexts/MobileBottomExtrasContext';
 import BudgetMobileStepHeader from './budget-mobile/BudgetMobileStepHeader';
+import BudgetCollapsibleMaterialPanel from './budget-mobile/BudgetCollapsibleMaterialPanel';
 import BudgetMobileTotalHero from './budget-mobile/BudgetMobileTotalHero';
 import {
   mobileStepPanelClass,
@@ -43,19 +46,51 @@ import RollNestingPreview from './RollNestingPreview';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
 import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNesting';
 import type { NestingPartInput } from '../utils/rollNesting';
+import { getMaterialProductLine } from '../utils/materialSelection';
+import SupplierWhatsAppButton from './SupplierWhatsAppButton';
+import BudgetNotice from './budget-mobile/BudgetNotice';
+import { useBudgetNotice } from '../hooks/useBudgetNotice';
+import {
+  clearAutomotiveBudgetDraft,
+  loadAutomotiveBudgetDraft,
+  saveAutomotiveBudgetDraft,
+} from '../utils/budgetDraftStorage';
+import { useBudgetDraftPersistence } from '../hooks/useBudgetDraftPersistence';
+
 export default function AutomotiveCalculator() {
-  const [customerName, setCustomerName] = useState('');
-  const [selectedMake, setSelectedMake] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [selectedYear, setSelectedYear] = useState<string>('');
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
-  const [budgetType, setBudgetType] = useState<'Completo' | 'Parcial'>('Completo');
-  const [selectedPieces, setSelectedPieces] = useState<string[]>([]);
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
-  const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(null);
-  const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(null);
-  const [selectedRollLength, setSelectedRollLength] = useState<number | null>(null);
+  const restoredDraft = useRef(loadAutomotiveBudgetDraft());
+  const isRestoringDraftRef = useRef(Boolean(restoredDraft.current));
+
+  const [customerName, setCustomerName] = useState(restoredDraft.current?.customerName ?? '');
+  const [selectedMake, setSelectedMake] = useState(restoredDraft.current?.selectedMake ?? '');
+  const [selectedModel, setSelectedModel] = useState(restoredDraft.current?.selectedModel ?? '');
+  const [selectedYear, setSelectedYear] = useState(restoredDraft.current?.selectedYear ?? '');
+  const [selectedVehicleId, setSelectedVehicleId] = useState(
+    restoredDraft.current?.selectedVehicleId ?? '',
+  );
+  const [budgetType, setBudgetType] = useState<'Completo' | 'Parcial'>(
+    restoredDraft.current?.budgetType ?? 'Completo',
+  );
+  const [selectedPieces, setSelectedPieces] = useState<string[]>(
+    restoredDraft.current?.selectedPieces ?? [],
+  );
+  const [selectedMaterialId, setSelectedMaterialId] = useState(
+    restoredDraft.current?.selectedMaterialId ?? '',
+  );
+  const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(
+    restoredDraft.current?.customPricePerM2 ?? null,
+  );
+  const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(
+    restoredDraft.current?.selectedRollWidth ?? null,
+  );
+  const [selectedRollLength, setSelectedRollLength] = useState<number | null>(
+    restoredDraft.current?.selectedRollLength ?? null,
+  );
+  const [materialExpanded, setMaterialExpanded] = useState(
+    !restoredDraft.current?.selectedMaterialId,
+  );
   const [isSaved, setIsSaved] = useState(false);
+  const { notice, showNotice, clearNotice } = useBudgetNotice();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [settings, setSettings] = useState<FinancialSettings>({
@@ -122,6 +157,7 @@ export default function AutomotiveCalculator() {
 
   // Ao escolher o veículo, inicia em Completo (Parcial só se o usuário clicar)
   useEffect(() => {
+    if (isRestoringDraftRef.current) return;
     if (!selectedVehicleId) {
       setSelectedPieces([]);
       return;
@@ -131,8 +167,9 @@ export default function AutomotiveCalculator() {
 
   // Completo: marca todas as peças do preset
   useEffect(() => {
+    if (isRestoringDraftRef.current) return;
     if (budgetType === 'Completo' && selectedVehicle) {
-      setSelectedPieces(VEHICLE_PRESETS[selectedVehicle.size] || []);
+      setSelectedPieces(getVehiclePartsWithMeasurements(selectedVehicle).map((p) => p.id));
     }
   }, [budgetType, selectedVehicle]);
 
@@ -153,13 +190,24 @@ export default function AutomotiveCalculator() {
     );
   };
 
+  const prevMaterialIdRef = useRef(selectedMaterialId);
+  useEffect(() => {
+    if (!selectedMaterialId) setMaterialExpanded(true);
+    prevMaterialIdRef.current = selectedMaterialId;
+  }, [selectedMaterialId]);
+
   const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
   const isRecommended = selectedMaterial?.recommendedFor.includes('Automotivo');
 
   useEffect(() => {
+    if (isRestoringDraftRef.current) return;
     setSelectedRollWidth(null);
     setSelectedRollLength(null);
   }, [selectedMaterialId]);
+
+  useEffect(() => {
+    isRestoringDraftRef.current = false;
+  }, []);
 
   const rollDimensions = useMemo(
     () =>
@@ -172,10 +220,11 @@ export default function AutomotiveCalculator() {
 
   const nestingParts = useMemo((): NestingPartInput[] => {
     if (!selectedVehicle) return [];
-    return VEHICLE_PARTS_DATA.filter((p) => selectedPieces.includes(p.id))
-      .map((part) => {
-        const m = selectedVehicle.partMeasurements[part.id];
-        if (!m || m.width <= 0 || m.length <= 0) return null;
+    return selectedPieces
+      .map((partId) => {
+        if (!hasPartMeasurement(selectedVehicle, partId)) return null;
+        const part = getPartInfo(partId, selectedVehicle);
+        const m = selectedVehicle.partMeasurements[partId]!;
         return {
           id: part.id,
           name: part.name,
@@ -200,7 +249,7 @@ export default function AutomotiveCalculator() {
 
     if (!selectedVehicle) return empty;
 
-    const pieces = VEHICLE_PARTS_DATA.filter((p) => selectedPieces.includes(p.id));
+    const pieces = selectedPieces.map((id) => getPartInfo(id, selectedVehicle));
     const totalDifficulty = pieces.reduce((acc, p) => acc + p.difficulty, 0);
     const estimatedHours = totalDifficulty * 0.75;
 
@@ -271,22 +320,68 @@ export default function AutomotiveCalculator() {
     type: 'Automotivo' as const
   }), [customerName, selectedVehicle, selectedVehicleId, selectedPieces, selectedMaterialId, customPricePerM2, totals]);
 
+  const getExportValidationMessage = useCallback((): string | null => {
+    if (!customerName.trim()) return 'Informe o nome do cliente.';
+    if (!selectedVehicleId) return 'Selecione fabricante, modelo e ano do veículo.';
+    if (selectedPieces.length === 0) return 'Selecione ao menos uma peça para o orçamento.';
+    if (!selectedMaterialId) return 'Selecione o material antes de salvar ou gerar o PDF.';
+    return null;
+  }, [customerName, selectedVehicleId, selectedPieces.length, selectedMaterialId]);
+
+  const getStepValidationMessage = useCallback(
+    (stepIndex: number): string | null => {
+      switch (stepIndex) {
+        case 0:
+          if (!customerName.trim()) return 'Informe o nome do cliente.';
+          if (!selectedVehicleId) return 'Selecione fabricante, modelo e ano do veículo.';
+          return null;
+        case 1:
+          if (selectedPieces.length === 0) {
+            return budgetType === 'Parcial'
+              ? 'Selecione ao menos uma peça para incluir no orçamento.'
+              : 'Nenhuma peça com medida disponível para este veículo.';
+          }
+          return null;
+        case 2:
+          if (!selectedMaterialId) return 'Selecione o material para continuar.';
+          return null;
+        default:
+          return getExportValidationMessage();
+      }
+    },
+    [
+      customerName,
+      selectedVehicleId,
+      selectedPieces.length,
+      budgetType,
+      selectedMaterialId,
+      getExportValidationMessage,
+    ],
+  );
+
   const handleSave = async () => {
-    if (!customerName || !selectedMaterialId || !selectedVehicleId) return;
+    const validationError = getExportValidationMessage();
+    if (validationError) {
+      showNotice(validationError, 'warning');
+      return;
+    }
     await databaseService.saveBudget(currentBudget);
+    clearAutomotiveBudgetDraft();
     setIsSaved(true);
+    showNotice('Orçamento salvo com sucesso.', 'success');
     setTimeout(() => setIsSaved(false), 3000);
   };
 
   const handleGeneratePDF = async () => {
-    if (!customerName || !selectedMaterialId || !selectedVehicleId) {
-      throw new Error('Preencha cliente, veículo e material antes de gerar o PDF.');
+    const validationError = getExportValidationMessage();
+    if (validationError) {
+      showNotice(validationError, 'warning');
+      throw new Error(validationError);
     }
     await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
   };
 
-  const canExportBudget =
-    Boolean(customerName && selectedMaterialId && selectedVehicleId && selectedPieces.length > 0);
+  const canExportBudget = !getExportValidationMessage();
 
   const flowSteps = useMemo((): BudgetFlowStep[] => [
     {
@@ -315,7 +410,74 @@ export default function AutomotiveCalculator() {
     },
   ], [customerName, selectedVehicleId, selectedPieces.length, selectedMaterialId, canExportBudget]);
 
-  const wizard = useBudgetWizard(flowSteps);
+  const wizard = useBudgetWizard(flowSteps, restoredDraft.current?.activeStep ?? 0);
+
+  const materialContext = useMemo(() => ({ mode: 'automotive' as const }), []);
+
+  const isMaterialStepActive = wizard.activeStep === 2;
+
+  const tryGoNext = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    const validationError = getStepValidationMessage(wizard.activeStep);
+    if (validationError) {
+      showNotice(validationError, 'warning');
+      return;
+    }
+    wizard.goNext();
+  }, [getStepValidationMessage, wizard, showNotice]);
+
+  const tryGoToStep = useCallback(
+    (index: number) => {
+      if (index === wizard.activeStep) return;
+
+      if (index < wizard.activeStep) {
+        wizard.goToStep(index);
+        return;
+      }
+
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      for (let step = wizard.activeStep; step < index; step++) {
+        const validationError = getStepValidationMessage(step);
+        if (validationError) {
+          showNotice(validationError, 'warning');
+          wizard.goToStep(step);
+          return;
+        }
+      }
+      wizard.goToStep(index);
+    },
+    [getStepValidationMessage, wizard, showNotice],
+  );
+
+  useBudgetDraftPersistence(
+    () => ({
+      customerName,
+      selectedMake,
+      selectedModel,
+      selectedYear,
+      selectedVehicleId,
+      budgetType,
+      selectedPieces,
+      selectedMaterialId,
+      customPricePerM2,
+      selectedRollWidth,
+      selectedRollLength,
+      activeStep: wizard.activeStep,
+    }),
+    () =>
+      Boolean(
+        customerName.trim() ||
+          selectedVehicleId ||
+          selectedMaterialId ||
+          selectedPieces.length > 0,
+      ),
+    saveAutomotiveBudgetDraft,
+    clearAutomotiveBudgetDraft,
+  );
 
   const wizardNavBar = useMemo(
     () => (
@@ -326,20 +488,19 @@ export default function AutomotiveCalculator() {
         total={totals.price}
         showTotal={wizard.activeStep >= 2}
         canGoBack={wizard.canGoBack}
-        canGoNext={wizard.canGoNext}
+        canGoNext={wizard.activeStep < flowSteps.length - 1}
         onBack={wizard.goBack}
-        onNext={wizard.goNext}
+        onNext={tryGoNext}
         accent="indigo"
       />
     ),
     [
       wizard.activeStep,
       wizard.canGoBack,
-      wizard.canGoNext,
       wizard.goBack,
-      wizard.goNext,
       flowSteps,
       totals.price,
+      tryGoNext,
     ],
   );
 
@@ -347,6 +508,7 @@ export default function AutomotiveCalculator() {
 
   return (
     <div className="space-y-4 lg:space-y-8 w-full pb-4 lg:pb-20">
+      <BudgetNotice notice={notice} onDismiss={clearNotice} accent="indigo" />
       <div className="hidden lg:block">
         <PageHeader
           title="Automotivo"
@@ -357,13 +519,18 @@ export default function AutomotiveCalculator() {
       <BudgetFlowStepper
         steps={flowSteps}
         activeStep={wizard.activeStep}
-        onStepChange={wizard.goToStep}
+        onStepChange={tryGoToStep}
         canGoToStep={wizard.canGoToStep}
         accent="indigo"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 lg:items-start">
-        <div className="lg:col-span-2 space-y-6">
+        <div
+          className={cn(
+            'space-y-6 lg:col-span-2',
+            wizard.activeStep === 2 ? 'order-2 lg:order-none' : 'order-1',
+          )}
+        >
           <section
             className={cn(
               mobileStepPanelClass('indigo', wizard.stepPanelClass(0)),
@@ -498,7 +665,7 @@ export default function AutomotiveCalculator() {
                     Seleção parcial
                   </h3>
                   <p className="text-[10px] text-slate-600 mt-1 italic">
-                    Peças do porte {selectedVehicle.size} — só é possível orçar as que têm medida cadastrada.
+                    Peças cadastradas para este veículo — só é possível orçar as que têm medida preenchida.
                   </p>
                 </div>
 
@@ -531,6 +698,13 @@ export default function AutomotiveCalculator() {
                   </div>
                 )}
 
+                {partialPartsList.length === 0 ? (
+                  <p className="text-sm text-amber-200/80 italic rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+                    {isAdmin
+                      ? 'Este veículo ainda não tem peças cadastradas. Adicione na base de veículos antes de montar o orçamento.'
+                      : 'Este veículo ainda não tem peças com medida cadastradas.'}
+                  </p>
+                ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3">
                   {partialPartsList.map((part) => {
                     const isSelected = selectedPieces.includes(part.id);
@@ -570,6 +744,7 @@ export default function AutomotiveCalculator() {
                     );
                   })}
                 </div>
+                )}
               </>
             )}
 
@@ -620,28 +795,29 @@ export default function AutomotiveCalculator() {
           )}
         </div>
 
-        <div className="space-y-6">
-          <section
-            className={cn(
+        <div
+          className={cn(
+            'space-y-6',
+            wizard.activeStep === 2 ? 'order-1 lg:order-none' : 'order-2',
+          )}
+        >
+          <BudgetCollapsibleMaterialPanel
+            accent="indigo"
+            step={3}
+            title="Material"
+            description="Escolha o vinil e as dimensões do rolo."
+            panelClassName={cn(
               mobileStepPanelClass('indigo', wizard.stepPanelClass(2)),
               'lg:bg-slate-900 lg:border-indigo-500/30 lg:shadow-2xl lg:shadow-indigo-900/20',
             )}
+            selectedMaterial={selectedMaterial}
+            alwaysExpanded={isMaterialStepActive}
+            isExpanded={materialExpanded}
+            onToggle={() => setMaterialExpanded((v) => !v)}
           >
-            <BudgetMobileStepHeader
-              step={3}
-              title="Material"
-              description="Escolha o vinil e as dimensões do rolo."
-              accent="indigo"
-            />
-            <h3 className="hidden lg:flex text-lg font-bold text-white mb-6 items-center gap-2">
-              <Package className="text-indigo-500" size={20} />
-              Escolha do material
-            </h3>
-
-            <div className="space-y-4">
               <MaterialCascadeSelect
                 materials={materials}
-                context={{ mode: 'automotive' }}
+                context={materialContext}
                 selectedMaterialId={selectedMaterialId}
                 onSelectMaterialId={setSelectedMaterialId}
                 onSelectionChange={() => setCustomPricePerM2(null)}
@@ -701,8 +877,7 @@ export default function AutomotiveCalculator() {
                   </div>
                 </div>
               )}
-            </div>
-          </section>
+          </BudgetCollapsibleMaterialPanel>
 
           <section
             id="budget-summary"
@@ -768,12 +943,40 @@ export default function AutomotiveCalculator() {
 
               <BudgetMobileTotalHero total={totals.price} accent="indigo" />
 
+              {selectedMaterial && (
+                <SupplierWhatsAppButton
+                  brand={selectedMaterial.brand}
+                  line={getMaterialProductLine(selectedMaterial)}
+                  variant="primary"
+                  messageContext={{
+                    customerName: customerName || 'Cliente',
+                    projectLabel:
+                      selectedVehicle
+                        ? `${selectedVehicle.make} ${selectedVehicle.model} ${selectedVehicle.year}`
+                        : 'Veículo',
+                    brand: selectedMaterial.brand,
+                    line: getMaterialProductLine(selectedMaterial),
+                    areaM2: totals.materialM2,
+                    totalPrice: totals.price,
+                    budgetType: 'Automotivo',
+                  }}
+                />
+              )}
+
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}
                 pdfDisabled={!canExportBudget}
                 isSaved={isSaved}
                 onSave={handleSave}
                 onGeneratePDF={handleGeneratePDF}
+                onSaveBlocked={() => {
+                  const msg = getExportValidationMessage();
+                  if (msg) showNotice(msg, 'warning');
+                }}
+                onPdfBlocked={() => {
+                  const msg = getExportValidationMessage();
+                  if (msg) showNotice(msg, 'warning');
+                }}
               />
             </div>
           </section>

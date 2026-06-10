@@ -11,6 +11,8 @@ export type MaterialType = 'Cast' | 'Calandrado' | 'PPF' | 'Poliéster';
 export interface PartMeasurement {
   width: number;
   length: number;
+  /** Nome exibido para peças personalizadas (fora do catálogo padrão) */
+  name?: string;
 }
 
 export interface Vehicle {
@@ -109,6 +111,88 @@ export interface AdminUserAccountFields {
   createdBy?: string;
 }
 
+export interface SupplierContact {
+  id: string;
+  city: string;
+  state: string;
+  whatsapp: string;
+}
+
+export interface SupplierProductLink {
+  brand: string;
+  line: string;
+  isPrimary: boolean;
+}
+
+export interface SupplierPartner {
+  name: string;
+  role: string;
+}
+
+export interface CnpjLookupResult {
+  legalName: string;
+  tradeName: string;
+  address: string;
+  registrationStatus: string;
+  email?: string;
+  city?: string;
+  state?: string;
+  partners: SupplierPartner[];
+}
+
+export interface Supplier {
+  id: string;
+  legalName: string;
+  tradeName?: string;
+  cnpj: string;
+  address?: string;
+  registrationStatus?: string;
+  partners?: SupplierPartner[];
+  email?: string;
+  isActive: boolean;
+  contacts: SupplierContact[];
+  productLinks: SupplierProductLink[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SupplierListItem {
+  id: string;
+  legalName: string;
+  cnpj: string;
+  email?: string;
+  isActive: boolean;
+  contactCount: number;
+  productLinkCount: number;
+}
+
+export interface SupplierContactInput {
+  id?: string;
+  city: string;
+  state: string;
+  whatsapp: string;
+}
+
+export interface SupplierInput {
+  legalName: string;
+  tradeName?: string;
+  cnpj: string;
+  address?: string;
+  registrationStatus?: string;
+  partners?: SupplierPartner[];
+  email?: string;
+  isActive?: boolean;
+  contacts: SupplierContactInput[];
+  productLinks?: SupplierProductLink[];
+}
+
+export interface SupplierImportResult {
+  imported: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+}
+
 export interface AdminStats {
   totalApplicants: number;
   inactiveApplicants: number;
@@ -128,6 +212,8 @@ export interface AdminStats {
     appliancesCount: number;
     vehiclesIncomplete: number;
   };
+  activeSuppliers: number;
+  totalSuppliers: number;
 }
 
 export interface AdminUserListItem extends AdminUserAccountFields {

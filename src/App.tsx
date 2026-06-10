@@ -11,8 +11,7 @@ import { User } from './types';
 import AuthPage from './components/AuthPage';
 import AppLayout from './components/layout/AppLayout';
 import DashboardOverview from './components/DashboardOverview';
-import AutomotiveCalculator from './components/AutomotiveCalculator';
-import DecorativeCalculator from './components/DecorativeCalculator';
+import CalculatorRouteAnchor from './components/layout/CalculatorRouteAnchor';
 import CatalogPage from './pages/CatalogPage';
 import AppliancesPage from './pages/AppliancesPage';
 import VehiclesPage from './pages/VehiclesPage';
@@ -25,6 +24,9 @@ import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminUserDetailPage from './pages/admin/AdminUserDetailPage';
 import AdminCreateUserPage from './pages/admin/AdminCreateUserPage';
 import AdminBudgetsPage from './pages/admin/AdminBudgetsPage';
+import AdminSuppliersPage from './pages/admin/AdminSuppliersPage';
+import AdminCreateSupplierPage from './pages/admin/AdminCreateSupplierPage';
+import AdminSupplierDetailPage from './pages/admin/AdminSupplierDetailPage';
 import { AdminRoute, GuestRoute, ProtectedRoute } from './routes/ProtectedRoute';
 import { ROUTES } from './routes/paths';
 
@@ -77,8 +79,8 @@ export default function App() {
         <Route element={<AppLayout user={user!} onLogout={() => setUser(null)} />}>
           <Route index element={<DashboardOverview />} />
           <Route path="custos" element={<CostsOverview />} />
-          <Route path="automotivo" element={<AutomotiveCalculator />} />
-          <Route path="decorativo" element={<DecorativeCalculator />} />
+          <Route path="automotivo" element={<CalculatorRouteAnchor />} />
+          <Route path="decorativo" element={<CalculatorRouteAnchor />} />
           <Route path="orcamento" element={<BudgetHistory />} />
           <Route path="historico" element={<Navigate to={ROUTES.orcamento} replace />} />
           <Route path="perfil" element={<ProfileView user={user!} />} />
@@ -93,6 +95,9 @@ export default function App() {
               <Route path="usuarios/novo" element={<AdminCreateUserPage />} />
               <Route path="usuarios/:userId" element={<AdminUserDetailPage />} />
               <Route path="orcamentos" element={<AdminBudgetsPage />} />
+              <Route path="fornecedores" element={<AdminSuppliersPage />} />
+              <Route path="fornecedores/novo" element={<AdminCreateSupplierPage />} />
+              <Route path="fornecedores/:supplierId" element={<AdminSupplierDetailPage />} />
             </Route>
           </Route>
         </Route>

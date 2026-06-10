@@ -30,6 +30,7 @@ import {
 import { seedUserData } from './seed/seedUser.js';
 import { resolveCatalogUserId } from './catalog.js';
 import { createAdminRouter } from './adminRoutes.js';
+import { lookupSupplierForProduct } from './supplierRoutes.js';
 import { mapBudget, mapFinancial } from './budgetMappers.js';
 import { createApplicatorUser } from './userProvisioning.js';
 import {
@@ -208,24 +209,25 @@ function mapVehicle(row: Record<string, unknown>) {
     model: row.model as string,
     year: row.year as string,
     size: row.size as string,
-    partMeasurements: filterStandardPartMeasurements(
-      row.part_measurements as Record<string, { width: number; length: number }>,
+    partMeasurements: normalizePartMeasurements(
+      row.part_measurements as Record<string, { width: number; length: number; name?: string }>,
     ),
   };
 }
 
-const STANDARD_VEHICLE_PART_IDS = new Set([
-  'CAP', 'TET', 'MAL', 'PCD', 'PCE', 'PTD', 'PTE', 'PDD', 'PDE',
-  'PTD_DOOR', 'PTE_DOOR', 'PCD_BUMP', 'PCT_BUMP', 'SAI_D', 'SAI_E',
-  'RET_D', 'RET_E', 'MAC_D', 'AER', 'COL', 'GRA',
-]);
-
-function filterStandardPartMeasurements(
-  measurements: Record<string, { width: number; length: number }> | null | undefined,
+function normalizePartMeasurements(
+  measurements: Record<string, { width: number; length: number; name?: string }> | null | undefined,
 ) {
   if (!measurements || typeof measurements !== 'object') return {};
   return Object.fromEntries(
-    Object.entries(measurements).filter(([id]) => STANDARD_VEHICLE_PART_IDS.has(id)),
+    Object.entries(measurements).map(([id, m]) => [
+      id,
+      {
+        width: Number(m.width) || 0,
+        length: Number(m.length) || 0,
+        ...(typeof m.name === 'string' && m.name.trim() ? { name: m.name.trim() } : {}),
+      },
+    ]),
   );
 }
 
@@ -278,6 +280,26 @@ declare global {
 }
 
 app.get('/api/health', (req, res) => handleHealthRequest(req, res, pool));
+
+app.get('/api/suppliers/lookup', requireUser, async (req, res) => {
+  const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const line = typeof req.query.line === 'string' ? req.query.line.trim() : '';
+  if (!brand || !line) {
+    res.status(400).json({ error: 'Parâmetros brand e line são obrigatórios' });
+    return;
+  }
+  try {
+    const supplier = await lookupSupplierForProduct(pool, brand, line);
+    if (!supplier) {
+      res.status(404).json({ error: 'Nenhum fornecedor encontrado para este produto' });
+      return;
+    }
+    res.json(supplier);
+  } catch (e) {
+    console.error('[suppliers/lookup]', e);
+    res.status(500).json({ error: 'Erro ao buscar fornecedor' });
+  }
+});
 
 app.use('/api/admin', requireUser, requireAdmin, createAdminRouter(pool));
 
@@ -677,13 +699,11 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
         [catalogUserId, make, model, year],
       );
 
-      const partMeasurements = filterStandardPartMeasurements({
+      const partMeasurements = normalizePartMeasurements({
         ...(typeof existing.rows[0]?.part_measurements === 'object' && existing.rows[0]?.part_measurements !== null
-          ? (existing.rows[0].part_measurements as Record<string, { width: number; length: number }>)
+          ? (existing.rows[0].part_measurements as Record<string, { width: number; length: number; name?: string }>)
           : {}),
-        ...filterStandardPartMeasurements(
-          (v.partMeasurements as Record<string, { width: number; length: number }>) || {},
-        ),
+        ...((v.partMeasurements as Record<string, { width: number; length: number; name?: string }>) || {}),
       });
 
       if (existing.rows.length > 0) {
@@ -705,9 +725,11 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
             model,
             year,
             v.size,
-            JSON.stringify(filterStandardPartMeasurements(
-              (v.partMeasurements as Record<string, { width: number; length: number }>) || {},
-            )),
+            JSON.stringify(
+              normalizePartMeasurements(
+                (v.partMeasurements as Record<string, { width: number; length: number; name?: string }>) || {},
+              ),
+            ),
           ],
         );
       }

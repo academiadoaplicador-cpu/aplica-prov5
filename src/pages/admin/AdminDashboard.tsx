@@ -11,6 +11,7 @@ import {
   ChevronRight,
   UserPlus,
   Percent,
+  Truck,
 } from 'lucide-react';
 import { adminService } from '../../services/adminService';
 import { AdminStats } from '../../types';
@@ -98,6 +99,7 @@ export default function AdminDashboard() {
   const shortcuts = [
     { label: 'Ver usuários', to: ROUTES.admin.users, icon: Users },
     { label: 'Orçamentos globais', to: ROUTES.admin.budgets, icon: FileText },
+    { label: 'Fornecedores', to: ROUTES.admin.suppliers, icon: Truck },
     { label: 'Catálogo de materiais', to: ROUTES.catalog, icon: Package },
   ];
 
@@ -141,6 +143,17 @@ export default function AdminDashboard() {
             label="Eletros"
             value={stats.catalog.appliancesCount}
           />
+          <CatalogStat
+            icon={<Truck size={18} className="text-amber-400" />}
+            label="Fornecedores"
+            value={stats.activeSuppliers ?? 0}
+            warn={
+              stats.totalSuppliers !== undefined && stats.activeSuppliers !== undefined
+                ? stats.totalSuppliers - stats.activeSuppliers
+                : undefined
+            }
+            warnLabel="inativos"
+          />
           <div className="col-span-2 sm:col-span-1 flex flex-col justify-center">
             <p className="text-[10px] font-mono uppercase text-slate-500">Por tipo</p>
             <p className="text-sm text-white mt-1">
@@ -153,7 +166,7 @@ export default function AdminDashboard() {
 
       <section>
         <h3 className="text-sm font-bold text-white mb-3">Atalhos</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {shortcuts.map(({ label, to, icon: Icon }) => (
             <button
               key={to}

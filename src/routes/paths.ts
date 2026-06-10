@@ -19,6 +19,9 @@ export const ROUTES = {
     userNew: '/admin/usuarios/novo',
     user: (id: string) => `/admin/usuarios/${id}`,
     budgets: '/admin/orcamentos',
+    suppliers: '/admin/fornecedores',
+    supplierNew: '/admin/fornecedores/novo',
+    supplier: (id: string) => `/admin/fornecedores/${id}`,
   },
 } as const;
 

@@ -6,6 +6,7 @@ import { cn } from '../lib/utils';
 interface GeneratePdfButtonProps {
   onGenerate: () => Promise<void>;
   disabled?: boolean;
+  onBlockedClick?: () => void;
   label?: string;
   successLabel?: string;
   className?: string;
@@ -15,6 +16,7 @@ interface GeneratePdfButtonProps {
 export default function GeneratePdfButton({
   onGenerate,
   disabled = false,
+  onBlockedClick,
   label = 'Gerar PDF',
   successLabel = 'PDF gerado!',
   className,
@@ -25,7 +27,11 @@ export default function GeneratePdfButton({
   const [error, setError] = useState<string | null>(null);
 
   const handleClick = async () => {
-    if (disabled || isGenerating) return;
+    if (isGenerating) return;
+    if (disabled) {
+      onBlockedClick?.();
+      return;
+    }
     setIsGenerating(true);
     setJustGenerated(false);
     setError(null);
@@ -48,7 +54,7 @@ export default function GeneratePdfButton({
     <div className={cn('space-y-2', className)}>
     <motion.button
       type="button"
-      disabled={disabled || isGenerating}
+      disabled={isGenerating}
       onClick={handleClick}
       whileHover={disabled || isGenerating ? undefined : { scale: 1.02, y: -1 }}
       whileTap={disabled || isGenerating ? undefined : { scale: 0.98 }}
@@ -62,7 +68,8 @@ export default function GeneratePdfButton({
       transition={{ duration: 0.25 }}
       className={cn(
         'relative w-full font-black rounded-xl flex items-center justify-center gap-2 uppercase tracking-wider overflow-hidden transition-colors',
-        'disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100',
+        disabled && !isGenerating ? 'opacity-55 cursor-pointer' : '',
+        isGenerating ? 'opacity-70 cursor-wait' : '',
         isSm ? 'py-3 text-xs' : 'py-4 text-xs',
         justGenerated
           ? 'bg-emerald-500 text-white'

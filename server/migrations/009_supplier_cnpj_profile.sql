@@ -1,0 +1,4 @@
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS trade_name TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS registration_status TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS partners JSONB NOT NULL DEFAULT '[]'::jsonb;

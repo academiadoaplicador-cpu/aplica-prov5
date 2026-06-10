@@ -8,6 +8,8 @@ import { countIncompleteVehicles } from './vehicleCompleteness.js';
 import { createApplicatorUser, hashPassword } from './userProvisioning.js';
 import { isValidEmail, normalizeEmail } from './email.js';
 import { getPasswordValidationMessage } from './password.js';
+import { createSupplierAdminRouter } from './supplierRoutes.js';
+import { fetchCnpjLookup } from './cnpjLookup.js';
 
 function num(value: unknown): number {
   return Number(value);
@@ -66,6 +68,23 @@ function mapAdminListUser(row: Record<string, unknown>) {
 export function createAdminRouter(pool: Pool): Router {
   const router = Router();
 
+  router.post('/suppliers/cnpj-lookup', async (req: Request, res: Response) => {
+    const cnpj = String((req.body as { cnpj?: string })?.cnpj ?? '').trim();
+    if (!cnpj) {
+      res.status(400).json({ error: 'CNPJ é obrigatório' });
+      return;
+    }
+    try {
+      const result = await fetchCnpjLookup(cnpj);
+      res.json(result);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Erro ao consultar CNPJ';
+      res.status(400).json({ error: message });
+    }
+  });
+
+  router.use('/suppliers', createSupplierAdminRouter(pool));
+
   router.get('/stats', async (_req: Request, res: Response) => {
     try {
       const adminEmail = adminEmailParam();
@@ -84,6 +103,8 @@ export function createAdminRouter(pool: Pool): Router {
         vehiclesResult,
         appliancesResult,
         vehiclesRowsResult,
+        activeSuppliersResult,
+        totalSuppliersResult,
       ] = await Promise.all([
         pool.query(
           `SELECT COUNT(*)::int AS count FROM users
@@ -146,6 +167,13 @@ export function createAdminRouter(pool: Pool): Router {
         pool.query('SELECT size, part_measurements FROM vehicles WHERE user_id = $1', [
           catalogUserId,
         ]),
+        pool.query(
+          'SELECT COUNT(*)::int AS count FROM suppliers WHERE user_id = $1 AND is_active = TRUE',
+          [catalogUserId],
+        ),
+        pool.query('SELECT COUNT(*)::int AS count FROM suppliers WHERE user_id = $1', [
+          catalogUserId,
+        ]),
       ]);
 
       const statusCounts: Record<string, number> = {};
@@ -186,6 +214,8 @@ export function createAdminRouter(pool: Pool): Router {
           appliancesCount: appliancesResult.rows[0].count as number,
           vehiclesIncomplete,
         },
+        activeSuppliers: activeSuppliersResult.rows[0].count as number,
+        totalSuppliers: totalSuppliersResult.rows[0].count as number,
       });
     } catch (e) {
       console.error('[admin/stats]', e);

@@ -49,19 +49,19 @@ export default function BudgetFlowStepper({
             {steps.map((step, index) => {
               const isCurrent = index === activeStep;
               const isPast = step.complete && !isCurrent;
-              const reachable = canGoToStep(index);
+              const isReachable =
+                index <= activeStep || steps.slice(0, index).every((s) => s.complete);
 
               return (
                 <button
                   key={step.id}
                   type="button"
-                  disabled={!reachable}
                   aria-label={`Etapa ${index + 1}: ${step.shortLabel}`}
                   aria-current={isCurrent ? 'step' : undefined}
                   onClick={() => onStepChange(index)}
                   className={cn(
-                    'flex flex-col items-center gap-1.5 min-w-0 flex-1 disabled:cursor-not-allowed',
-                    !reachable && 'opacity-35',
+                    'flex flex-col items-center gap-1.5 min-w-0 flex-1',
+                    !isReachable && !isCurrent && 'opacity-45',
                   )}
                 >
                   <span
@@ -69,8 +69,8 @@ export default function BudgetFlowStepper({
                       'flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold border-2 transition-all',
                       isCurrent && cn(styles.stepActive, 'border-transparent scale-110 shadow-lg ring-2', styles.ring),
                       isPast && 'bg-emerald-600/25 text-emerald-400 border-emerald-500/40',
-                      !isCurrent && !isPast && reachable && 'bg-slate-900 text-slate-500 border-slate-700',
-                      !reachable && 'bg-slate-950 text-slate-600 border-slate-800',
+                      !isCurrent && !isPast && isReachable && 'bg-slate-900 text-slate-500 border-slate-700',
+                      !isReachable && !isCurrent && 'bg-slate-950 text-slate-600 border-slate-800',
                     )}
                   >
                     {isPast ? <Check size={14} strokeWidth={3} /> : index + 1}

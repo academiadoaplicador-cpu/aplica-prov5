@@ -24,6 +24,7 @@ import BudgetWizardNavBar from './BudgetWizardNavBar';
 import { useBudgetWizard } from '../hooks/useBudgetWizard';
 import { useMobileBottomExtras } from '../contexts/MobileBottomExtrasContext';
 import BudgetMobileStepHeader from './budget-mobile/BudgetMobileStepHeader';
+import BudgetCollapsibleMaterialPanel from './budget-mobile/BudgetCollapsibleMaterialPanel';
 import BudgetMobileTotalHero from './budget-mobile/BudgetMobileTotalHero';
 import {
   mobileStepPanelClass,
@@ -34,12 +35,20 @@ import {
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
-import { filterMaterialsByContext } from '../utils/materialSelection';
+import { filterMaterialsByContext, getMaterialProductLine } from '../utils/materialSelection';
+import SupplierWhatsAppButton from './SupplierWhatsAppButton';
+import {
+  clearDecorativeBudgetDraft,
+  loadDecorativeBudgetDraft,
+  saveDecorativeBudgetDraft,
+} from '../utils/budgetDraftStorage';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
 import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNesting';
-import type { NestingPartInput } from '../utils/rollNesting';
-type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
+import BudgetNotice from './budget-mobile/BudgetNotice';
+import { useBudgetNotice } from '../hooks/useBudgetNotice';
+import { useBudgetDraftPersistence } from '../hooks/useBudgetDraftPersistence';
 
+type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
 type DimensionField = 'width' | 'height';
 type DimensionDrafts = Record<string, Partial<Record<DimensionField, string>>>;
 
@@ -63,22 +72,49 @@ function parseDimensionDraft(raw: string): number {
 }
 
 export default function DecorativeCalculator() {
-  const [customerName, setCustomerName] = useState('');
-  const [subType, setSubType] = useState<SubType>('Eletrodomésticos');
-  const [selectedApplianceMake, setSelectedApplianceMake] = useState<string>('');
-  const [selectedApplianceType, setSelectedApplianceType] = useState<string>('');
-  const [selectedApplianceId, setSelectedApplianceId] = useState<string>('');
+  const restoredDraft = useRef(loadDecorativeBudgetDraft());
+  const isRestoringDraftRef = useRef(Boolean(restoredDraft.current));
 
-  const [items, setItems] = useState<DecorativeItem[]>([
-    { id: generateId(), name: 'Peça Principal', width: 0.5, height: 0.5, complexity: 1 }
-  ]);
+  const [customerName, setCustomerName] = useState(restoredDraft.current?.customerName ?? '');
+  const [subType, setSubType] = useState<SubType>(
+    restoredDraft.current?.subType ?? 'Eletrodomésticos',
+  );
+  const [selectedApplianceMake, setSelectedApplianceMake] = useState(
+    restoredDraft.current?.selectedApplianceMake ?? '',
+  );
+  const [selectedApplianceType, setSelectedApplianceType] = useState(
+    restoredDraft.current?.selectedApplianceType ?? '',
+  );
+  const [selectedApplianceId, setSelectedApplianceId] = useState(
+    restoredDraft.current?.selectedApplianceId ?? '',
+  );
+
+  const [items, setItems] = useState<DecorativeItem[]>(
+    restoredDraft.current?.items ?? [
+      { id: generateId(), name: 'Peça Principal', width: 0, height: 0, complexity: 1 },
+    ],
+  );
   const [dimensionDrafts, setDimensionDrafts] = useState<DimensionDrafts>({});
-  const syncedApplianceIdRef = useRef<string | null>(null);
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
-  const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(null);
-  const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(null);
-  const [selectedRollLength, setSelectedRollLength] = useState<number | null>(null);
+  const syncedApplianceIdRef = useRef<string | null>(
+    restoredDraft.current?.syncedApplianceId ?? null,
+  );
+  const [selectedMaterialId, setSelectedMaterialId] = useState(
+    restoredDraft.current?.selectedMaterialId ?? '',
+  );
+  const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(
+    restoredDraft.current?.customPricePerM2 ?? null,
+  );
+  const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(
+    restoredDraft.current?.selectedRollWidth ?? null,
+  );
+  const [selectedRollLength, setSelectedRollLength] = useState<number | null>(
+    restoredDraft.current?.selectedRollLength ?? null,
+  );
+  const [materialExpanded, setMaterialExpanded] = useState(
+    !restoredDraft.current?.selectedMaterialId,
+  );
   const [isSaved, setIsSaved] = useState(false);
+  const { notice, showNotice, clearNotice } = useBudgetNotice();
   const [appliances, setAppliances] = useState<Appliance[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [settings, setSettings] = useState<FinancialSettings>({
@@ -101,7 +137,7 @@ export default function DecorativeCalculator() {
   }, []);
 
   useEffect(() => {
-    if (!selectedMaterialId) return;
+    if (!selectedMaterialId || materials.length === 0) return;
     const allowed = filterMaterialsByContext(materials, { mode: 'decorative', subType });
     if (!allowed.some((m) => m.id === selectedMaterialId)) {
       setSelectedMaterialId('');
@@ -122,6 +158,7 @@ export default function DecorativeCalculator() {
 
   // Preenche peças ao escolher eletrodoméstico; não sobrescreve edições manuais depois.
   useEffect(() => {
+    if (isRestoringDraftRef.current) return;
     if (subType !== 'Eletrodomésticos') {
       syncedApplianceIdRef.current = null;
       return;
@@ -145,21 +182,96 @@ export default function DecorativeCalculator() {
   }, [selectedApplianceId, subType, appliances]);
 
   const addItem = () => {
-    setItems(prev => [...prev, { id: generateId(), name: 'Nova Peça', width: 0.5, height: 0.5, complexity: 1 }]);
+    setItems((prev) => [
+      ...prev,
+      { id: generateId(), name: 'Nova Peça', width: 0, height: 0, complexity: 1 },
+    ]);
+    showNotice('Nova peça adicionada. Preencha o nome e as medidas.', 'success');
   };
 
+  const updateItem = useCallback((id: string, updates: Partial<DecorativeItem>) => {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
+  }, []);
+
+  const effectiveItems = useMemo((): DecorativeItem[] => {
+    return items.map((item) => {
+      const drafts = dimensionDrafts[item.id];
+      if (!drafts) return item;
+      return {
+        ...item,
+        width:
+          drafts.width !== undefined ? parseDimensionDraft(drafts.width) : item.width,
+        height:
+          drafts.height !== undefined ? parseDimensionDraft(drafts.height) : item.height,
+      };
+    });
+  }, [items, dimensionDrafts]);
+
+  const validatePieces = useCallback((pieceItems: DecorativeItem[]): string | null => {
+    if (pieceItems.length === 0) return 'Adicione ao menos uma peça ao orçamento.';
+    for (const item of pieceItems) {
+      const label = item.name.trim() || 'sem nome';
+      if (!item.name.trim()) return 'Informe o nome de todas as peças.';
+      if (item.width <= 0) return `Informe a largura da peça "${label}".`;
+      if (item.height <= 0) return `Informe a altura da peça "${label}".`;
+    }
+    return null;
+  }, []);
+
+  const getExportValidationMessage = useCallback((): string | null => {
+    if (!customerName.trim()) return 'Informe o nome do cliente.';
+    if (subType === 'Eletrodomésticos' && !selectedApplianceId) {
+      return 'Selecione marca, tipo e modelo do eletrodoméstico.';
+    }
+    const piecesError = validatePieces(effectiveItems);
+    if (piecesError) return piecesError;
+    if (!selectedMaterialId) return 'Selecione o material antes de salvar ou gerar o PDF.';
+    return null;
+  }, [
+    customerName,
+    subType,
+    selectedApplianceId,
+    effectiveItems,
+    validatePieces,
+    selectedMaterialId,
+  ]);
+
+  const getStepValidationMessage = useCallback(
+    (stepIndex: number): string | null => {
+      switch (stepIndex) {
+        case 0:
+          if (!customerName.trim()) return 'Informe o nome do cliente.';
+          if (subType === 'Eletrodomésticos' && !selectedApplianceId) {
+            return 'Selecione marca, tipo e modelo do eletrodoméstico.';
+          }
+          return null;
+        case 1:
+          return validatePieces(effectiveItems);
+        case 2:
+          if (!selectedMaterialId) return 'Selecione o material para continuar.';
+          return null;
+        default:
+          return getExportValidationMessage();
+      }
+    },
+    [
+      customerName,
+      subType,
+      selectedApplianceId,
+      effectiveItems,
+      validatePieces,
+      selectedMaterialId,
+      getExportValidationMessage,
+    ],
+  );
   const removeItem = (id: string) => {
-    setItems(prev => prev.filter(i => i.id !== id));
+    setItems((prev) => prev.filter((i) => i.id !== id));
     setDimensionDrafts((prev) => {
       if (!prev[id]) return prev;
       const next = { ...prev };
       delete next[id];
       return next;
     });
-  };
-
-  const updateItem = (id: string, updates: Partial<DecorativeItem>) => {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
   };
 
   const getDimensionDisplay = useCallback(
@@ -191,40 +303,52 @@ export default function DecorativeCalculator() {
         updateItem(itemId, { [field]: parsed });
       }
     },
-    [],
+    [updateItem],
   );
 
-  const handleDimensionBlur = useCallback((itemId: string, field: DimensionField) => {
-    let committed: number | undefined;
+  const handleDimensionBlur = useCallback(
+    (itemId: string, field: DimensionField) => {
+      let committed: number | undefined;
 
-    setDimensionDrafts((prev) => {
-      const draft = prev[itemId]?.[field];
-      if (draft !== undefined) {
-        committed = parseDimensionDraft(draft);
+      setDimensionDrafts((prev) => {
+        const draft = prev[itemId]?.[field];
+        if (draft !== undefined) {
+          committed = parseDimensionDraft(draft);
+        }
+
+        if (!prev[itemId]) return prev;
+        const entry = { ...prev[itemId] };
+        delete entry[field];
+        const next = { ...prev };
+        if (Object.keys(entry).length === 0) delete next[itemId];
+        else next[itemId] = entry;
+        return next;
+      });
+
+      if (committed !== undefined) {
+        updateItem(itemId, { [field]: committed });
       }
+    },
+    [updateItem],
+  );
 
-      if (!prev[itemId]) return prev;
-      const entry = { ...prev[itemId] };
-      delete entry[field];
-      const next = { ...prev };
-      if (Object.keys(entry).length === 0) delete next[itemId];
-      else next[itemId] = entry;
-      return next;
-    });
-
-    if (committed !== undefined) {
-      updateItem(itemId, { [field]: committed });
-    }
-  }, []);
+  useEffect(() => {
+    if (!selectedMaterialId) setMaterialExpanded(true);
+  }, [selectedMaterialId]);
 
   const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
   const selectedAppliance = appliances.find((a) => a.id === selectedApplianceId);
   const isRecommended = selectedMaterial?.recommendedFor.includes(subType);
 
   useEffect(() => {
+    if (isRestoringDraftRef.current) return;
     setSelectedRollWidth(null);
     setSelectedRollLength(null);
   }, [selectedMaterialId]);
+
+  useEffect(() => {
+    isRestoringDraftRef.current = false;
+  }, []);
 
   const rollDimensions = useMemo(
     () =>
@@ -236,7 +360,7 @@ export default function DecorativeCalculator() {
   );
 
   const nestingParts = useMemo((): NestingPartInput[] => {
-    return items
+    return effectiveItems
       .filter((item) => item.width > 0 && item.height > 0)
       .map((item) => ({
         id: item.id,
@@ -244,12 +368,12 @@ export default function DecorativeCalculator() {
         width: item.width,
         length: item.height,
       }));
-  }, [items]);
+  }, [effectiveItems]);
 
   const totals = useMemo(() => {
-    const totalM2 = items.reduce((acc, item) => acc + (item.width * item.height), 0);
+    const totalM2 = effectiveItems.reduce((acc, item) => acc + item.width * item.height, 0);
 
-    const totalHours = items.reduce((acc, item) => {
+    const totalHours = effectiveItems.reduce((acc, item) => {
       const baseTime = item.width * item.height;
       const multiplier = item.complexity === 1 ? 1.5 : item.complexity === 2 ? 2.5 : 4;
       return acc + (baseTime * multiplier);
@@ -294,7 +418,7 @@ export default function DecorativeCalculator() {
       profit,
     };
   }, [
-    items,
+    effectiveItems,
     nestingParts,
     rollDimensions,
     selectedMaterialId,
@@ -309,7 +433,7 @@ export default function DecorativeCalculator() {
     vehicleModel: `${subType}${selectedApplianceId ? ': ' + appliances.find(a => a.id === selectedApplianceId)?.model : ''}`,
     status: 'Pendente' as const,
     date: new Date().toISOString(),
-    items: items.map((item) => ({
+    items: effectiveItems.map((item) => ({
       partId: item.id,
       quantity: 1,
       name: item.name,
@@ -326,29 +450,44 @@ export default function DecorativeCalculator() {
     profit: totals.profit,
     type: 'Decorativo' as const,
     subType
-  }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances, items]);
+  }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances, effectiveItems]);
 
   const handleSave = async () => {
-    if (!customerName || !selectedMaterialId) return;
+    const validationError = getExportValidationMessage();
+    if (validationError) {
+      showNotice(validationError, 'warning');
+      return;
+    }
     await databaseService.saveBudget(currentBudget);
+    clearDecorativeBudgetDraft();
     setIsSaved(true);
+    showNotice('Orçamento salvo com sucesso.', 'success');
     setTimeout(() => setIsSaved(false), 3000);
   };
 
   const handleGeneratePDF = async () => {
-    if (!customerName || !selectedMaterialId) {
-      throw new Error('Preencha cliente e material antes de gerar o PDF.');
+    const validationError = getExportValidationMessage();
+    if (validationError) {
+      showNotice(validationError, 'warning');
+      throw new Error(validationError);
     }
     await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
   };
 
-  const canExportBudget = Boolean(customerName && selectedMaterialId && items.length > 0);
+  const canExportBudget = Boolean(
+    !getExportValidationMessage() &&
+      customerName &&
+      selectedMaterialId &&
+      effectiveItems.length > 0,
+  );
 
   const flowSteps = useMemo((): BudgetFlowStep[] => {
     const clientReady =
       Boolean(customerName.trim()) &&
       (subType !== 'Eletrodomésticos' || Boolean(selectedApplianceId));
-    const piecesReady = items.length > 0 && items.every((i) => i.width > 0 && i.height > 0);
+    const piecesReady =
+      effectiveItems.length > 0 &&
+      effectiveItems.every((i) => i.width > 0 && i.height > 0 && i.name.trim());
 
     return [
       {
@@ -379,9 +518,81 @@ export default function DecorativeCalculator() {
         complete: canExportBudget,
       },
     ];
-  }, [customerName, subType, selectedApplianceId, items, selectedMaterialId, canExportBudget]);
+  }, [customerName, subType, selectedApplianceId, effectiveItems, selectedMaterialId, canExportBudget]);
 
-  const wizard = useBudgetWizard(flowSteps);
+  const wizard = useBudgetWizard(flowSteps, restoredDraft.current?.activeStep ?? 0);
+
+  const materialContext = useMemo(
+    () => ({ mode: 'decorative' as const, subType }),
+    [subType],
+  );
+
+  const isMaterialStepActive = wizard.activeStep === 2;
+
+  const blurActiveField = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  };
+
+  const tryGoNext = useCallback(() => {
+    blurActiveField();
+    const validationError = getStepValidationMessage(wizard.activeStep);
+    if (validationError) {
+      showNotice(validationError, 'warning');
+      return;
+    }
+    wizard.goNext();
+  }, [getStepValidationMessage, wizard, showNotice]);
+
+  const tryGoToStep = useCallback(
+    (index: number) => {
+      if (index === wizard.activeStep) return;
+
+      if (index < wizard.activeStep) {
+        wizard.goToStep(index);
+        return;
+      }
+
+      blurActiveField();
+      for (let step = wizard.activeStep; step < index; step++) {
+        const validationError = getStepValidationMessage(step);
+        if (validationError) {
+          showNotice(validationError, 'warning');
+          wizard.goToStep(step);
+          return;
+        }
+      }
+      wizard.goToStep(index);
+    },
+    [getStepValidationMessage, wizard, showNotice],
+  );
+
+  useBudgetDraftPersistence(
+    () => ({
+      customerName,
+      subType,
+      selectedApplianceMake,
+      selectedApplianceType,
+      selectedApplianceId,
+      syncedApplianceId: syncedApplianceIdRef.current,
+      items,
+      selectedMaterialId,
+      customPricePerM2,
+      selectedRollWidth,
+      selectedRollLength,
+      activeStep: wizard.activeStep,
+    }),
+    () =>
+      Boolean(
+        customerName.trim() ||
+          selectedMaterialId ||
+          items.some((i) => i.width > 0 || i.height > 0 || i.name !== 'Peça Principal') ||
+          selectedApplianceId,
+      ),
+    saveDecorativeBudgetDraft,
+    clearDecorativeBudgetDraft,
+  );
 
   const wizardNavBar = useMemo(
     () => (
@@ -392,20 +603,19 @@ export default function DecorativeCalculator() {
         total={totals.price}
         showTotal={wizard.activeStep >= 2}
         canGoBack={wizard.canGoBack}
-        canGoNext={wizard.canGoNext}
+        canGoNext={wizard.activeStep < flowSteps.length - 1}
         onBack={wizard.goBack}
-        onNext={wizard.goNext}
+        onNext={tryGoNext}
         accent="emerald"
       />
     ),
     [
       wizard.activeStep,
       wizard.canGoBack,
-      wizard.canGoNext,
       wizard.goBack,
-      wizard.goNext,
       flowSteps,
       totals.price,
+      tryGoNext,
     ],
   );
 
@@ -413,6 +623,7 @@ export default function DecorativeCalculator() {
 
   return (
     <div className="space-y-4 lg:space-y-8 w-full pb-4 lg:pb-20">
+      <BudgetNotice notice={notice} onDismiss={clearNotice} accent="emerald" />
       <div className="hidden lg:block">
         <PageHeader
           title="Decorativo"
@@ -423,13 +634,18 @@ export default function DecorativeCalculator() {
       <BudgetFlowStepper
         steps={flowSteps}
         activeStep={wizard.activeStep}
-        onStepChange={wizard.goToStep}
+        onStepChange={tryGoToStep}
         canGoToStep={wizard.canGoToStep}
         accent="emerald"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 lg:items-start">
-        <div className="lg:col-span-2 space-y-6">
+        <div
+          className={cn(
+            'space-y-6 lg:col-span-2',
+            wizard.activeStep === 2 ? 'order-2 lg:order-none' : 'order-1',
+          )}
+        >
           <section
             className={cn(mobileStepPanelClass('emerald', wizard.stepPanelClass(0)), 'space-y-6')}
           >
@@ -457,8 +673,44 @@ export default function DecorativeCalculator() {
                     <button
                       key={cat}
                       onClick={() => {
+                        if (cat === subType) return;
                         setSubType(cat);
                         setSelectedApplianceId('');
+                        setSelectedApplianceMake('');
+                        setSelectedApplianceType('');
+                        syncedApplianceIdRef.current = null;
+                        setDimensionDrafts({});
+                        if (cat === 'Parede') {
+                          setItems([
+                            {
+                              id: generateId(),
+                              name: 'Parede 1',
+                              width: 0,
+                              height: 0,
+                              complexity: 1,
+                            },
+                          ]);
+                        } else if (cat === 'Móveis') {
+                          setItems([
+                            {
+                              id: generateId(),
+                              name: 'Peça Principal',
+                              width: 0,
+                              height: 0,
+                              complexity: 1,
+                            },
+                          ]);
+                        } else {
+                          setItems([
+                            {
+                              id: generateId(),
+                              name: 'Peça Principal',
+                              width: 0,
+                              height: 0,
+                              complexity: 1,
+                            },
+                          ]);
+                        }
                       }}
                       className={cn(
                         "w-full min-h-[4rem] sm:min-h-0 sm:p-3 p-3.5 rounded-2xl border text-[10px] font-bold uppercase transition-all active:scale-[0.98]",
@@ -666,28 +918,29 @@ export default function DecorativeCalculator() {
           )}
         </div>
 
-        <div className="space-y-6">
-          <section
-            className={cn(
+        <div
+          className={cn(
+            'space-y-6',
+            wizard.activeStep === 2 ? 'order-1 lg:order-none' : 'order-2',
+          )}
+        >
+          <BudgetCollapsibleMaterialPanel
+            accent="emerald"
+            step={3}
+            title="Material"
+            description="Escolha o vinil e as dimensões do rolo."
+            panelClassName={cn(
               mobileStepPanelClass('emerald', wizard.stepPanelClass(2)),
               'lg:bg-slate-900 lg:border-emerald-500/30 lg:shadow-2xl lg:shadow-emerald-900/10',
             )}
+            selectedMaterial={selectedMaterial}
+            alwaysExpanded={isMaterialStepActive}
+            isExpanded={materialExpanded}
+            onToggle={() => setMaterialExpanded((v) => !v)}
           >
-            <BudgetMobileStepHeader
-              step={3}
-              title="Material"
-              description="Escolha o vinil e as dimensões do rolo."
-              accent="emerald"
-            />
-            <h3 className="hidden lg:flex text-lg font-bold text-white mb-6 items-center gap-2">
-              <Package className="text-emerald-500" size={20} />
-              Escolha do material
-            </h3>
-
-            <div className="space-y-4">
               <MaterialCascadeSelect
                 materials={materials}
-                context={{ mode: 'decorative', subType }}
+                context={materialContext}
                 selectedMaterialId={selectedMaterialId}
                 onSelectMaterialId={setSelectedMaterialId}
                 onSelectionChange={() => setCustomPricePerM2(null)}
@@ -752,8 +1005,7 @@ export default function DecorativeCalculator() {
                   </div>
                 </div>
               )}
-            </div>
-          </section>
+          </BudgetCollapsibleMaterialPanel>
 
           <section
             id="budget-summary"
@@ -812,12 +1064,39 @@ export default function DecorativeCalculator() {
 
               <BudgetMobileTotalHero total={totals.price} label="Total sugerido" accent="emerald" />
 
+              {selectedMaterial && (
+                <SupplierWhatsAppButton
+                  brand={selectedMaterial.brand}
+                  line={getMaterialProductLine(selectedMaterial)}
+                  variant="primary"
+                  messageContext={{
+                    customerName: customerName || 'Cliente',
+                    projectLabel: selectedAppliance
+                      ? `${subType}: ${selectedAppliance.make} ${selectedAppliance.model}`
+                      : subType,
+                    brand: selectedMaterial.brand,
+                    line: getMaterialProductLine(selectedMaterial),
+                    areaM2: totals.finalM2,
+                    totalPrice: totals.price,
+                    budgetType: 'Decorativo',
+                  }}
+                />
+              )}
+
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}
                 pdfDisabled={!canExportBudget}
                 isSaved={isSaved}
                 onSave={handleSave}
                 onGeneratePDF={handleGeneratePDF}
+                onSaveBlocked={() => {
+                  const msg = getExportValidationMessage();
+                  if (msg) showNotice(msg, 'warning');
+                }}
+                onPdfBlocked={() => {
+                  const msg = getExportValidationMessage();
+                  if (msg) showNotice(msg, 'warning');
+                }}
               />
             </div>
           </section>

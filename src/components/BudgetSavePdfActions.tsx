@@ -8,6 +8,8 @@ interface BudgetSavePdfActionsProps {
   isSaved?: boolean;
   onSave: () => void | Promise<void>;
   onGeneratePDF: () => Promise<void>;
+  onSaveBlocked?: () => void;
+  onPdfBlocked?: () => void;
   pdfLabel?: string;
 }
 
@@ -17,6 +19,8 @@ export default function BudgetSavePdfActions({
   isSaved = false,
   onSave,
   onGeneratePDF,
+  onSaveBlocked,
+  onPdfBlocked,
   pdfLabel = 'Gerar PDF',
 }: BudgetSavePdfActionsProps) {
   return (
@@ -24,15 +28,23 @@ export default function BudgetSavePdfActions({
       <PageButton
         variant="secondary"
         className="w-full"
-        disabled={saveDisabled}
+        disabled={false}
         icon={isSaved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-        onClick={() => void onSave()}
+        onClick={() => {
+          if (saveDisabled) {
+            onSaveBlocked?.();
+            return;
+          }
+          void onSave();
+        }}
+        style={saveDisabled ? { opacity: 0.55 } : undefined}
       >
         {isSaved ? 'Orçamento salvo' : 'Salvar orçamento'}
       </PageButton>
       <GeneratePdfButton
         size="sm"
         disabled={pdfDisabled}
+        onBlockedClick={onPdfBlocked}
         onGenerate={onGeneratePDF}
         label={pdfLabel}
         className="shadow-lg"

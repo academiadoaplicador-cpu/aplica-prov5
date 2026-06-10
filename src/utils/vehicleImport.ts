@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Vehicle, VehicleSize } from '../types';
 import { generateId } from '../lib/utils';
-import { inferVehicleSize, mapPartNameToId, filterStandardPartMeasurements } from './vehiclePartsUtils';
+import { inferVehicleSize, mapPartNameToId } from './vehiclePartsUtils';
 
 export interface VehicleImportResult {
   vehicles: Vehicle[];
@@ -147,13 +147,15 @@ function buildVehiclesFromRows(rows: ParsedRow[], warnings: string[]): Vehicle[]
       const mapped = mapPartNameToId(row.partName);
       if (!mapped) continue;
 
-      const { id } = mapped;
+      const { id, isCustom } = mapped;
       if (partMeasurements[id]) {
         warnings.push(
           `Peça duplicada "${row.partName}" em ${first.make} ${first.model} ${first.year} — mantida a última medida.`,
         );
       }
-      partMeasurements[id] = { width: row.width, length: row.length };
+      partMeasurements[id] = isCustom
+        ? { width: row.width, length: row.length, name: row.partName.trim() }
+        : { width: row.width, length: row.length };
       partIds.push(id);
     }
 
@@ -235,10 +237,10 @@ export function mergeVehicles(existing: Vehicle[], imported: Vehicle[]): {
         model: vehicle.model,
         year: vehicle.year,
         size: vehicle.size || current.size,
-        partMeasurements: filterStandardPartMeasurements({
-          ...filterStandardPartMeasurements(current.partMeasurements),
+        partMeasurements: {
+          ...current.partMeasurements,
           ...vehicle.partMeasurements,
-        }),
+        },
       });
       updated += 1;
     } else {

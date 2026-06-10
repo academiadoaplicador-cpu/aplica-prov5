@@ -1,6 +1,14 @@
-import { Trash2, Pencil, CheckCircle2, AlertCircle, Ruler } from 'lucide-react';
+import BudgetNotice from '../budget-mobile/BudgetNotice';
+import { useBudgetNotice } from '../../hooks/useBudgetNotice';
+import { Trash2, Pencil, CheckCircle2, AlertCircle, Ruler, Plus } from 'lucide-react';
 import { Vehicle, VehicleSize } from '../../types';
-import { getVehiclePartList } from '../../utils/vehiclePartsUtils';
+import {
+  findVehiclePartWithSameName,
+  getAvailableStandardPartsToAdd,
+  getVehiclePartList,
+  hasPartMeasurement,
+  resolveCustomPartId,
+} from '../../utils/vehiclePartsUtils';
 import { cn } from '../../lib/utils';
 import DataTable, { type DataTableColumn } from './DataTable';
 
@@ -138,61 +146,315 @@ export default function VehicleCatalogTable({
                 </select>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 space-y-3">
-              <h5 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-                <Ruler size={12} /> Medidas por peça (m)
-              </h5>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {getVehiclePartList(vehicle).map((part) => {
-                  const m = vehicle.partMeasurements[part.id] || { width: 1.52, length: 0 };
-                  return (
-                    <div key={part.id} className="p-3 rounded-lg border border-slate-800 bg-slate-900/50 space-y-2">
-                      <span className="text-[9px] font-bold text-slate-500 uppercase block">{part.name}</span>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[8px] text-slate-600">Larg.</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={m.width}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              onUpdate(vehicle.id, {
-                                partMeasurements: {
-                                  ...vehicle.partMeasurements,
-                                  [part.id]: { ...m, width: val },
-                                },
-                              });
-                            }}
-                            className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-indigo-400 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[8px] text-slate-600">Comp.</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={m.length}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              onUpdate(vehicle.id, {
-                                partMeasurements: {
-                                  ...vehicle.partMeasurements,
-                                  [part.id]: { ...m, length: val },
-                                },
-                              });
-                            }}
-                            className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-indigo-400 font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <VehiclePartsEditor vehicle={vehicle} onUpdate={onUpdate} />
           </div>
       )}
+    />
+  );
+}
+
+function VehiclePartsEditor({
+  vehicle,
+  onUpdate,
+}: {
+  vehicle: Vehicle;
+  onUpdate: (id: string, updates: Partial<Vehicle>) => void;
+}) {
+  const [partToAdd, setPartToAdd] = useState('');
+  const [customPartName, setCustomPartName] = useState('');
+  const [customPartError, setCustomPartError] = useState<string | null>(null);
+  const [renameErrors, setRenameErrors] = useState<Record<string, string>>({});
+  const { notice, showNotice, clearNotice } = useBudgetNotice();
+  const configuredParts = getVehiclePartList(vehicle);
+  const availableParts = getAvailableStandardPartsToAdd(vehicle);
+
+  const handleAddStandardPart = () => {
+    if (!partToAdd) return;
+    onUpdate(vehicle.id, {
+      partMeasurements: {
+        ...vehicle.partMeasurements,
+        [partToAdd]: { width: 1.52, length: 0 },
+      },
+    });
+    setPartToAdd('');
+    showNotice('Peça padrão adicionada. Preencha as medidas.', 'success');
+  };
+
+  const handleAddCustomPart = () => {
+    const name = customPartName.trim();
+    if (!name) return;
+
+    const duplicate = findVehiclePartWithSameName(vehicle, name);
+    if (duplicate) {
+      setCustomPartError(`Já existe uma peça com o nome "${duplicate.name}".`);
+      return;
+    }
+
+    const partId = resolveCustomPartId(name, Object.keys(vehicle.partMeasurements));
+    onUpdate(vehicle.id, {
+      partMeasurements: {
+        ...vehicle.partMeasurements,
+        [partId]: { width: 1.52, length: 0, name },
+      },
+    });
+    setCustomPartName('');
+    setCustomPartError(null);
+    showNotice('Nova peça adicionada. Preencha as medidas.', 'success');
+  };
+
+  const handleUpdateCustomPartName = (partId: string, name: string) => {
+    const m = vehicle.partMeasurements[partId];
+    if (!m) return;
+
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setRenameErrors((prev) => {
+        const next = { ...prev };
+        delete next[partId];
+        return next;
+      });
+      onUpdate(vehicle.id, {
+        partMeasurements: {
+          ...vehicle.partMeasurements,
+          [partId]: { ...m, name: trimmed },
+        },
+      });
+      return;
+    }
+
+    const duplicate = findVehiclePartWithSameName(vehicle, trimmed, partId);
+    if (duplicate) {
+      setRenameErrors((prev) => ({
+        ...prev,
+        [partId]: `Já existe uma peça com o nome "${duplicate.name}".`,
+      }));
+      return;
+    }
+
+    setRenameErrors((prev) => {
+      const next = { ...prev };
+      delete next[partId];
+      return next;
+    });
+    onUpdate(vehicle.id, {
+      partMeasurements: {
+        ...vehicle.partMeasurements,
+        [partId]: { ...m, name: trimmed },
+      },
+    });
+  };
+
+  const handleRemovePart = (partId: string) => {
+    const { [partId]: _removed, ...rest } = vehicle.partMeasurements;
+    onUpdate(vehicle.id, { partMeasurements: rest });
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 space-y-3 relative">
+      <BudgetNotice notice={notice} onDismiss={clearNotice} accent="indigo" className="sm:max-w-sm" />
+      <div className="space-y-3">
+        <h5 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+          <Ruler size={12} /> Medidas por peça (m)
+        </h5>
+        {availableParts.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <label className="text-[9px] font-mono uppercase text-slate-500 sm:shrink-0">
+              Peça padrão
+            </label>
+            <select
+              value={partToAdd}
+              onChange={(e) => setPartToAdd(e.target.value)}
+              className="flex-1 h-9 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-xs text-white"
+            >
+              <option value="">Selecione capô, parachoque…</option>
+              {availableParts.map((part) => (
+                <option key={part.id} value={part.id}>
+                  {part.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!partToAdd}
+              onClick={handleAddStandardPart}
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/30 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={12} /> Adicionar
+            </button>
+          </div>
+        )}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <label className="text-[9px] font-mono uppercase text-slate-500 sm:shrink-0">
+              Nova peça
+            </label>
+            <input
+              type="text"
+              value={customPartName}
+              onChange={(e) => {
+                setCustomPartName(e.target.value);
+                if (customPartError) setCustomPartError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddCustomPart();
+                }
+              }}
+              placeholder="Digite o nome da peça"
+              className={cn(
+                'flex-1 h-9 bg-slate-950 border rounded-lg px-2.5 text-xs text-white placeholder:text-slate-600',
+                customPartError ? 'border-amber-500/50' : 'border-slate-800',
+              )}
+            />
+            <button
+              type="button"
+              disabled={!customPartName.trim()}
+              onClick={handleAddCustomPart}
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-800/80 border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={12} /> Adicionar
+            </button>
+          </div>
+          {customPartError && (
+            <p className="text-[10px] text-amber-400 pl-0 sm:pl-[4.5rem]">{customPartError}</p>
+          )}
+        </div>
+      </div>
+
+      {configuredParts.length === 0 ? (
+        <p className="text-xs text-slate-500 italic py-2">
+          Nenhuma peça cadastrada. Escolha uma peça padrão ou digite um nome personalizado acima.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {configuredParts.map((part) => {
+            const m = vehicle.partMeasurements[part.id] || { width: 1.52, length: 0 };
+            const measured = hasPartMeasurement(vehicle, part.id);
+            return (
+              <div
+                key={part.id}
+                className={cn(
+                  'p-3 rounded-lg border bg-slate-900/50 space-y-2',
+                  measured ? 'border-slate-800' : 'border-amber-500/30',
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  {part.isCustom ? (
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input
+                        type="text"
+                        value={m.name ?? part.name}
+                        onChange={(e) => handleUpdateCustomPartName(part.id, e.target.value)}
+                        className={cn(
+                          'w-full text-[9px] font-bold text-slate-300 uppercase bg-slate-950 border rounded px-1.5 py-1',
+                          renameErrors[part.id] ? 'border-amber-500/50' : 'border-slate-800',
+                        )}
+                        placeholder="Nome da peça"
+                      />
+                      {renameErrors[part.id] && (
+                        <span className="text-[8px] text-amber-400 block leading-tight">
+                          {renameErrors[part.id]}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[9px] font-bold text-slate-500 uppercase block leading-tight">
+                      {part.name}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePart(part.id)}
+                    className="p-1 rounded text-slate-600 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+                    title="Remover peça"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                {!measured && (
+                  <span className="text-[8px] font-mono uppercase text-amber-400/90 block">
+                    Preencha largura e comprimento
+                  </span>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[8px] text-slate-600">Larg.</label>
+                    <PartMeasurementInput
+                      value={m.width}
+                      onChange={(width) => {
+                        onUpdate(vehicle.id, {
+                          partMeasurements: {
+                            ...vehicle.partMeasurements,
+                            [part.id]: { ...m, width },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[8px] text-slate-600">Comp.</label>
+                    <PartMeasurementInput
+                      value={m.length}
+                      onChange={(length) => {
+                        onUpdate(vehicle.id, {
+                          partMeasurements: {
+                            ...vehicle.partMeasurements,
+                            [part.id]: { ...m, length },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PartMeasurementInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
+
+  const displayValue = focused ? draft : value === 0 ? '' : String(value);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={displayValue}
+      onFocus={() => {
+        setFocused(true);
+        setDraft(value === 0 ? '' : String(value));
+      }}
+      onChange={(e) => {
+        const raw = e.target.value.replace(',', '.');
+        if (!/^\d*\.?\d*$/.test(raw)) return;
+        setDraft(raw);
+        if (raw === '' || raw === '.') return;
+        const parsed = parseFloat(raw);
+        if (!Number.isNaN(parsed)) onChange(parsed);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        if (draft === '' || draft === '.') {
+          onChange(0);
+          return;
+        }
+        const parsed = parseFloat(draft);
+        onChange(Number.isNaN(parsed) ? 0 : parsed);
+      }}
+      className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-indigo-400 font-mono"
     />
   );
 }

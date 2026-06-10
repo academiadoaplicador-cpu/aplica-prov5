@@ -19,6 +19,8 @@ import { Budget, Material } from '../types';
 import { VEHICLE_PARTS_DATA } from '../types/vehicleParts';
 import { formatCurrency, cn } from '../lib/utils';
 import GeneratePdfButton from './GeneratePdfButton';
+import SupplierWhatsAppButton from './SupplierWhatsAppButton';
+import { getMaterialProductLine } from '../utils/materialSelection';
 
 interface BudgetDetailDrawerProps {
   budget: Budget | null;
@@ -302,6 +304,21 @@ export default function BudgetDetailDrawer({
             {/* Footer actions */}
             {!readOnly && (
               <div className="shrink-0 p-5 border-t border-slate-800 space-y-2">
+                {material && (
+                  <SupplierWhatsAppButton
+                    brand={material.brand}
+                    line={getMaterialProductLine(material)}
+                    messageContext={{
+                      customerName: budget.customerName,
+                      projectLabel: projectLabel,
+                      brand: material.brand,
+                      line: getMaterialProductLine(material),
+                      areaM2: budget.totalMaterialM2,
+                      totalPrice: budget.totalPrice,
+                      budgetType: budget.type,
+                    }}
+                  />
+                )}
                 <GeneratePdfButton
                   onGenerate={onGeneratePDF}
                   label="Gerar PDF"

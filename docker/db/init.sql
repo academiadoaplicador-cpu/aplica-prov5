@@ -97,3 +97,53 @@ CREATE TABLE budgets (
 
 CREATE INDEX idx_budgets_user_date ON budgets (user_id, date DESC);
 CREATE INDEX idx_materials_user ON materials (user_id);
+
+CREATE TABLE suppliers (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  legal_name TEXT NOT NULL,
+  trade_name TEXT,
+  cnpj TEXT NOT NULL,
+  address TEXT,
+  registration_status TEXT,
+  partners JSONB NOT NULL DEFAULT '[]'::jsonb,
+  whatsapp TEXT,
+  email TEXT,
+  cep TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, id)
+);
+
+CREATE TABLE supplier_contacts (
+  user_id TEXT NOT NULL,
+  supplier_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  city TEXT NOT NULL,
+  state CHAR(2) NOT NULL,
+  whatsapp TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, supplier_id, id),
+  FOREIGN KEY (user_id, supplier_id)
+    REFERENCES suppliers(user_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_supplier_contacts_supplier
+  ON supplier_contacts (user_id, supplier_id, state, city);
+
+CREATE TABLE supplier_product_links (
+  user_id TEXT NOT NULL,
+  supplier_id TEXT NOT NULL,
+  brand TEXT NOT NULL,
+  line TEXT NOT NULL,
+  is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (user_id, supplier_id, brand, line),
+  FOREIGN KEY (user_id, supplier_id)
+    REFERENCES suppliers(user_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_supplier_links_lookup
+  ON supplier_product_links (user_id, LOWER(TRIM(brand)), LOWER(TRIM(line)))
+  WHERE is_primary = TRUE;

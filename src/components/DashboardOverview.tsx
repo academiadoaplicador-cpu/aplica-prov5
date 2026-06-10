@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { databaseService } from '../services/databaseService';
 import { ROUTES } from '../routes/paths';
+import { useCalculatorMode } from '../contexts/CalculatorModeContext';
 import { Budget, FinancialSettings } from '../types';
 import { 
   TrendingUp, 
@@ -17,7 +17,7 @@ import { formatCurrency, cn } from '../lib/utils';
 import { motion } from 'motion/react';
 
 export default function DashboardOverview() {
-  const navigate = useNavigate();
+  const { goToCalculator, goToRoute } = useCalculatorMode();
   const user = databaseService.getCachedUser();
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [settings, setSettings] = useState<FinancialSettings | null>(null);
@@ -67,14 +67,14 @@ export default function DashboardOverview() {
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <button 
-            onClick={() => navigate(ROUTES.automotive)}
+            onClick={() => goToCalculator('automotive')}
             className="w-full sm:w-auto justify-center bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-semibold transition-all shadow-lg shadow-indigo-900/20"
           >
             <Car size={18} />
             Novo Automotivo
           </button>
           <button 
-            onClick={() => navigate(ROUTES.decorative)}
+            onClick={() => goToCalculator('decorative')}
             className="w-full sm:w-auto justify-center bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-semibold transition-all border border-slate-700"
           >
             <Home size={18} />
@@ -111,7 +111,7 @@ export default function DashboardOverview() {
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold text-white">Orçamentos Recentes</h3>
             <button 
-              onClick={() => navigate(ROUTES.orcamento)}
+              onClick={() => goToRoute(ROUTES.orcamento)}
               className="text-xs font-mono uppercase tracking-widest text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
             >
               Ver Tudo <ChevronRight size={14} />
@@ -162,7 +162,7 @@ export default function DashboardOverview() {
               <h3 className="text-xl font-bold mb-2">Configure sua oficina</h3>
               <p className="text-indigo-100 text-sm mb-6 opacity-80">Defina o valor da sua hora técnica e margem para cálculos precisos.</p>
               <button 
-                onClick={() => navigate(user?.isAdmin ? ROUTES.catalog : ROUTES.costs)}
+                onClick={() => goToRoute(user?.isAdmin ? ROUTES.catalog : ROUTES.costs)}
                 className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-50 transition-colors"
               >
                 Acessar Ajustes

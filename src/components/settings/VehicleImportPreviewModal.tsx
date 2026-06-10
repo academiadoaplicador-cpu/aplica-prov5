@@ -109,7 +109,7 @@ export default function VehicleImportPreviewModal({
                       <span className="text-slate-500 font-mono">{vehicle.year}</span>
                     </p>
                     <p className="text-[10px] text-slate-500">
-                      {partEntries.length} peça(s) do catálogo
+                      {partEntries.length} peça(s)
                     </p>
                   </div>
                   <span
@@ -147,7 +147,7 @@ export default function VehicleImportPreviewModal({
                             {partEntries.map(([partId, measure]) => (
                               <tr key={partId} className="bg-slate-950/30">
                                 <td className="px-3 py-2 text-slate-300">
-                                  {getPartInfo(partId).name}
+                                  {getPartInfo(partId, vehicle).name}
                                 </td>
                                 <td className="px-3 py-2 text-right font-mono text-indigo-300 tabular-nums">
                                   {measure.width.toFixed(2)}

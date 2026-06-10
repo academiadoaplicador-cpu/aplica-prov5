@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Users, LayoutDashboard, FileText, Package, Car, Refrigerator } from 'lucide-react';
+import { Users, LayoutDashboard, FileText, Package, Car, Refrigerator, Truck } from 'lucide-react';
 import { ROUTES } from '../../routes/paths';
 import { cn } from '../../lib/utils';
 
@@ -7,6 +7,7 @@ const adminNav = [
   { to: ROUTES.admin.home, label: 'Início', icon: LayoutDashboard, end: true },
   { to: ROUTES.admin.users, label: 'Usuários', icon: Users, end: false },
   { to: ROUTES.admin.budgets, label: 'Orçamentos', icon: FileText, end: false },
+  { to: ROUTES.admin.suppliers, label: 'Fornecedores', icon: Truck, end: false },
 ] as const;
 
 const catalogLinks = [

@@ -147,3 +147,82 @@ export function downloadVehiclesTemplate() {
 
   downloadWorkbook(workbook, 'modelo-veiculos-aplica-pro.xlsx');
 }
+
+/** Planilha modelo — fornecedores (importação em /admin/fornecedores) */
+export function downloadSuppliersTemplate() {
+  const headers = [
+    'Razão social',
+    'CNPJ',
+    'Cidade',
+    'UF',
+    'WhatsApp',
+    'E-mail',
+    'Status',
+    'Marca',
+    'Linha / Produto',
+  ];
+  const examples = [
+    [
+      'Distribuidora PPF Ltda',
+      '12345678000190',
+      'São Paulo',
+      'SP',
+      '11999887766',
+      'vendas@ppfsp.com',
+      'Ativo',
+      '3M',
+      'Scotchgard Pro',
+    ],
+    [
+      'Distribuidora PPF Ltda',
+      '12345678000190',
+      'Rio de Janeiro',
+      'RJ',
+      '21988776655',
+      '',
+      'Ativo',
+      '',
+      '',
+    ],
+    [
+      'Filme Brasil SA',
+      '98765432000111',
+      'Curitiba',
+      'PR',
+      '41977665544',
+      '',
+      'Ativo',
+      'Avery; 3M',
+      'MPI 1105; Scotchgard Pro',
+    ],
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    sheetWithRows([headers, ...examples], [28, 18, 16, 6, 16, 24, 10, 16, 24]),
+    'Fornecedores',
+  );
+
+  const instructions = [
+    ['Coluna', 'Obrigatório', 'Exemplo / observação'],
+    ['Razão social', 'Sim', 'Nome legal da empresa'],
+    ['CNPJ', 'Sim', '14 dígitos, com ou sem máscara'],
+    ['Cidade', 'Sim', 'Cidade do contato WhatsApp'],
+    ['UF', 'Sim', 'Sigla do estado (SP, RJ, PR...)'],
+    ['WhatsApp', 'Sim', 'Com DDD — um número por linha'],
+    ['E-mail', 'Não', 'E-mail geral da empresa'],
+    ['Status', 'Não', 'Ativo ou Inativo (padrão: Ativo)'],
+    ['Marca', 'Não*', 'Marca do catálogo; use ; para múltiplas'],
+    ['Linha / Produto', 'Não*', 'Linha do catálogo; mesma quantidade de Marcas'],
+    ['', '', '*Repita Razão social + CNPJ para adicionar outra cidade/UF'],
+    ['', '', '*Marca e Linha devem existir no catálogo de materiais'],
+  ];
+  XLSX.utils.book_append_sheet(
+    workbook,
+    sheetWithRows(instructions, [18, 12, 48]),
+    'Instruções',
+  );
+
+  downloadWorkbook(workbook, 'modelo-fornecedores-aplica-pro.xlsx');
+}

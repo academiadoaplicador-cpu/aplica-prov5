@@ -2,9 +2,11 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { useLocation } from 'react-router-dom';
 
 type MobileBottomExtrasContextValue = {
   extras: ReactNode | null;
@@ -17,9 +19,19 @@ const MobileBottomExtrasContext = createContext<MobileBottomExtrasContextValue |
 
 export function MobileBottomExtrasProvider({ children }: { children: ReactNode }) {
   const [extras, setExtras] = useState<ReactNode | null>(null);
+  const { pathname } = useLocation();
+
+  const value = useMemo(
+    () => ({ extras, setExtras }),
+    [extras],
+  );
+
+  useEffect(() => {
+    setExtras(null);
+  }, [pathname]);
 
   return (
-    <MobileBottomExtrasContext.Provider value={{ extras, setExtras }}>
+    <MobileBottomExtrasContext.Provider value={value}>
       {children}
     </MobileBottomExtrasContext.Provider>
   );

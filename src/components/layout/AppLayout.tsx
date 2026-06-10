@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Calculator,
   History,
@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
   Search,
   Shield,
+  Truck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../../types';
@@ -23,6 +24,8 @@ import {
   MobileBottomExtrasProvider,
   useMobileBottomExtrasContent,
 } from '../../contexts/MobileBottomExtrasContext';
+import { CalculatorModeProvider, useCalculatorMode, type CalculatorMode } from '../../contexts/CalculatorModeContext';
+import AppMainContent from './AppMainContent';
 
 interface AppLayoutProps {
   user: User;
@@ -109,6 +112,12 @@ function buildMoreMenuItems(user: User): MoreMenuEntry[] {
         label: 'Base de Eletros',
         searchTerms: 'eletrodomésticos geladeira fogão',
       },
+      {
+        to: ROUTES.admin.suppliers,
+        icon: <Truck size={20} />,
+        label: 'Fornecedores',
+        searchTerms: 'fornecedor whatsapp distribuidor',
+      },
     );
   }
 
@@ -125,13 +134,16 @@ function buildMoreMenuItems(user: User): MoreMenuEntry[] {
 export default function AppLayout({ user, onLogout }: AppLayoutProps) {
   return (
     <MobileBottomExtrasProvider>
-      <AppLayoutShell user={user} onLogout={onLogout} />
+      <CalculatorModeProvider>
+        <AppLayoutShell user={user} onLogout={onLogout} />
+      </CalculatorModeProvider>
     </MobileBottomExtrasProvider>
   );
 }
 
 function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
   const bottomExtras = useMobileBottomExtrasContent();
+  const { mode: calculatorMode, appPath } = useCalculatorMode();
   const navigate = useNavigate();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -142,7 +154,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
   useEffect(() => {
     setMoreOpen(false);
     setMoreSearch('');
-  }, [location.pathname]);
+  }, [appPath]);
 
   const handleLogout = async () => {
     await databaseService.logout();
@@ -214,8 +226,8 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
           <div className="pt-4 pb-2 px-3">
             <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Calculadoras</span>
           </div>
-          <NavItem to={ROUTES.automotive} icon={<Car size={20} />} label="Automotivo" />
-          <NavItem to={ROUTES.decorative} icon={<Home size={20} />} label="Decorativo" />
+          <NavCalculatorItem mode="automotive" icon={<Car size={20} />} label="Automotivo" />
+          <NavCalculatorItem mode="decorative" icon={<Home size={20} />} label="Decorativo" />
           <div className="pt-4 pb-2 px-3">
             <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Gestão</span>
           </div>
@@ -254,10 +266,14 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
           />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white truncate leading-tight">
-              {getMobilePageTitle(location.pathname)}
+              {getMobilePageTitle(calculatorMode ? location.pathname : appPath)}
             </p>
             <p className="text-[10px] text-indigo-400 font-mono tracking-widest uppercase truncate">
-              {getMobilePageSubtitle(location.pathname)}
+              {calculatorMode === 'decorative'
+                ? 'Decorativo'
+                : calculatorMode === 'automotive'
+                  ? 'Automotivo'
+                  : getMobilePageSubtitle(location.pathname)}
             </p>
           </div>
         </header>
@@ -270,14 +286,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
               : 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]',
           )}
         >
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Outlet />
-          </motion.div>
+          <AppMainContent user={user} />
         </main>
 
         {/* Mobile bottom navigation + expandable "Mais" panel */}
@@ -359,14 +368,14 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
               end
               onClick={closeMore}
             />
-            <BottomNavItem
-              to={ROUTES.automotive}
+            <BottomNavCalculatorItem
+              mode="automotive"
               icon={<Car size={20} />}
               label="Auto"
               onClick={closeMore}
             />
-            <BottomNavItem
-              to={ROUTES.decorative}
+            <BottomNavCalculatorItem
+              mode="decorative"
               icon={<Home size={20} />}
               label="Deco"
               onClick={closeMore}
@@ -378,7 +387,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
               onClick={closeMore}
             />
             <BottomNavMore
-              active={isMoreMenuRoute(location.pathname) || moreOpen}
+              active={isMoreMenuRoute(appPath) || moreOpen}
               expanded={moreOpen}
               onClick={toggleMore}
             />
@@ -389,41 +398,78 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
   );
 }
 
+function NavCalculatorItem({
+  mode,
+  icon,
+  label,
+}: {
+  mode: CalculatorMode;
+  icon: ReactNode;
+  label: string;
+}) {
+  const { goToCalculator, isCalculatorActive } = useCalculatorMode();
+  const isActive = isCalculatorActive(mode);
+
+  return (
+    <button
+      type="button"
+      onClick={() => goToCalculator(mode)}
+      className={cn(
+        'flex items-center gap-3 w-full px-3 py-3 rounded-lg transition-all duration-200 group',
+        isActive
+          ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 translate-x-1'
+          : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200',
+      )}
+    >
+      <div className={isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300 shrink-0'}>
+        {icon}
+      </div>
+      <span className="text-sm font-medium">{label}</span>
+      {isActive && (
+        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50 shrink-0" />
+      )}
+    </button>
+  );
+}
+
 function NavItem({
   to,
   icon,
   label,
   onNavigate,
+  end,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   onNavigate?: () => void;
+  end?: boolean;
 }) {
+  const { goToRoute, isRouteActive } = useCalculatorMode();
+  const isActive = isRouteActive(to, end ?? (to === ROUTES.dashboard || to === ROUTES.admin.home));
+
   return (
-    <NavLink
-      to={to}
-      end={to === ROUTES.dashboard || to === ROUTES.admin.home}
-      onClick={onNavigate}
-      className={({ isActive }) =>
-        cn(
-          'flex items-center gap-3 w-full px-3 py-3 rounded-lg transition-all duration-200 group',
-          isActive
-            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 translate-x-1'
-            : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <div className={isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300 shrink-0'}>{icon}</div>
-          <span className="text-sm font-medium">{label}</span>
-          {isActive && (
-            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50 shrink-0" />
-          )}
-        </>
+    <button
+      type="button"
+      onClick={() => {
+        onNavigate?.();
+        goToRoute(to);
+      }}
+      className={cn(
+        'flex items-center gap-3 w-full px-3 py-3 rounded-lg transition-all duration-200 group',
+        isActive
+          ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 translate-x-1'
+          : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200',
       )}
-    </NavLink>
+    >
+      <div className={isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300 shrink-0'}>
+        {icon}
+      </div>
+      <span className="text-sm font-medium">{label}</span>
+      {isActive && (
+        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50 shrink-0" />
+      )}
+    </button>
   );
 }
 
@@ -440,27 +486,65 @@ function MorePanelItem({
   end?: boolean;
   onNavigate: () => void;
 }) {
+  const { goToRoute, isRouteActive } = useCalculatorMode();
+  const isActive = isRouteActive(to, end);
+
   return (
-    <NavLink
-      to={to}
-      end={end}
-      onClick={onNavigate}
-      className={({ isActive }) =>
-        cn(
-          'flex items-center gap-3 w-full px-3 py-3 rounded-lg transition-colors',
-          isActive
-            ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20'
-            : 'text-slate-400 active:bg-slate-900',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <div className={isActive ? 'text-indigo-400' : 'text-slate-500 shrink-0'}>{icon}</div>
-          <span className="text-sm font-medium">{label}</span>
-        </>
+    <button
+      type="button"
+      onClick={() => {
+        onNavigate();
+        goToRoute(to);
+      }}
+      className={cn(
+        'flex items-center gap-3 w-full px-3 py-3 rounded-lg transition-colors',
+        isActive
+          ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20'
+          : 'text-slate-400 active:bg-slate-900',
       )}
-    </NavLink>
+    >
+      <div className={isActive ? 'text-indigo-400' : 'text-slate-500 shrink-0'}>{icon}</div>
+      <span className="text-sm font-medium">{label}</span>
+    </button>
+  );
+}
+
+function BottomNavCalculatorItem({
+  mode,
+  icon,
+  label,
+  onClick,
+}: {
+  mode: CalculatorMode;
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+}) {
+  const { goToCalculator, isCalculatorActive } = useCalculatorMode();
+  const isActive = isCalculatorActive(mode);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onClick?.();
+        goToCalculator(mode);
+      }}
+      className={cn(
+        'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
+        isActive ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300',
+      )}
+    >
+      <span
+        className={cn(
+          'flex items-center justify-center rounded-lg p-1 transition-colors',
+          isActive && 'bg-indigo-600/15',
+        )}
+      >
+        {icon}
+      </span>
+      <span className="text-[10px] font-medium leading-none truncate max-w-full px-0.5">{label}</span>
+    </button>
   );
 }
 
@@ -477,32 +561,31 @@ function BottomNavItem({
   end?: boolean;
   onClick?: () => void;
 }) {
+  const { goToRoute, isRouteActive } = useCalculatorMode();
+  const isActive = isRouteActive(to, end ?? to === ROUTES.dashboard);
+
   return (
-    <NavLink
-      to={to}
-      end={end}
-      onClick={onClick}
-      className={({ isActive }) =>
-        cn(
-          'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
-          isActive ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <span
-            className={cn(
-              'flex items-center justify-center rounded-lg p-1 transition-colors',
-              isActive && 'bg-indigo-600/15',
-            )}
-          >
-            {icon}
-          </span>
-          <span className="text-[10px] font-medium leading-none truncate max-w-full px-0.5">{label}</span>
-        </>
+    <button
+      type="button"
+      onClick={() => {
+        onClick?.();
+        goToRoute(to);
+      }}
+      className={cn(
+        'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[3.5rem] px-1 py-2 transition-colors',
+        isActive ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300',
       )}
-    </NavLink>
+    >
+      <span
+        className={cn(
+          'flex items-center justify-center rounded-lg p-1 transition-colors',
+          isActive && 'bg-indigo-600/15',
+        )}
+      >
+        {icon}
+      </span>
+      <span className="text-[10px] font-medium leading-none truncate max-w-full px-0.5">{label}</span>
+    </button>
   );
 }
 
