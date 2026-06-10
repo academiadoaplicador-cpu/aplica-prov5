@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   Ban,
   Building2,
   CheckCircle2,
@@ -30,6 +29,11 @@ import SupplierContactsEditor, {
   validateContactDrafts,
   type SupplierContactDraft,
 } from '../../components/admin/SupplierContactsEditor';
+import {
+  registrationStatusClass,
+  SupplierAdminBackLink,
+  SupplierSectionIntro,
+} from '../../components/admin/supplierAdminUi';
 import { digitsOnlyCnpj, formatCnpj } from '../../utils/cnpj';
 import { cn } from '../../lib/utils';
 
@@ -46,57 +50,6 @@ function supplierPayloadFromValues(values: SupplierFormValues) {
     email: values.email.trim() || undefined,
     isActive: values.isActive,
   };
-}
-
-function registrationStatusClass(status: string): string {
-  const normalized = status.trim().toUpperCase();
-  if (normalized === 'ATIVA') return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
-  if (normalized) return 'text-amber-400 border-amber-500/30 bg-amber-500/10';
-  return 'text-slate-400 border-slate-700 bg-slate-900/40';
-}
-
-function BackLink() {
-  return (
-    <Link
-      to={ROUTES.admin.suppliers}
-      className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
-    >
-      <ArrowLeft size={16} />
-      Voltar à lista
-    </Link>
-  );
-}
-
-function SectionIntro({
-  icon: Icon,
-  title,
-  description,
-  accent = 'amber',
-}: {
-  icon: typeof Building2;
-  title: string;
-  description: string;
-  accent?: 'amber' | 'emerald';
-}) {
-  const iconClass = accent === 'emerald' ? 'text-emerald-400' : 'text-amber-400';
-  return (
-    <div className="flex items-start gap-3 pb-4 mb-5 border-b border-slate-800/80">
-      <div
-        className={cn(
-          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border',
-          accent === 'emerald'
-            ? 'bg-emerald-500/10 border-emerald-500/20'
-            : 'bg-amber-500/10 border-amber-500/20',
-        )}
-      >
-        <Icon size={18} className={iconClass} />
-      </div>
-      <div>
-        <h4 className="text-sm font-bold text-white">{title}</h4>
-        <p className="text-xs text-slate-500 mt-0.5">{description}</p>
-      </div>
-    </div>
-  );
 }
 
 export default function AdminSupplierDetailPage() {
@@ -204,7 +157,7 @@ export default function AdminSupplierDetailPage() {
   if (error && !supplier) {
     return (
       <div className="w-full space-y-4">
-        <BackLink />
+        <SupplierAdminBackLink />
         <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl p-4">
           {error}
         </p>
@@ -215,7 +168,7 @@ export default function AdminSupplierDetailPage() {
   if (!supplier) {
     return (
       <div className="w-full space-y-4">
-        <BackLink />
+        <SupplierAdminBackLink />
         <div className="h-48 rounded-2xl bg-slate-900/50 border border-slate-800 animate-pulse" />
       </div>
     );
@@ -231,7 +184,7 @@ export default function AdminSupplierDetailPage() {
     <div className="w-full space-y-4 pb-8">
       {/* Topo: voltar + ações */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <BackLink />
+        <SupplierAdminBackLink />
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -382,7 +335,7 @@ export default function AdminSupplierDetailPage() {
               values.partners.length > 0 ? 'xl:col-span-7' : 'xl:col-span-12',
             )}
           >
-            <SectionIntro
+            <SupplierSectionIntro
               icon={Building2}
               title="Dados da empresa"
               description="Informações cadastrais e consulta de CNPJ via Brasil API."
@@ -392,7 +345,7 @@ export default function AdminSupplierDetailPage() {
 
           {values.partners.length > 0 && (
             <div className="xl:col-span-5 bg-slate-900/40 border border-slate-800 rounded-2xl p-5 sm:p-6 lg:p-7">
-              <SectionIntro
+              <SupplierSectionIntro
                 icon={Users}
                 title="Quadro societário"
                 description="Dados obtidos na consulta do CNPJ."
@@ -428,7 +381,7 @@ export default function AdminSupplierDetailPage() {
 
       {tab === 'contatos' && (
         <div className="w-full bg-slate-900/40 border border-slate-800 rounded-2xl p-5 sm:p-6 lg:p-7">
-          <SectionIntro
+          <SupplierSectionIntro
             icon={MessageCircle}
             title="Contatos WhatsApp"
             description="Números por cidade/estado — usados no botão WhatsApp do orçamento."
@@ -445,7 +398,7 @@ export default function AdminSupplierDetailPage() {
 
       {tab === 'vinculos' && (
         <div className="w-full bg-slate-900/40 border border-slate-800 rounded-2xl p-5 sm:p-6 lg:p-7">
-          <SectionIntro
+          <SupplierSectionIntro
             icon={Link2}
             title="Vínculos Marca / Linha"
             description="Produtos atendidos por este fornecedor. A estrela indica o principal."
