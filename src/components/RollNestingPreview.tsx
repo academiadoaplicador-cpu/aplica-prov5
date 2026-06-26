@@ -118,14 +118,19 @@ export default function RollNestingPreview({
   const leftoverLeftPx = usedWidthPx;
   const leftoverWidthPx = (leftoverLength / visualRollLength) * rollVisualWidthPx;
   const perVehicleCount = parts.length;
-  const fitStatusLabel = nesting.allFit
+  const fitStatusLabelMobile = nesting.allFit
+    ? vehicleQuantity > 1
+      ? `${vehicleQuantity} veículos · ${perVehicleCount} peças/un.`
+      : `${perVehicleCount} peça(s) no rolo`
+    : `${nesting.unplaced.length} peça(s) não cabem`;
+  const fitStatusLabelDesktop = nesting.allFit
     ? vehicleQuantity > 1
       ? `${vehicleQuantity} planos (+1…+${vehicleQuantity}) · ${perVehicleCount} peça(s) cada`
       : `${perVehicleCount} peça(s) cabem no rolo`
     : `${nesting.unplaced.length} peça(s) não cabem`;
 
   return (
-    <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-5">
+    <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h3 className={cn('text-xs font-mono uppercase tracking-widest flex items-center gap-2', theme.title)}>
@@ -136,28 +141,40 @@ export default function RollNestingPreview({
             <p className="text-sm text-slate-400 mt-1">{materialLabel}</p>
           )}
           {vehicleQuantity > 1 && nesting.allFit && lengthPerCopy > 0.001 && (
-            <p className="text-[10px] text-slate-500 mt-1 italic">
-              {formatMeters(lengthPerCopy)} m por veículo · {formatMeters(nesting.usedLength)} m no total
-              {rollsNeeded > 1 ? ` · ${rollsNeeded} rolos` : ''}
-            </p>
+            <ul className="text-[10px] text-slate-500 mt-1.5 italic flex flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-1">
+              <li className="list-none">{formatMeters(lengthPerCopy)} m por veículo</li>
+              <li className="hidden sm:list-none sm:inline text-slate-600" aria-hidden>
+                ·
+              </li>
+              <li className="list-none">{formatMeters(nesting.usedLength)} m no total</li>
+              {rollsNeeded > 1 && (
+                <>
+                  <li className="hidden sm:list-none sm:inline text-slate-600" aria-hidden>
+                    ·
+                  </li>
+                  <li className="list-none">{rollsNeeded} rolos</li>
+                </>
+              )}
+            </ul>
           )}
         </div>
         <div
           className={cn(
-            'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider',
+            'flex items-start sm:items-center gap-2 px-3 py-2 sm:py-1.5 rounded-xl sm:rounded-full text-[10px] font-bold uppercase tracking-wide sm:tracking-wider w-full sm:w-auto leading-snug',
             nesting.allFit
               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
               : 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
           )}
         >
-          {nesting.allFit ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-          {fitStatusLabel}
+          {nesting.allFit ? <CheckCircle2 size={12} className="shrink-0 mt-0.5 sm:mt-0" /> : <AlertTriangle size={12} className="shrink-0 mt-0.5 sm:mt-0" />}
+          <span className="sm:hidden">{fitStatusLabelMobile}</span>
+          <span className="hidden sm:inline">{fitStatusLabelDesktop}</span>
         </div>
       </div>
 
       <div
         ref={scrollContainerRef}
-        className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 overflow-x-auto overscroll-x-contain"
+        className="rounded-xl border border-slate-800 bg-slate-950/80 p-3 sm:p-4 overflow-x-auto overscroll-x-contain"
       >
         <div
           className="relative mx-auto"
@@ -307,11 +324,18 @@ export default function RollNestingPreview({
 
       {nestingPerVehicle.placed.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
-            <MapPin size={11} className={theme.mapPin} />
-            {vehicleQuantity > 1
-              ? `Plano unitário — repetido ${vehicleQuantity}× no rolo`
-              : 'Clique em uma peça para localizá-la no rolo'}
+          <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5 leading-snug">
+            <span className="inline-flex items-center gap-1.5">
+              <MapPin size={11} className={cn(theme.mapPin, 'shrink-0')} />
+              {vehicleQuantity > 1 ? (
+                <>
+                  <span className="sm:hidden">Plano repetido {vehicleQuantity}×</span>
+                  <span className="hidden sm:inline">Plano unitário — repetido {vehicleQuantity}× no rolo</span>
+                </>
+              ) : (
+                'Clique em uma peça para localizá-la no rolo'
+              )}
+            </span>
             {selectedPart && (
               <span className={cn(theme.hintSelected, 'normal-case tracking-normal font-sans')}>
                 — <strong className="uppercase">{selectedPart.name}</strong> selecionada

@@ -657,14 +657,14 @@ export default function AutomotiveCalculator() {
               {selectedVehicleId && (
                 <div className="space-y-2 md:col-span-2">
                   <label className={mobileFieldLabel}>Quantidade de veículos</label>
-                  <div className="flex items-center gap-3 max-w-xs">
+                  <div className="flex items-center gap-2 w-full sm:max-w-xs">
                     <button
                       type="button"
                       onClick={() => setVehicleQuantity((current) => Math.max(1, current - 1))}
                       disabled={vehicleQuantity <= 1}
                       className={cn(
                         mobileFieldInput,
-                        'w-12 shrink-0 text-center font-bold text-lg px-0 disabled:opacity-30',
+                        'min-h-11 min-w-11 w-11 shrink-0 text-center font-bold text-lg px-0 disabled:opacity-30',
                       )}
                       aria-label="Diminuir quantidade"
                     >
@@ -683,7 +683,7 @@ export default function AutomotiveCalculator() {
                         }
                         setVehicleQuantity(Math.max(1, Math.min(999, parsed)));
                       }}
-                      className={cn(mobileFieldInput, 'text-center font-mono font-bold')}
+                      className={cn(mobileFieldInput, 'flex-1 min-w-0 text-center font-mono font-bold')}
                       aria-label="Quantidade de veículos"
                     />
                     <button
@@ -692,7 +692,7 @@ export default function AutomotiveCalculator() {
                       disabled={vehicleQuantity >= 999}
                       className={cn(
                         mobileFieldInput,
-                        'w-12 shrink-0 text-center font-bold text-lg px-0 disabled:opacity-30',
+                        'min-h-11 min-w-11 w-11 shrink-0 text-center font-bold text-lg px-0 disabled:opacity-30',
                       )}
                       aria-label="Aumentar quantidade"
                     >
@@ -998,40 +998,40 @@ export default function AutomotiveCalculator() {
             <div className="space-y-6">
               <div className="space-y-3">
                   {vehicleQuantity > 1 && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400 italic">Quantidade de veículos</span>
-                      <span className="font-mono text-white font-bold">{vehicleQuantity}×</span>
+                    <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                      <span className="text-slate-400 italic leading-snug">Quantidade de veículos</span>
+                      <span className="font-mono text-white font-bold shrink-0">{vehicleQuantity}×</span>
                     </div>
                   )}
                   {totals.hasRollPricing ? (
                     <>
                       {vehicleQuantity > 1 && (
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-400 italic">Comprimento por veículo</span>
-                          <span className="font-mono text-white">{totals.usedLengthPerVehicle.toFixed(2)} m</span>
+                        <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                          <span className="text-slate-400 italic leading-snug">Comprimento por veículo</span>
+                          <span className="font-mono text-white shrink-0">{totals.usedLengthPerVehicle.toFixed(2)} m</span>
                         </div>
                       )}
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                        <span className="text-slate-400 italic leading-snug">
                           {vehicleQuantity > 1 ? 'Comprimento total no rolo' : 'Comprimento usado no rolo'}
                         </span>
-                        <span className="font-mono text-white">{totals.usedLength.toFixed(2)} m</span>
+                        <span className="font-mono text-white shrink-0">{totals.usedLength.toFixed(2)} m</span>
                       </div>
                       {totals.rollsNeeded > 1 && (
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-400 italic">Rolos necessários</span>
-                          <span className="font-mono text-amber-300 font-bold">{totals.rollsNeeded}×</span>
+                        <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                          <span className="text-slate-400 italic leading-snug">Rolos necessários</span>
+                          <span className="font-mono text-amber-300 font-bold shrink-0">{totals.rollsNeeded}×</span>
                         </div>
                       )}
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">Área usada no rolo</span>
-                        <span className="font-mono text-white">{totals.rollAreaM2.toFixed(2)} m²</span>
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                        <span className="text-slate-400 italic leading-snug">Área usada no rolo</span>
+                        <span className="font-mono text-white shrink-0">{totals.rollAreaM2.toFixed(2)} m²</span>
                       </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                        <span className="text-slate-400 italic leading-snug pr-0 sm:pr-4">
                           Material faturado (usado + {Math.round((ROLL_WASTE_FACTOR - 1) * 100)}%)
                         </span>
-                        <span className="font-mono text-indigo-300 font-bold">{totals.materialM2.toFixed(2)} m²</span>
+                        <span className="font-mono text-indigo-300 font-bold shrink-0">{totals.materialM2.toFixed(2)} m²</span>
                       </div>
                     </>
                   ) : selectedMaterialId && nestingPartsPerVehicle.length > 0 ? (
@@ -1039,9 +1039,9 @@ export default function AutomotiveCalculator() {
                       Cadastre largura e comprimento do rolo no material para calcular o consumo (usado + 15%).
                     </p>
                   ) : null}
-                  <div className="flex justify-between items-center text-sm border-t border-slate-800/50 pt-2">
-                    <span className="text-slate-400">Prazos e Mão de Obra</span>
-                    <span className="font-mono text-indigo-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
+                  <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-sm border-t border-slate-800/50 pt-2">
+                    <span className="text-slate-400 leading-snug">Prazos e Mão de Obra</span>
+                    <span className="font-mono text-indigo-400 font-bold shrink-0">{totals.hours.toFixed(1)} hrs</span>
                   </div>
               </div>
 

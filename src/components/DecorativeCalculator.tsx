@@ -889,71 +889,75 @@ export default function DecorativeCalculator() {
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
                   key={item.id}
-                  className="grid grid-cols-1 md:grid-cols-12 gap-3 lg:gap-4 p-4 lg:p-5 bg-slate-950/90 rounded-2xl border border-slate-800/90 group transition-all hover:border-slate-700 shadow-sm"
+                  className="p-4 lg:p-5 bg-slate-950/90 rounded-2xl border border-slate-800/90 group transition-all hover:border-slate-700 shadow-sm space-y-3"
                 >
-                  <div className="md:col-span-4">
-                    <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Nome da Face</label>
-                    <input 
-                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs font-bold text-white w-full focus:ring-1 focus:ring-emerald-500"
-                      value={item.name}
-                      onChange={(e) => updateItem(item.id, { name: e.target.value })}
-                    />
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Nome da Face</label>
+                      <input
+                        className="bg-slate-900 border border-slate-800 p-2.5 sm:p-2 rounded-lg text-xs font-bold text-white w-full focus:ring-1 focus:ring-emerald-500"
+                        value={item.name}
+                        onChange={(e) => updateItem(item.id, { name: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex shrink-0 gap-0.5 pb-0.5">
+                      <button
+                        type="button"
+                        onClick={() => duplicateItem(item.id)}
+                        title="Duplicar peça"
+                        aria-label={`Duplicar ${item.name}`}
+                        className="text-slate-600 hover:text-emerald-400 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-emerald-500/10 transition-all"
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.id)}
+                        title="Remover peça"
+                        aria-label={`Remover ${item.name}`}
+                        className="text-slate-600 hover:text-red-400 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="md:col-span-2">
-                     <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Largura (m)</label>
-                    <input 
-                      type="text"
-                      inputMode="decimal"
-                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white w-full font-mono"
-                      value={getDimensionDisplay(item.id, 'width', item.width)}
-                      placeholder="0,00"
-                      onChange={(e) => handleDimensionChange(item.id, 'width', e.target.value)}
-                      onBlur={() => handleDimensionBlur(item.id, 'width')}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Altura (m)</label>
-                    <input 
-                      type="text"
-                      inputMode="decimal"
-                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white w-full font-mono"
-                      value={getDimensionDisplay(item.id, 'height', item.height)}
-                      placeholder="0,00"
-                      onChange={(e) => handleDimensionChange(item.id, 'height', e.target.value)}
-                      onBlur={() => handleDimensionBlur(item.id, 'height')}
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Dificuldade</label>
-                    <select 
-                      className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-[10px] text-white w-full font-bold uppercase tracking-tight"
-                      value={item.complexity}
-                      onChange={(e) => updateItem(item.id, { complexity: parseInt(e.target.value) as any })}
-                    >
-                      <option value={1}>Fácil (Plano)</option>
-                      <option value={2}>Médio (Curvas)</option>
-                      <option value={3}>Alto (Cantos/Puxadores)</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-1 flex items-end justify-center pb-2 gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => duplicateItem(item.id)}
-                      title="Duplicar peça"
-                      aria-label={`Duplicar ${item.name}`}
-                      className="text-slate-600 hover:text-emerald-400 p-2 rounded-lg hover:bg-emerald-500/10 transition-all"
-                    >
-                      <Copy size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      title="Remover peça"
-                      aria-label={`Remover ${item.name}`}
-                      className="text-slate-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-all"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Largura (m)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="bg-slate-900 border border-slate-800 p-2.5 sm:p-2 rounded-lg text-xs text-white w-full font-mono"
+                        value={getDimensionDisplay(item.id, 'width', item.width)}
+                        placeholder="0,00"
+                        onChange={(e) => handleDimensionChange(item.id, 'width', e.target.value)}
+                        onBlur={() => handleDimensionBlur(item.id, 'width')}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Altura (m)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="bg-slate-900 border border-slate-800 p-2.5 sm:p-2 rounded-lg text-xs text-white w-full font-mono"
+                        value={getDimensionDisplay(item.id, 'height', item.height)}
+                        placeholder="0,00"
+                        onChange={(e) => handleDimensionChange(item.id, 'height', e.target.value)}
+                        onBlur={() => handleDimensionBlur(item.id, 'height')}
+                      />
+                    </div>
+                    <div className="col-span-2 md:col-span-2">
+                      <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Dificuldade</label>
+                      <select
+                        className="bg-slate-900 border border-slate-800 p-2.5 sm:p-2 rounded-lg text-[10px] text-white w-full font-bold uppercase tracking-tight"
+                        value={item.complexity}
+                        onChange={(e) => updateItem(item.id, { complexity: parseInt(e.target.value) as any })}
+                      >
+                        <option value={1}>Fácil (Plano)</option>
+                        <option value={2}>Médio (Curvas)</option>
+                        <option value={3}>Alto (Cantos/Puxadores)</option>
+                      </select>
+                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -1098,19 +1102,19 @@ export default function DecorativeCalculator() {
               <div className="space-y-4">
                   {totals.hasRollPricing ? (
                     <>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">Comprimento usado no rolo</span>
-                        <span className="font-mono text-white">{totals.usedLength.toFixed(2)} m</span>
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                        <span className="text-slate-400 italic leading-snug">Comprimento usado no rolo</span>
+                        <span className="font-mono text-white shrink-0">{totals.usedLength.toFixed(2)} m</span>
                       </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">Área usada no rolo</span>
-                        <span className="font-mono text-white">{totals.rollAreaM2.toFixed(2)} m²</span>
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                        <span className="text-slate-400 italic leading-snug">Área usada no rolo</span>
+                        <span className="font-mono text-white shrink-0">{totals.rollAreaM2.toFixed(2)} m²</span>
                       </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                        <span className="text-slate-400 italic leading-snug pr-0 sm:pr-4">
                           Material faturado (usado + {Math.round((ROLL_WASTE_FACTOR - 1) * 100)}%)
                         </span>
-                        <span className="font-mono text-emerald-300 font-bold">{totals.finalM2.toFixed(2)} m²</span>
+                        <span className="font-mono text-emerald-300 font-bold shrink-0">{totals.finalM2.toFixed(2)} m²</span>
                       </div>
                     </>
                   ) : selectedMaterialId && nestingParts.length > 0 ? (
@@ -1118,9 +1122,9 @@ export default function DecorativeCalculator() {
                       Cadastre largura e comprimento do rolo no material para calcular o consumo (usado + 15%).
                     </p>
                   ) : null}
-                  <div className="flex justify-between items-center text-sm border-t border-slate-800/50 pt-2">
-                    <span className="text-slate-400 font-bold">Mão de Obra</span>
-                    <span className="font-mono text-emerald-400 font-bold">{totals.hours.toFixed(1)} hrs</span>
+                  <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-sm border-t border-slate-800/50 pt-2">
+                    <span className="text-slate-400 font-bold leading-snug">Mão de Obra</span>
+                    <span className="font-mono text-emerald-400 font-bold shrink-0">{totals.hours.toFixed(1)} hrs</span>
                   </div>
               </div>
 
