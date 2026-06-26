@@ -256,12 +256,12 @@ export default function RollNestingPreview({
             )}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {nesting.placed.map((part) => {
+            {nesting.placed.map((part, index) => {
               const isSelected = selectedPartId === part.id;
               return (
                 <button
                   type="button"
-                  key={part.id}
+                  key={`${part.id}-${index}`}
                   onClick={() => togglePartSelection(part.id)}
                   className={cn(
                     'flex items-center rounded-lg border px-3 py-2 text-[10px] text-left transition-all cursor-pointer w-full',
@@ -277,6 +277,7 @@ export default function RollNestingPreview({
                   >
                     {part.name}
                     {part.rotated ? ' ↻' : ''}
+                    {part.splitCount && part.splitCount > 1 ? ' ✂' : ''}
                   </span>
                 </button>
               );
