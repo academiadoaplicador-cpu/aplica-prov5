@@ -9,6 +9,7 @@ export interface AutomotiveBudgetDraft {
   selectedModel: string;
   selectedYear: string;
   selectedVehicleId: string;
+  vehicleQuantity: number;
   budgetType: 'Completo' | 'Parcial';
   selectedPieces: string[];
   selectedMaterialId: string;

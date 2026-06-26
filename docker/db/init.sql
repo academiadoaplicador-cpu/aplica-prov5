@@ -93,6 +93,8 @@ CREATE TABLE budgets (
   profit NUMERIC(12, 2) NOT NULL,
   type TEXT NOT NULL,
   sub_type TEXT,
+  vehicle_quantity INTEGER NOT NULL DEFAULT 1,
+  rolls_needed INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (user_id, id)
 );
 

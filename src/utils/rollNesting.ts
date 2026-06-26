@@ -19,6 +19,8 @@ export interface PlacedPart {
   sourceId?: string;
   splitIndex?: number;
   splitCount?: number;
+  /** Índice da cópia do veículo no plano repetido (+1, +2, …). */
+  vehicleCopyIndex?: number;
 }
 
 interface PackablePiece {
@@ -214,15 +216,65 @@ export function packPartsOnRoll(
   };
 }
 
+/**
+ * Repete o plano de corte de um veículo em sequência (+1, +2, …) ao longo do rolo.
+ * O material total = plano unitário × quantidade de veículos.
+ */
+export function buildFleetNestingLayout(
+  perVehicle: RollNestingResult,
+  vehicleQuantity: number,
+): RollNestingResult {
+  const qty = Math.max(1, Math.floor(vehicleQuantity));
+  if (qty <= 1) return perVehicle;
+
+  const lengthPerCopy = perVehicle.usedLength;
+  if (lengthPerCopy <= 0.0001) {
+    return { ...perVehicle };
+  }
+
+  const placed: PlacedPart[] = [];
+  for (let copy = 0; copy < qty; copy++) {
+    const yOffset = copy * lengthPerCopy;
+    for (const part of perVehicle.placed) {
+      placed.push({
+        ...part,
+        id: `${part.id}::c${copy}`,
+        y: part.y + yOffset,
+        vehicleCopyIndex: copy + 1,
+      });
+    }
+  }
+
+  const totalUsedLength = lengthPerCopy * qty;
+  const visualRollLength = Math.max(perVehicle.rollLength, totalUsedLength);
+
+  return {
+    rollWidth: perVehicle.rollWidth,
+    rollLength: visualRollLength,
+    placed,
+    unplaced: perVehicle.unplaced,
+    usedLength: totalUsedLength,
+    allFit: perVehicle.allFit,
+  };
+}
+
 /** Margem para cortes, sobreposição e perdas na aplicação. */
 export const ROLL_WASTE_FACTOR = 1.15;
 
 export interface RollMaterialUsage {
   usedLength: number;
+  usedLengthPerVehicle?: number;
   rollWidth: number;
   rollAreaM2: number;
   materialM2: number;
+  vehicleQuantity?: number;
+  rollsNeeded?: number;
   nesting: RollNestingResult;
+}
+
+export interface ComputeRollMaterialUsageOptions {
+  wasteFactor?: number;
+  vehicleQuantity?: number;
 }
 
 /** Soma da área real das peças posicionadas no rolo (m²). */
@@ -235,16 +287,36 @@ export function computeRollMaterialUsage(
   parts: NestingPartInput[],
   rollWidth: number,
   rollLength: number,
-  wasteFactor = ROLL_WASTE_FACTOR,
+  wasteFactorOrOptions: number | ComputeRollMaterialUsageOptions = ROLL_WASTE_FACTOR,
 ): RollMaterialUsage {
-  const nesting = packPartsOnRoll(parts, rollWidth, rollLength);
-  const rollAreaM2 = placedPartsAreaM2(nesting.placed);
+  let wasteFactor = ROLL_WASTE_FACTOR;
+  let vehicleQuantity = 1;
+
+  if (typeof wasteFactorOrOptions === 'number') {
+    wasteFactor = wasteFactorOrOptions;
+  } else {
+    wasteFactor = wasteFactorOrOptions.wasteFactor ?? ROLL_WASTE_FACTOR;
+    vehicleQuantity = Math.max(1, Math.floor(wasteFactorOrOptions.vehicleQuantity ?? 1));
+  }
+
+  const nestingPerVehicle = packPartsOnRoll(parts, rollWidth, rollLength);
+  const rollAreaM2PerVehicle = placedPartsAreaM2(nestingPerVehicle.placed);
+  const usedLengthPerVehicle = nestingPerVehicle.usedLength;
+  const rollAreaM2 = rollAreaM2PerVehicle * vehicleQuantity;
+  const usedLength = usedLengthPerVehicle * vehicleQuantity;
   const materialM2 = rollAreaM2 * wasteFactor;
+  const rollsNeeded =
+    rollLength > 0.001 ? Math.max(1, Math.ceil(usedLength / rollLength)) : 1;
+  const nesting = buildFleetNestingLayout(nestingPerVehicle, vehicleQuantity);
+
   return {
-    usedLength: nesting.usedLength,
+    usedLength,
+    usedLengthPerVehicle: vehicleQuantity > 1 ? usedLengthPerVehicle : undefined,
     rollWidth,
     rollAreaM2,
     materialM2,
+    vehicleQuantity: vehicleQuantity > 1 ? vehicleQuantity : undefined,
+    rollsNeeded: rollsNeeded > 1 ? rollsNeeded : undefined,
     nesting,
   };
 }

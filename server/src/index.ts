@@ -916,8 +916,8 @@ app.post('/api/budgets', requireUser, async (req, res) => {
     `INSERT INTO budgets (
       user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id, status, date,
       items, material_id, custom_price_per_m2, total_hours, total_material_meters,
-      total_material_m2, total_cost, total_price, profit, type, sub_type
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+      total_material_m2, total_cost, total_price, profit, type, sub_type, vehicle_quantity, rolls_needed
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
     ON CONFLICT (user_id, id) DO UPDATE SET
       customer_name = EXCLUDED.customer_name,
       vehicle_model = EXCLUDED.vehicle_model,
@@ -935,7 +935,9 @@ app.post('/api/budgets', requireUser, async (req, res) => {
       total_price = EXCLUDED.total_price,
       profit = EXCLUDED.profit,
       type = EXCLUDED.type,
-      sub_type = EXCLUDED.sub_type`,
+      sub_type = EXCLUDED.sub_type,
+      vehicle_quantity = EXCLUDED.vehicle_quantity,
+      rolls_needed = EXCLUDED.rolls_needed`,
     [
       req.userId,
       b.id,
@@ -956,6 +958,8 @@ app.post('/api/budgets', requireUser, async (req, res) => {
       b.profit,
       b.type,
       b.subType ?? null,
+      Math.max(1, Math.floor(Number(b.vehicleQuantity) || 1)),
+      Math.max(1, Math.floor(Number(b.rollsNeeded) || 1)),
     ],
   );
   res.json({ ok: true });

@@ -113,7 +113,7 @@ export default function DecorativeCalculator() {
   const [materialExpanded, setMaterialExpanded] = useState(
     !restoredDraft.current?.selectedMaterialId,
   );
-  const [isSaved, setIsSaved] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const { notice, showNotice, clearNotice } = useBudgetNotice();
   const [appliances, setAppliances] = useState<Appliance[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -452,17 +452,48 @@ export default function DecorativeCalculator() {
     subType
   }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances, effectiveItems]);
 
-  const handleSave = async () => {
+  const budgetSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        customerName,
+        subType,
+        selectedApplianceId,
+        items: effectiveItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          width: item.width,
+          height: item.height,
+        })),
+        selectedMaterialId,
+        customPricePerM2,
+        selectedRollWidth,
+        selectedRollLength,
+      }),
+    [
+      customerName,
+      subType,
+      selectedApplianceId,
+      effectiveItems,
+      selectedMaterialId,
+      customPricePerM2,
+      selectedRollWidth,
+      selectedRollLength,
+    ],
+  );
+
+  const isBudgetSaved = savedSnapshot === budgetSnapshot;
+
+  const handleSave = async (): Promise<boolean> => {
     const validationError = getExportValidationMessage();
     if (validationError) {
       showNotice(validationError, 'warning');
-      return;
+      return false;
     }
     await databaseService.saveBudget(currentBudget);
     clearDecorativeBudgetDraft();
-    setIsSaved(true);
+    setSavedSnapshot(budgetSnapshot);
     showNotice('Orçamento salvo com sucesso.', 'success');
-    setTimeout(() => setIsSaved(false), 3000);
+    return true;
   };
 
   const handleGeneratePDF = async () => {
@@ -1086,9 +1117,10 @@ export default function DecorativeCalculator() {
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}
                 pdfDisabled={!canExportBudget}
-                isSaved={isSaved}
+                isBudgetSaved={isBudgetSaved}
                 onSave={handleSave}
                 onGeneratePDF={handleGeneratePDF}
+                accent="emerald"
                 onSaveBlocked={() => {
                   const msg = getExportValidationMessage();
                   if (msg) showNotice(msg, 'warning');

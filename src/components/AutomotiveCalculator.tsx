@@ -68,6 +68,9 @@ export default function AutomotiveCalculator() {
   const [selectedVehicleId, setSelectedVehicleId] = useState(
     restoredDraft.current?.selectedVehicleId ?? '',
   );
+  const [vehicleQuantity, setVehicleQuantity] = useState(
+    Math.max(1, restoredDraft.current?.vehicleQuantity ?? 1),
+  );
   const [budgetType, setBudgetType] = useState<'Completo' | 'Parcial'>(
     restoredDraft.current?.budgetType ?? 'Completo',
   );
@@ -89,7 +92,7 @@ export default function AutomotiveCalculator() {
   const [materialExpanded, setMaterialExpanded] = useState(
     !restoredDraft.current?.selectedMaterialId,
   );
-  const [isSaved, setIsSaved] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const { notice, showNotice, clearNotice } = useBudgetNotice();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -218,7 +221,7 @@ export default function AutomotiveCalculator() {
     [selectedMaterial, selectedRollWidth, selectedRollLength],
   );
 
-  const nestingParts = useMemo((): NestingPartInput[] => {
+  const nestingPartsPerVehicle = useMemo((): NestingPartInput[] => {
     if (!selectedVehicle) return [];
     return selectedPieces
       .map((partId) => {
@@ -238,8 +241,10 @@ export default function AutomotiveCalculator() {
   const totals = useMemo(() => {
     const empty = {
       usedLength: 0,
+      usedLengthPerVehicle: 0,
       rollAreaM2: 0,
       materialM2: 0,
+      rollsNeeded: 1,
       hasRollPricing: false,
       hours: 0,
       cost: 0,
@@ -251,7 +256,7 @@ export default function AutomotiveCalculator() {
 
     const pieces = selectedPieces.map((id) => getPartInfo(id, selectedVehicle));
     const totalDifficulty = pieces.reduce((acc, p) => acc + p.difficulty, 0);
-    const estimatedHours = totalDifficulty * 0.75;
+    const estimatedHours = totalDifficulty * 0.75 * vehicleQuantity;
 
     const material = materials.find(m => m.id === selectedMaterialId);
     const pricePerM2 = customPricePerM2 ?? (material?.pricePerM2 || 0);
@@ -261,17 +266,25 @@ export default function AutomotiveCalculator() {
     let materialM2 = 0;
     let hasRollPricing = false;
 
-    if (rollDimensions && nestingParts.length > 0) {
+    if (rollDimensions && nestingPartsPerVehicle.length > 0) {
       const usage = computeRollMaterialUsage(
-        nestingParts,
+        nestingPartsPerVehicle,
         rollDimensions.width,
         rollDimensions.length,
+        { vehicleQuantity },
       );
       usedLength = usage.usedLength;
       rollAreaM2 = usage.rollAreaM2;
       materialM2 = usage.materialM2;
       hasRollPricing = true;
     }
+
+    const usedLengthPerVehicle =
+      vehicleQuantity > 0 ? usedLength / vehicleQuantity : 0;
+    const rollsNeeded =
+      rollDimensions && rollDimensions.length > 0
+        ? Math.max(1, Math.ceil(usedLength / rollDimensions.length))
+        : 1;
 
     const materialCost = materialM2 * pricePerM2;
     const laborCost = estimatedHours * settings.hourlyRate;
@@ -282,8 +295,10 @@ export default function AutomotiveCalculator() {
 
     return {
       usedLength,
+      usedLengthPerVehicle,
       rollAreaM2,
       materialM2,
+      rollsNeeded,
       hasRollPricing,
       hours: estimatedHours,
       cost: baseCost,
@@ -293,7 +308,8 @@ export default function AutomotiveCalculator() {
   }, [
     selectedVehicle,
     selectedPieces,
-    nestingParts,
+    vehicleQuantity,
+    nestingPartsPerVehicle,
     rollDimensions,
     selectedMaterialId,
     customPricePerM2,
@@ -306,6 +322,8 @@ export default function AutomotiveCalculator() {
     customerName,
     vehicleModel: selectedVehicle ? `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.year})` : '',
     vehicleId: selectedVehicleId,
+    vehicleQuantity: vehicleQuantity > 1 ? vehicleQuantity : undefined,
+    rollsNeeded: totals.rollsNeeded > 1 ? totals.rollsNeeded : undefined,
     status: 'Pendente' as const,
     date: new Date().toISOString(),
     items: selectedPieces.map(p => ({ partId: p, quantity: 1 })),
@@ -318,7 +336,35 @@ export default function AutomotiveCalculator() {
     totalPrice: totals.price,
     profit: totals.profit,
     type: 'Automotivo' as const
-  }), [customerName, selectedVehicle, selectedVehicleId, selectedPieces, selectedMaterialId, customPricePerM2, totals]);
+  }), [customerName, selectedVehicle, selectedVehicleId, vehicleQuantity, selectedPieces, selectedMaterialId, customPricePerM2, totals]);
+
+  const budgetSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        customerName,
+        selectedVehicleId,
+        vehicleQuantity,
+        budgetType,
+        selectedPieces: [...selectedPieces].sort(),
+        selectedMaterialId,
+        customPricePerM2,
+        selectedRollWidth,
+        selectedRollLength,
+      }),
+    [
+      customerName,
+      selectedVehicleId,
+      vehicleQuantity,
+      budgetType,
+      selectedPieces,
+      selectedMaterialId,
+      customPricePerM2,
+      selectedRollWidth,
+      selectedRollLength,
+    ],
+  );
+
+  const isBudgetSaved = savedSnapshot === budgetSnapshot;
 
   const getExportValidationMessage = useCallback((): string | null => {
     if (!customerName.trim()) return 'Informe o nome do cliente.';
@@ -359,17 +405,17 @@ export default function AutomotiveCalculator() {
     ],
   );
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     const validationError = getExportValidationMessage();
     if (validationError) {
       showNotice(validationError, 'warning');
-      return;
+      return false;
     }
     await databaseService.saveBudget(currentBudget);
     clearAutomotiveBudgetDraft();
-    setIsSaved(true);
+    setSavedSnapshot(budgetSnapshot);
     showNotice('Orçamento salvo com sucesso.', 'success');
-    setTimeout(() => setIsSaved(false), 3000);
+    return true;
   };
 
   const handleGeneratePDF = async () => {
@@ -460,6 +506,7 @@ export default function AutomotiveCalculator() {
       selectedModel,
       selectedYear,
       selectedVehicleId,
+      vehicleQuantity,
       budgetType,
       selectedPieces,
       selectedMaterialId,
@@ -607,6 +654,56 @@ export default function AutomotiveCalculator() {
                   </div>
                 </div>
               </div>
+              {selectedVehicleId && (
+                <div className="space-y-2 md:col-span-2">
+                  <label className={mobileFieldLabel}>Quantidade de veículos</label>
+                  <div className="flex items-center gap-3 max-w-xs">
+                    <button
+                      type="button"
+                      onClick={() => setVehicleQuantity((current) => Math.max(1, current - 1))}
+                      disabled={vehicleQuantity <= 1}
+                      className={cn(
+                        mobileFieldInput,
+                        'w-12 shrink-0 text-center font-bold text-lg px-0 disabled:opacity-30',
+                      )}
+                      aria-label="Diminuir quantidade"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={vehicleQuantity}
+                      onChange={(e) => {
+                        const parsed = parseInt(e.target.value, 10);
+                        if (!Number.isFinite(parsed)) {
+                          setVehicleQuantity(1);
+                          return;
+                        }
+                        setVehicleQuantity(Math.max(1, Math.min(999, parsed)));
+                      }}
+                      className={cn(mobileFieldInput, 'text-center font-mono font-bold')}
+                      aria-label="Quantidade de veículos"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setVehicleQuantity((current) => Math.min(999, current + 1))}
+                      disabled={vehicleQuantity >= 999}
+                      className={cn(
+                        mobileFieldInput,
+                        'w-12 shrink-0 text-center font-bold text-lg px-0 disabled:opacity-30',
+                      )}
+                      aria-label="Aumentar quantidade"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic leading-snug">
+                    Repete o mesmo modelo e as mesmas peças no orçamento (ex.: frota com 20 unidades).
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2.5 sm:flex-row sm:gap-4 pt-4 border-t border-slate-800/80">
@@ -769,13 +866,14 @@ export default function AutomotiveCalculator() {
             )}
           </section>
 
-          {selectedVehicleId && selectedMaterialId && nestingParts.length > 0 && (
+          {selectedVehicleId && selectedMaterialId && nestingPartsPerVehicle.length > 0 && (
             <div className={cn(wizard.stepPanelClass(3))}>
               {rollDimensions ? (
                 <RollNestingPreview
                   rollWidth={rollDimensions.width}
                   rollLength={rollDimensions.length}
-                  parts={nestingParts}
+                  parts={nestingPartsPerVehicle}
+                  vehicleQuantity={vehicleQuantity}
                   materialLabel={selectedMaterial?.name}
                 />
               ) : (
@@ -899,12 +997,32 @@ export default function AutomotiveCalculator() {
 
             <div className="space-y-6">
               <div className="space-y-3">
+                  {vehicleQuantity > 1 && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 italic">Quantidade de veículos</span>
+                      <span className="font-mono text-white font-bold">{vehicleQuantity}×</span>
+                    </div>
+                  )}
                   {totals.hasRollPricing ? (
                     <>
+                      {vehicleQuantity > 1 && (
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400 italic">Comprimento por veículo</span>
+                          <span className="font-mono text-white">{totals.usedLengthPerVehicle.toFixed(2)} m</span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 italic">Comprimento usado no rolo</span>
+                        <span className="text-slate-400 italic">
+                          {vehicleQuantity > 1 ? 'Comprimento total no rolo' : 'Comprimento usado no rolo'}
+                        </span>
                         <span className="font-mono text-white">{totals.usedLength.toFixed(2)} m</span>
                       </div>
+                      {totals.rollsNeeded > 1 && (
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400 italic">Rolos necessários</span>
+                          <span className="font-mono text-amber-300 font-bold">{totals.rollsNeeded}×</span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400 italic">Área usada no rolo</span>
                         <span className="font-mono text-white">{totals.rollAreaM2.toFixed(2)} m²</span>
@@ -916,7 +1034,7 @@ export default function AutomotiveCalculator() {
                         <span className="font-mono text-indigo-300 font-bold">{totals.materialM2.toFixed(2)} m²</span>
                       </div>
                     </>
-                  ) : selectedMaterialId && nestingParts.length > 0 ? (
+                  ) : selectedMaterialId && nestingPartsPerVehicle.length > 0 ? (
                     <p className="text-[10px] text-amber-400/90 italic leading-snug">
                       Cadastre largura e comprimento do rolo no material para calcular o consumo (usado + 15%).
                     </p>
@@ -952,7 +1070,7 @@ export default function AutomotiveCalculator() {
                     customerName: customerName || 'Cliente',
                     projectLabel:
                       selectedVehicle
-                        ? `${selectedVehicle.make} ${selectedVehicle.model} ${selectedVehicle.year}`
+                        ? `${selectedVehicle.make} ${selectedVehicle.model} ${selectedVehicle.year}${vehicleQuantity > 1 ? ` (${vehicleQuantity} un.)` : ''}`
                         : 'Veículo',
                     brand: selectedMaterial.brand,
                     line: getMaterialProductLine(selectedMaterial),
@@ -966,9 +1084,10 @@ export default function AutomotiveCalculator() {
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}
                 pdfDisabled={!canExportBudget}
-                isSaved={isSaved}
+                isBudgetSaved={isBudgetSaved}
                 onSave={handleSave}
                 onGeneratePDF={handleGeneratePDF}
+                accent="indigo"
                 onSaveBlocked={() => {
                   const msg = getExportValidationMessage();
                   if (msg) showNotice(msg, 'warning');

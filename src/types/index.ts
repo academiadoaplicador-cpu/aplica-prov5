@@ -88,6 +88,10 @@ export interface Budget {
   profit: number;
   type: 'Automotivo' | 'Decorativo';
   subType?: 'Móveis' | 'Eletrodomésticos' | 'Parede';
+  /** Mesmo veículo repetido no orçamento (ex.: frota com 20 unidades) */
+  vehicleQuantity?: number;
+  /** Quantidade de rolos necessários para o material do orçamento */
+  rollsNeeded?: number;
 }
 
 export interface Appliance {

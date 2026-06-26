@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, MapPin, Ruler } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { packPartsOnRoll, type NestingPartInput } from '../utils/rollNesting';
+import { packPartsOnRoll, buildFleetNestingLayout, type NestingPartInput } from '../utils/rollNesting';
 
 interface RollNestingPreviewProps {
   rollWidth: number;
@@ -9,6 +9,7 @@ interface RollNestingPreviewProps {
   parts: NestingPartInput[];
   materialLabel?: string;
   accent?: 'indigo' | 'emerald';
+  vehicleQuantity?: number;
 }
 
 type Accent = NonNullable<RollNestingPreviewProps['accent']>;
@@ -65,43 +66,63 @@ export default function RollNestingPreview({
   parts,
   materialLabel,
   accent = 'indigo',
+  vehicleQuantity = 1,
 }: RollNestingPreviewProps) {
   const theme = accentTheme(accent);
-  const nesting = useMemo(
+  const nestingPerVehicle = useMemo(
     () => packPartsOnRoll(parts, rollWidth, rollLength),
     [parts, rollWidth, rollLength],
   );
+  const nesting = useMemo(
+    () => buildFleetNestingLayout(nestingPerVehicle, vehicleQuantity),
+    [nestingPerVehicle, vehicleQuantity],
+  );
+  const physicalRollLength = rollLength;
+  const visualRollLength = nesting.rollLength;
+  const lengthPerCopy = nestingPerVehicle.usedLength;
+  const rollsNeeded =
+    physicalRollLength > 0.001
+      ? Math.max(1, Math.ceil(nesting.usedLength / physicalRollLength))
+      : 1;
 
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const rollVisualWidthPx = (rollLength / rollWidth) * ROLL_VISUAL_HEIGHT_PX;
+  const rollVisualWidthPx = (visualRollLength / rollWidth) * ROLL_VISUAL_HEIGHT_PX;
   const selectedPart = nesting.placed.find((p) => p.id === selectedPartId);
 
   useEffect(() => {
     setSelectedPartId(null);
-  }, [parts, rollWidth, rollLength]);
+  }, [parts, rollWidth, rollLength, vehicleQuantity]);
 
   useEffect(() => {
     if (!selectedPartId || !scrollContainerRef.current) return;
     const part = nesting.placed.find((p) => p.id === selectedPartId);
     if (!part) return;
 
-    const leftPx = (part.y / rollLength) * rollVisualWidthPx;
-    const widthPx = (part.height / rollLength) * rollVisualWidthPx;
+    const leftPx = (part.y / visualRollLength) * rollVisualWidthPx;
+    const widthPx = (part.height / visualRollLength) * rollVisualWidthPx;
     const container = scrollContainerRef.current;
     const targetScroll =
       DIMENSION_GUTTER_LEFT + leftPx + widthPx / 2 - container.clientWidth / 2;
     container.scrollTo({ left: Math.max(0, targetScroll), behavior: 'smooth' });
-  }, [selectedPartId, nesting.placed, rollLength, rollVisualWidthPx]);
+  }, [selectedPartId, nesting.placed, visualRollLength, rollVisualWidthPx]);
 
   const togglePartSelection = (partId: string) => {
     setSelectedPartId((current) => (current === partId ? null : partId));
   };
 
-  const leftoverLength = Math.max(0, rollLength - nesting.usedLength);
-  const usedWidthPx = (nesting.usedLength / rollLength) * rollVisualWidthPx;
+  const showLeftover =
+    vehicleQuantity <= 1 && nesting.usedLength > 0.001 && nesting.usedLength < physicalRollLength - 0.001;
+  const leftoverLength = showLeftover ? Math.max(0, physicalRollLength - nesting.usedLength) : 0;
+  const usedWidthPx = (nesting.usedLength / visualRollLength) * rollVisualWidthPx;
   const leftoverLeftPx = usedWidthPx;
-  const leftoverWidthPx = (leftoverLength / rollLength) * rollVisualWidthPx;
+  const leftoverWidthPx = (leftoverLength / visualRollLength) * rollVisualWidthPx;
+  const perVehicleCount = parts.length;
+  const fitStatusLabel = nesting.allFit
+    ? vehicleQuantity > 1
+      ? `${vehicleQuantity} planos (+1…+${vehicleQuantity}) · ${perVehicleCount} peça(s) cada`
+      : `${perVehicleCount} peça(s) cabem no rolo`
+    : `${nesting.unplaced.length} peça(s) não cabem`;
 
   return (
     <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-5">
@@ -114,6 +135,12 @@ export default function RollNestingPreview({
           {materialLabel && (
             <p className="text-sm text-slate-400 mt-1">{materialLabel}</p>
           )}
+          {vehicleQuantity > 1 && nesting.allFit && lengthPerCopy > 0.001 && (
+            <p className="text-[10px] text-slate-500 mt-1 italic">
+              {formatMeters(lengthPerCopy)} m por veículo · {formatMeters(nesting.usedLength)} m no total
+              {rollsNeeded > 1 ? ` · ${rollsNeeded} rolos` : ''}
+            </p>
+          )}
         </div>
         <div
           className={cn(
@@ -124,9 +151,7 @@ export default function RollNestingPreview({
           )}
         >
           {nesting.allFit ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-          {nesting.allFit
-            ? `${parts.length} peça(s) cabem no rolo`
-            : `${nesting.unplaced.length} peça(s) não cabem`}
+          {fitStatusLabel}
         </div>
       </div>
 
@@ -145,8 +170,12 @@ export default function RollNestingPreview({
         >
           <HorizontalDimension
             widthPx={rollVisualWidthPx}
-            label={`${formatMeters(rollLength)} m`}
-            subLabel="Comprimento do rolo"
+            label={
+              vehicleQuantity > 1
+                ? `${formatMeters(nesting.usedLength)} m`
+                : `${formatMeters(physicalRollLength)} m`
+            }
+            subLabel={vehicleQuantity > 1 ? 'Comprimento total usado' : 'Comprimento do rolo'}
             labelClass={theme.dimLabel}
           />
           <VerticalDimension
@@ -182,10 +211,42 @@ export default function RollNestingPreview({
             style={{ width: rollVisualWidthPx, height: ROLL_VISUAL_HEIGHT_PX }}
             onClick={() => setSelectedPartId(null)}
           >
+            {vehicleQuantity > 1 &&
+              lengthPerCopy > 0.001 &&
+              Array.from({ length: vehicleQuantity }, (_, copy) => {
+                const leftPx = ((copy * lengthPerCopy) / visualRollLength) * rollVisualWidthPx;
+                const widthPx = (lengthPerCopy / visualRollLength) * rollVisualWidthPx;
+                return (
+                  <div
+                    key={`copy-${copy}`}
+                    className="absolute top-0 bottom-0 border-r-2 border-indigo-400/35 pointer-events-none z-[5]"
+                    style={{ left: leftPx, width: Math.max(0, widthPx - 1) }}
+                  >
+                    <span className="absolute top-1 left-1 text-[8px] font-mono font-bold text-indigo-200 bg-slate-950/85 px-1.5 py-0.5 rounded border border-indigo-500/30">
+                      +{copy + 1}
+                    </span>
+                  </div>
+                );
+              })}
+
+            {rollsNeeded > 1 &&
+              Array.from({ length: rollsNeeded - 1 }, (_, index) => {
+                const boundary = (index + 1) * physicalRollLength;
+                if (boundary >= visualRollLength - 0.001) return null;
+                const leftPx = (boundary / visualRollLength) * rollVisualWidthPx;
+                return (
+                  <div
+                    key={`roll-${index}`}
+                    className="absolute top-0 bottom-0 border-l border-dashed border-slate-400/40 pointer-events-none z-[4]"
+                    style={{ left: leftPx }}
+                  />
+                );
+              })}
+
             {nesting.placed.map((part, index) => {
-              const leftPx = (part.y / rollLength) * rollVisualWidthPx;
+              const leftPx = (part.y / visualRollLength) * rollVisualWidthPx;
               const topPx = (part.x / rollWidth) * ROLL_VISUAL_HEIGHT_PX;
-              const widthPx = (part.height / rollLength) * rollVisualWidthPx;
+              const widthPx = (part.height / visualRollLength) * rollVisualWidthPx;
               const heightPx = (part.width / rollWidth) * ROLL_VISUAL_HEIGHT_PX;
               const showName = widthPx > 28 && heightPx > 16;
               const isSelected = selectedPartId === part.id;
@@ -244,11 +305,13 @@ export default function RollNestingPreview({
         </div>
       </div>
 
-      {nesting.placed.length > 0 && (
+      {nestingPerVehicle.placed.length > 0 && (
         <div className="space-y-2">
           <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
             <MapPin size={11} className={theme.mapPin} />
-            Clique em uma peça para localizá-la no rolo
+            {vehicleQuantity > 1
+              ? `Plano unitário — repetido ${vehicleQuantity}× no rolo`
+              : 'Clique em uma peça para localizá-la no rolo'}
             {selectedPart && (
               <span className={cn(theme.hintSelected, 'normal-case tracking-normal font-sans')}>
                 — <strong className="uppercase">{selectedPart.name}</strong> selecionada
@@ -256,13 +319,13 @@ export default function RollNestingPreview({
             )}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {nesting.placed.map((part, index) => {
-              const isSelected = selectedPartId === part.id;
+            {nestingPerVehicle.placed.map((part, index) => {
+              const isSelected = selectedPartId?.startsWith(`${part.id}::`) || selectedPartId === part.id;
               return (
                 <button
                   type="button"
                   key={`${part.id}-${index}`}
-                  onClick={() => togglePartSelection(part.id)}
+                  onClick={() => togglePartSelection(`${part.id}::c0`)}
                   className={cn(
                     'flex items-center rounded-lg border px-3 py-2 text-[10px] text-left transition-all cursor-pointer w-full',
                     isSelected ? theme.listSelected : theme.listDefault,
@@ -276,6 +339,7 @@ export default function RollNestingPreview({
                     )}
                   >
                     {part.name}
+                    {vehicleQuantity > 1 ? ` ×${vehicleQuantity}` : ''}
                     {part.rotated ? ' ↻' : ''}
                     {part.splitCount && part.splitCount > 1 ? ' ✂' : ''}
                   </span>

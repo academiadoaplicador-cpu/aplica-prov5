@@ -535,6 +535,11 @@ export const pdfService = {
 
     const projectLabel =
       budget.vehicleModel || budget.applianceModel || 'Projeto personalizado';
+    const vehicleQty = Math.max(1, budget.vehicleQuantity ?? 1);
+    const displayProjectLabel =
+      isAutomotive && vehicleQty > 1
+        ? `${projectLabel} · ${vehicleQty} veículos`
+        : projectLabel;
     const typeLabel = budget.subType
       ? `${budget.type} · ${budget.subType}`
       : budget.type;
@@ -545,7 +550,9 @@ export const pdfService = {
 
     const pieceSummary = isAutomotive
       ? automotivePieces.length > 0
-        ? `${automotivePieces.length} peça${automotivePieces.length > 1 ? 's' : ''}`
+        ? vehicleQty > 1
+          ? `${vehicleQty} veículos · ${automotivePieces.length} peça(s) por unidade`
+          : `${automotivePieces.length} peça${automotivePieces.length > 1 ? 's' : ''}`
         : undefined
       : decorativeLabels.length > 0
         ? `${decorativeLabels.length} face${decorativeLabels.length > 1 ? 's' : ''}`
@@ -563,10 +570,27 @@ export const pdfService = {
       ? `Rolo: ${formatMeters(rollDims.width)} m (larg.) × ${formatMeters(rollDims.length)} m (comp.)`
       : undefined;
 
+    const rollsNeeded =
+      budget.rollsNeeded ??
+      (rollDims && budgetNumber(budget.totalMaterialMeters) > 0.001
+        ? Math.max(1, Math.ceil(budgetNumber(budget.totalMaterialMeters) / rollDims.length))
+        : 1);
+
+    const lengthLabel =
+      isAutomotive && vehicleQty > 1 ? 'Comprimento total' : 'Comprimento usado';
+
     const metrics = isAutomotive
       ? [
           {
-            label: 'Comprimento usado',
+            label: 'Veículos',
+            value: String(vehicleQty),
+          },
+          {
+            label: 'Rolos necessários',
+            value: String(rollsNeeded),
+          },
+          {
+            label: lengthLabel,
             value: pdfUnit(formatMeters(budgetNumber(budget.totalMaterialMeters)), 'm'),
           },
           {
@@ -607,7 +631,7 @@ export const pdfService = {
     pdf.sectionTitle('DADOS DO ORÇAMENTO');
     pdf.drawClientProject({
       customerName: safeText(budget.customerName, '—'),
-      projectLabel,
+      projectLabel: displayProjectLabel,
       typeLabel,
       pieceSummary,
     });

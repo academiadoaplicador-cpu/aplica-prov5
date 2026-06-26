@@ -73,6 +73,11 @@ export default function BudgetDetailDrawer({
   const pieceNames = budget && budget.type === 'Automotivo' ? getPieceNames(budget) : [];
   const projectLabel =
     budget?.vehicleModel || budget?.applianceModel || 'Projeto personalizado';
+  const vehicleQty = Math.max(1, budget?.vehicleQuantity ?? 1);
+  const displayProjectLabel =
+    budget?.type === 'Automotivo' && vehicleQty > 1
+      ? `${projectLabel} · ${vehicleQty} veículos`
+      : projectLabel;
 
   return (
     <AnimatePresence>
@@ -111,7 +116,7 @@ export default function BudgetDetailDrawer({
                       {officeLabel}
                     </p>
                   )}
-                  <p className="text-xs text-slate-500 italic truncate mt-0.5">{projectLabel}</p>
+                  <p className="text-xs text-slate-500 italic truncate mt-0.5">{displayProjectLabel}</p>
                 </div>
                 <button
                   type="button"
@@ -175,8 +180,14 @@ export default function BudgetDetailDrawer({
                 icon={budget.type === 'Automotivo' ? <Car size={14} /> : <Home size={14} />}
                 label={budget.type === 'Automotivo' ? 'Veículo' : 'Projeto'}
               >
-                {projectLabel}
+                {displayProjectLabel}
               </DetailRow>
+
+              {budget.type === 'Automotivo' && vehicleQty > 1 && (
+                <DetailRow icon={<Car size={14} />} label="Quantidade">
+                  {vehicleQty} veículos idênticos
+                </DetailRow>
+              )}
 
               <DetailRow icon={<Hash size={14} />} label="Tipo">
                 {budget.subType ? `${budget.type} · ${budget.subType}` : budget.type}
@@ -310,7 +321,7 @@ export default function BudgetDetailDrawer({
                     line={getMaterialProductLine(material)}
                     messageContext={{
                       customerName: budget.customerName,
-                      projectLabel: projectLabel,
+                      projectLabel: displayProjectLabel,
                       brand: material.brand,
                       line: getMaterialProductLine(material),
                       areaM2: budget.totalMaterialM2,

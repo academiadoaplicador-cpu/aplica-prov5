@@ -31,5 +31,9 @@ export function mapBudget(row: Record<string, unknown>) {
     profit: num(row.profit),
     type: row.type as string,
     subType: (row.sub_type as string) || undefined,
+    vehicleQuantity:
+      row.vehicle_quantity != null ? Math.max(1, num(row.vehicle_quantity)) : undefined,
+    rollsNeeded:
+      row.rolls_needed != null ? Math.max(1, num(row.rolls_needed)) : undefined,
   };
 }
