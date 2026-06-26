@@ -178,6 +178,8 @@ function mapMaterial(row: Record<string, unknown>) {
     line: row.line as string,
     colorTexture: row.color_texture as string,
     durability: row.durability as string,
+    applicationDifficulty:
+      row.application_difficulty != null ? num(row.application_difficulty) : undefined,
     recommendedFor: (row.recommended_for as string[]) || [],
     details,
     rollWidthM,
@@ -508,9 +510,9 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
       await client.query(
         `INSERT INTO materials (
           user_id, id, name, brand, price_per_m2, type, line, color_texture,
-          durability, recommended_for, details, roll_width_m, roll_length_m,
+          durability, application_difficulty, recommended_for, details, roll_width_m, roll_length_m,
           roll_widths_m, roll_lengths_m
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
         [
           catalogUserId,
           m.id,
@@ -521,6 +523,7 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
           m.line,
           m.colorTexture,
           m.durability,
+          m.applicationDifficulty ?? null,
           m.recommendedFor || [],
           m.details ?? null,
           roll.rollWidthM,
@@ -570,16 +573,17 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
         await client.query(
           `UPDATE materials
            SET price_per_m2 = $1, type = $2, line = $3, color_texture = $4,
-               durability = $5, recommended_for = $6, details = $7,
-               brand = $8, name = $9, roll_width_m = $10, roll_length_m = $11,
-               roll_widths_m = $12, roll_lengths_m = $13
-           WHERE user_id = $14 AND id = $15`,
+               durability = $5, application_difficulty = $6, recommended_for = $7, details = $8,
+               brand = $9, name = $10, roll_width_m = $11, roll_length_m = $12,
+               roll_widths_m = $13, roll_lengths_m = $14
+           WHERE user_id = $15 AND id = $16`,
           [
             m.pricePerM2,
             m.type,
             m.line,
             m.colorTexture,
             m.durability,
+            m.applicationDifficulty ?? null,
             m.recommendedFor || [],
             m.details ?? null,
             brand,
@@ -598,9 +602,9 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
         await client.query(
           `INSERT INTO materials (
             user_id, id, name, brand, price_per_m2, type, line, color_texture,
-            durability, recommended_for, details, roll_width_m, roll_length_m,
+            durability, application_difficulty, recommended_for, details, roll_width_m, roll_length_m,
             roll_widths_m, roll_lengths_m
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
           [
             catalogUserId,
             id,
@@ -611,6 +615,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
             m.line,
             m.colorTexture,
             m.durability,
+            m.applicationDifficulty ?? null,
             m.recommendedFor || [],
             m.details ?? null,
             roll.rollWidthM,

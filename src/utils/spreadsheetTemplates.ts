@@ -23,7 +23,8 @@ export function downloadMaterialsTemplate() {
     'Comprimento do Rolo (m)',
     'Cores',
     'Recomendado Para',
-    'Dificuldade',
+    'Grau de Dificuldade de Aplicação',
+    'Durabilidade',
   ];
   const examples = [
     [
@@ -36,6 +37,7 @@ export function downloadMaterialsTemplate() {
       'Branco; Preto',
       'Veículo; Geladeira',
       2,
+      '7-12 anos',
     ],
     [
       'Cast',
@@ -46,14 +48,15 @@ export function downloadMaterialsTemplate() {
       50,
       'Fosco',
       'Veículo',
-      1.5,
+      1.3,
+      'Até 8 anos',
     ],
   ];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     workbook,
-    sheetWithRows([headers, ...examples], [14, 14, 22, 14, 22, 20, 18, 22, 12]),
+    sheetWithRows([headers, ...examples], [14, 14, 22, 14, 22, 20, 18, 22, 28, 16]),
     'Materiais',
   );
 
@@ -67,7 +70,8 @@ export function downloadMaterialsTemplate() {
     ['Comprimento do Rolo (m)', 'Não', 'Comprimentos em metros separados por ; (ex: 25; 50)'],
     ['Cores', 'Não', 'Separe variantes com ; ou ,'],
     ['Recomendado Para', 'Não', 'Veículo; Geladeira; Parede; Móveis'],
-    ['Dificuldade', 'Não', 'Grau de 1 a 3 (opcional)'],
+    ['Grau de Dificuldade de Aplicação', 'Não', 'Grau de 1 a 3 (ex.: 1,3) — não confundir com durabilidade'],
+    ['Durabilidade', 'Não', 'Vida útil do material (ex.: 7-12 anos, Até 8 anos)'],
   ];
   XLSX.utils.book_append_sheet(
     workbook,

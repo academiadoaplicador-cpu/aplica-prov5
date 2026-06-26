@@ -39,6 +39,8 @@ export interface Material {
   line: string;
   colorTexture: string;
   durability: string;
+  /** Grau de dificuldade de aplicação (ex.: 1,3) — distinto de durabilidade */
+  applicationDifficulty?: number;
   recommendedFor: string[]; // ['Automotivo', 'Móveis', 'Eletrodomésticos', ...]
   details?: string;
   /** Largura padrão do rolo (m) — maior opção ou selecionada */

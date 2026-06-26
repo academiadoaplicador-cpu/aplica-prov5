@@ -187,16 +187,15 @@ function parseRow(
   const recommendedParts = splitSemicolonValues(
     getCell(row, 'recomendado para', 'recomendado', 'recomendado para'),
   );
-  const difficulty = parseNumber(
+  const applicationDifficulty = parseNumber(
     getCell(
       row,
       'grau de dificuldade de aplicacao',
       'grau de dificuldade de aplicação',
-      'dificuldade',
       'grau de dificuldade',
-      'grau',
     ),
   );
+  const durabilityRaw = sanitizeCellText(getCell(row, 'durabilidade', 'durability'));
 
   if (!brand || !product) return { materials: [], warnings };
   if (price === null) {
@@ -217,8 +216,10 @@ function parseRow(
   if (lengths.length > 0) {
     detailParts.push(`Comprimento do rolo: ${lengths.map((l) => `${l} m`).join('; ')}`);
   }
-  if (difficulty !== null) {
-    detailParts.push(`Grau de dificuldade de aplicação: ${String(difficulty).replace('.', ',')}`);
+  if (applicationDifficulty !== null) {
+    detailParts.push(
+      `Grau de dificuldade de aplicação: ${String(applicationDifficulty).replace('.', ',')}`,
+    );
   }
   if (category) {
     detailParts.push(`Categoria: ${category}`);
@@ -237,7 +238,8 @@ function parseRow(
       type,
       line: product,
       colorTexture: color || colorsRaw || '—',
-      durability: difficulty !== null ? `Dificuldade ${difficulty}` : 'Consultar fabricante',
+      durability: durabilityRaw || 'Consultar fabricante',
+      applicationDifficulty: applicationDifficulty ?? undefined,
       recommendedFor: recommendedFor.length > 0 ? recommendedFor : ['Automotivo'],
       details: details || undefined,
       rollWidthM,
@@ -308,6 +310,7 @@ export function mergeMaterials(existing: Material[], imported: Material[]): {
         line: material.line,
         colorTexture: material.colorTexture,
         durability: material.durability,
+        applicationDifficulty: material.applicationDifficulty,
         recommendedFor: material.recommendedFor,
         details: material.details,
         rollWidthM: material.rollWidthM,

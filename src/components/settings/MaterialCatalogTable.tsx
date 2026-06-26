@@ -170,6 +170,21 @@ export default function MaterialCatalogTable({
                 value={material.durability}
                 onChange={(v) => onUpdate(material.id, { durability: v })}
               />
+              <Field
+                label="Dificuldade de aplicação"
+                value={
+                  material.applicationDifficulty != null
+                    ? String(material.applicationDifficulty).replace('.', ',')
+                    : ''
+                }
+                onChange={(v) => {
+                  const parsed = parseFloat(v.replace(',', '.'));
+                  onUpdate(material.id, {
+                    applicationDifficulty: Number.isFinite(parsed) ? parsed : undefined,
+                  });
+                }}
+                hint="Grau de 1 a 3 (ex.: 1,3) — distinto da durabilidade"
+              />
             </div>
             <div className="space-y-2">
               <label className="text-[9px] uppercase font-mono text-slate-500">Recomendado para</label>
@@ -212,11 +227,13 @@ function Field({
   value,
   onChange,
   mono,
+  hint,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   mono?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="space-y-1">
@@ -229,6 +246,7 @@ function Field({
           mono && 'font-mono text-emerald-400',
         )}
       />
+      {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
     </div>
   );
 }

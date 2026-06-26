@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Layers, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
+import { Plus, Layers, FileSpreadsheet, Save, CheckCircle2, Download, FileDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { databaseService } from '../services/databaseService';
 import { Material, MaterialType } from '../types';
@@ -13,6 +13,7 @@ import MaterialCatalogTable from '../components/settings/MaterialCatalogTable';
 import MaterialImportPreviewModal from '../components/settings/MaterialImportPreviewModal';
 import { mergeMaterials, parseMaterialsFromExcel, type MaterialImportResult } from '../utils/materialImport';
 import { downloadMaterialsTemplate } from '../utils/spreadsheetTemplates';
+import { downloadMaterialsCatalog } from '../utils/materialExport';
 import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
 export default function CatalogPage() {
@@ -192,6 +193,14 @@ export default function CatalogPage() {
               onClick={() => downloadMaterialsTemplate()}
             >
               Baixar modelo
+            </PageButton>
+            <PageButton
+              variant="secondary"
+              icon={<FileDown size={16} />}
+              disabled={materials.length === 0}
+              onClick={() => downloadMaterialsCatalog(materials)}
+            >
+              Exportar catálogo
             </PageButton>
             <PageButton
               variant="secondary"

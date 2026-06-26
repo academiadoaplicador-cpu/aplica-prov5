@@ -27,6 +27,7 @@ CREATE TABLE materials (
   line TEXT NOT NULL,
   color_texture TEXT NOT NULL,
   durability TEXT NOT NULL,
+  application_difficulty NUMERIC(4, 2),
   recommended_for TEXT[] NOT NULL DEFAULT '{}',
   details TEXT,
   roll_width_m NUMERIC(10, 3),
