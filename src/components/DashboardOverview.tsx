@@ -18,7 +18,6 @@ import { motion } from 'motion/react';
 
 export default function DashboardOverview() {
   const { goToCalculator, goToRoute } = useCalculatorMode();
-  const user = databaseService.getCachedUser();
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [settings, setSettings] = useState<FinancialSettings | null>(null);
 
@@ -162,7 +161,7 @@ export default function DashboardOverview() {
               <h3 className="text-xl font-bold mb-2">Configure sua oficina</h3>
               <p className="text-indigo-100 text-sm mb-6 opacity-80">Defina o valor da sua hora técnica e margem para cálculos precisos.</p>
               <button 
-                onClick={() => goToRoute(user?.isAdmin ? ROUTES.catalog : ROUTES.costs)}
+                onClick={() => goToRoute(ROUTES.costs)}
                 className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-50 transition-colors"
               >
                 Acessar Ajustes
