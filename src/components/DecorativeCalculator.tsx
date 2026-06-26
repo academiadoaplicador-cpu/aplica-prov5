@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
   Plus, 
-  Trash2, 
+  Trash2,
+  Copy,
   Package,
   LayoutDashboard,
   Maximize,
@@ -272,6 +273,28 @@ export default function DecorativeCalculator() {
       delete next[id];
       return next;
     });
+  };
+
+  const duplicateItem = (id: string) => {
+    const source = effectiveItems.find((item) => item.id === id);
+    if (!source) return;
+
+    const copy: DecorativeItem = {
+      id: generateId(),
+      name: source.name,
+      width: source.width,
+      height: source.height,
+      complexity: source.complexity,
+    };
+
+    setItems((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index === -1) return [...prev, copy];
+      const next = [...prev];
+      next.splice(index + 1, 0, copy);
+      return next;
+    });
+    showNotice('Peça duplicada.', 'success');
   };
 
   const getDimensionDisplay = useCallback(
@@ -912,8 +935,23 @@ export default function DecorativeCalculator() {
                       <option value={3}>Alto (Cantos/Puxadores)</option>
                     </select>
                   </div>
-                  <div className="md:col-span-1 flex items-end justify-center pb-2">
-                    <button onClick={() => removeItem(item.id)} className="text-slate-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                  <div className="md:col-span-1 flex items-end justify-center pb-2 gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => duplicateItem(item.id)}
+                      title="Duplicar peça"
+                      aria-label={`Duplicar ${item.name}`}
+                      className="text-slate-600 hover:text-emerald-400 p-2 rounded-lg hover:bg-emerald-500/10 transition-all"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.id)}
+                      title="Remover peça"
+                      aria-label={`Remover ${item.name}`}
+                      className="text-slate-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-all"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>
