@@ -546,7 +546,9 @@ export const pdfService = {
 
     const automotivePieces = isAutomotive ? getAutomotivePieceNames(budget) : [];
     const decorativePieces = !isAutomotive ? getDecorativePieces(budget) : [];
-    const decorativeLabels = decorativePieces.map((p) => p.name!);
+    const decorativeLabels = decorativePieces.map((p) =>
+      p.quantity > 1 ? `${p.name} ×${p.quantity}` : p.name!,
+    );
 
     const pieceSummary = isAutomotive
       ? automotivePieces.length > 0

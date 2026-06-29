@@ -45,12 +45,33 @@ import {
 } from '../utils/budgetDraftStorage';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
 import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNesting';
+import type { NestingPartInput } from '../utils/rollNesting';
 import BudgetNotice from './budget-mobile/BudgetNotice';
 import { useBudgetNotice } from '../hooks/useBudgetNotice';
 import { useBudgetDraftPersistence } from '../hooks/useBudgetDraftPersistence';
 
 type SubType = 'Móveis' | 'Eletrodomésticos' | 'Parede';
 type DimensionField = 'width' | 'height';
+
+function itemQuantity(item: DecorativeItem): number {
+  return Math.max(1, Math.floor(item.quantity ?? 1));
+}
+
+function expandItemsForNesting(items: DecorativeItem[]): NestingPartInput[] {
+  return items.flatMap((item) => {
+    if (item.width <= 0 || item.height <= 0) return [];
+    const qty = itemQuantity(item);
+    if (qty <= 1) {
+      return [{ id: item.id, name: item.name, width: item.width, length: item.height }];
+    }
+    return Array.from({ length: qty }, (_, index) => ({
+      id: `${item.id}::q${index}`,
+      name: `${item.name} (${index + 1}/${qty})`,
+      width: item.width,
+      length: item.height,
+    }));
+  });
+}
 type DimensionDrafts = Record<string, Partial<Record<DimensionField, string>>>;
 
 function normalizeDecimalInput(raw: string): string {
@@ -276,25 +297,24 @@ export default function DecorativeCalculator() {
   };
 
   const duplicateItem = (id: string) => {
-    const source = effectiveItems.find((item) => item.id === id);
-    if (!source) return;
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, quantity: Math.min(999, itemQuantity(item) + 1) }
+          : item,
+      ),
+    );
+    showNotice('Quantidade da peça aumentada.', 'success');
+  };
 
-    const copy: DecorativeItem = {
-      id: generateId(),
-      name: source.name,
-      width: source.width,
-      height: source.height,
-      complexity: source.complexity,
-    };
-
-    setItems((prev) => {
-      const index = prev.findIndex((item) => item.id === id);
-      if (index === -1) return [...prev, copy];
-      const next = [...prev];
-      next.splice(index + 1, 0, copy);
-      return next;
-    });
-    showNotice('Peça duplicada.', 'success');
+  const decrementItemQuantity = (id: string) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const nextQty = itemQuantity(item) - 1;
+        return { ...item, quantity: nextQty <= 1 ? undefined : nextQty };
+      }),
+    );
   };
 
   const getDimensionDisplay = useCallback(
@@ -382,24 +402,21 @@ export default function DecorativeCalculator() {
     [selectedMaterial, selectedRollWidth, selectedRollLength],
   );
 
-  const nestingParts = useMemo((): NestingPartInput[] => {
-    return effectiveItems
-      .filter((item) => item.width > 0 && item.height > 0)
-      .map((item) => ({
-        id: item.id,
-        name: item.name,
-        width: item.width,
-        length: item.height,
-      }));
-  }, [effectiveItems]);
+  const nestingParts = useMemo(
+    (): NestingPartInput[] => expandItemsForNesting(effectiveItems),
+    [effectiveItems],
+  );
 
   const totals = useMemo(() => {
-    const totalM2 = effectiveItems.reduce((acc, item) => acc + item.width * item.height, 0);
+    const totalM2 = effectiveItems.reduce(
+      (acc, item) => acc + item.width * item.height * itemQuantity(item),
+      0,
+    );
 
     const totalHours = effectiveItems.reduce((acc, item) => {
-      const baseTime = item.width * item.height;
+      const baseTime = item.width * item.height * itemQuantity(item);
       const multiplier = item.complexity === 1 ? 1.5 : item.complexity === 2 ? 2.5 : 4;
-      return acc + (baseTime * multiplier);
+      return acc + baseTime * multiplier;
     }, 0);
 
     const material = materials.find(m => m.id === selectedMaterialId);
@@ -458,7 +475,7 @@ export default function DecorativeCalculator() {
     date: new Date().toISOString(),
     items: effectiveItems.map((item) => ({
       partId: item.id,
-      quantity: 1,
+      quantity: itemQuantity(item),
       name: item.name,
       width: item.width,
       height: item.height,
@@ -486,6 +503,7 @@ export default function DecorativeCalculator() {
           name: item.name,
           width: item.width,
           height: item.height,
+          quantity: itemQuantity(item),
         })),
         selectedMaterialId,
         customPricePerM2,
@@ -883,7 +901,9 @@ export default function DecorativeCalculator() {
             </h3>
 
             <div className="space-y-3 lg:space-y-4">
-              {items.map((item) => (
+              {items.map((item) => {
+                const qty = itemQuantity(item);
+                return (
                 <motion.div
                   layout
                   initial={{ opacity: 0, scale: 0.98 }}
@@ -893,7 +913,14 @@ export default function DecorativeCalculator() {
                 >
                   <div className="flex items-end gap-2">
                     <div className="flex-1 min-w-0">
-                      <label className="text-[9px] uppercase font-mono text-slate-500 block mb-1">Nome da Face</label>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="text-[9px] uppercase font-mono text-slate-500">Nome da Face</label>
+                        {qty > 1 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono font-bold text-emerald-300 tabular-nums">
+                            ×{qty}
+                          </span>
+                        )}
+                      </div>
                       <input
                         className="bg-slate-900 border border-slate-800 p-2.5 sm:p-2 rounded-lg text-xs font-bold text-white w-full focus:ring-1 focus:ring-emerald-500"
                         value={item.name}
@@ -901,10 +928,21 @@ export default function DecorativeCalculator() {
                       />
                     </div>
                     <div className="flex shrink-0 gap-0.5 pb-0.5">
+                      {qty > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => decrementItemQuantity(item.id)}
+                          title="Diminuir quantidade"
+                          aria-label={`Diminuir quantidade de ${item.name}`}
+                          className="text-slate-600 hover:text-emerald-400 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-emerald-500/10 transition-all text-lg font-bold leading-none"
+                        >
+                          −
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => duplicateItem(item.id)}
-                        title="Duplicar peça"
+                        title={qty > 1 ? `Aumentar quantidade (atual: ×${qty})` : 'Duplicar peça (×2)'}
                         aria-label={`Duplicar ${item.name}`}
                         className="text-slate-600 hover:text-emerald-400 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-emerald-500/10 transition-all"
                       >
@@ -960,7 +998,8 @@ export default function DecorativeCalculator() {
                     </div>
                   </div>
                 </motion.div>
-              ))}
+              );
+              })}
             </div>
           </section>
 

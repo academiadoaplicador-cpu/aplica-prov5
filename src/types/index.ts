@@ -306,6 +306,8 @@ export interface DecorativeItem {
   width: number;
   height: number;
   complexity: 1 | 2 | 3;
+  /** Quantidade de faces iguais (ex.: duplicar → ×2, ×3) */
+  quantity?: number;
 }
 
 export type AreaOfExpertise = 
