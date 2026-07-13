@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import BudgetNotice from '../budget-mobile/BudgetNotice';
 import { useBudgetNotice } from '../../hooks/useBudgetNotice';
 import { Trash2, Pencil, CheckCircle2, AlertCircle, Ruler, Plus } from 'lucide-react';
