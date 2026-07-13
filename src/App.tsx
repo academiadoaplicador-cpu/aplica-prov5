@@ -27,6 +27,9 @@ import AdminBudgetsPage from './pages/admin/AdminBudgetsPage';
 import AdminSuppliersPage from './pages/admin/AdminSuppliersPage';
 import AdminCreateSupplierPage from './pages/admin/AdminCreateSupplierPage';
 import AdminSupplierDetailPage from './pages/admin/AdminSupplierDetailPage';
+import AdminPromotionsPage from './pages/admin/AdminPromotionsPage';
+import AdminCreatePromotionPage from './pages/admin/AdminCreatePromotionPage';
+import AdminPromotionDetailPage from './pages/admin/AdminPromotionDetailPage';
 import { AdminRoute, GuestRoute, ProtectedRoute } from './routes/ProtectedRoute';
 import { ROUTES } from './routes/paths';
 
@@ -98,6 +101,9 @@ export default function App() {
               <Route path="fornecedores" element={<AdminSuppliersPage />} />
               <Route path="fornecedores/novo" element={<AdminCreateSupplierPage />} />
               <Route path="fornecedores/:supplierId" element={<AdminSupplierDetailPage />} />
+              <Route path="promocoes" element={<AdminPromotionsPage />} />
+              <Route path="promocoes/novo" element={<AdminCreatePromotionPage />} />
+              <Route path="promocoes/:promotionId" element={<AdminPromotionDetailPage />} />
             </Route>
           </Route>
         </Route>

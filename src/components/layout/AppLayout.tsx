@@ -10,16 +10,18 @@ import {
   User as UserIcon,
   Package,
   Refrigerator,
+  Megaphone,
   MoreHorizontal,
   Search,
   Shield,
   Truck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User } from '../../types';
+import { Promotion, User } from '../../types';
 import { databaseService } from '../../services/databaseService';
 import { ROUTES } from '../../routes/paths';
 import { cn } from '../../lib/utils';
+import PromotionPopup, { alreadyShownToday, markShownToday } from '../PromotionPopup';
 import {
   MobileBottomExtrasProvider,
   useMobileBottomExtrasContent,
@@ -65,6 +67,7 @@ function getMobilePageTitle(pathname: string): string {
   if (pathname.startsWith(ROUTES.catalog)) return 'Catálogo';
   if (pathname.startsWith(ROUTES.vehiclesBase)) return 'Base de Veículos';
   if (pathname.startsWith(ROUTES.appliancesBase)) return 'Base de Eletros';
+  if (pathname.startsWith(ROUTES.admin.promotions)) return 'Promoções';
   if (pathname.startsWith('/admin')) return 'Administração';
   return 'Aplica Pro';
 }
@@ -93,6 +96,12 @@ function buildMoreMenuItems(user: User): MoreMenuEntry[] {
         label: 'Administração',
         searchTerms: 'admin painel usuários',
         end: true,
+      },
+      {
+        to: ROUTES.admin.promotions,
+        icon: <Megaphone size={20} />,
+        label: 'Promoções',
+        searchTerms: 'promoções anúncios banners popup',
       },
       {
         to: ROUTES.catalog,
@@ -148,6 +157,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreSearch, setMoreSearch] = useState('');
+  const [activePromotion, setActivePromotion] = useState<Promotion | null>(null);
 
   const moreMenuItems = useMemo(() => buildMoreMenuItems(user), [user]);
 
@@ -155,6 +165,19 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
     setMoreOpen(false);
     setMoreSearch('');
   }, [appPath]);
+
+  useEffect(() => {
+    if (alreadyShownToday(user.id)) return;
+    databaseService
+      .getActivePromotion()
+      .then((promotion) => {
+        if (promotion) {
+          setActivePromotion(promotion);
+          markShownToday(user.id);
+        }
+      })
+      .catch(() => {});
+  }, [user.id]);
 
   const handleLogout = async () => {
     await databaseService.logout();
@@ -234,6 +257,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
           {user.isAdmin && (
             <>
               <NavItem to={ROUTES.admin.home} icon={<Shield size={20} />} label="Administração" />
+              <NavItem to={ROUTES.admin.promotions} icon={<Megaphone size={20} />} label="Promoções" />
               <NavItem to={ROUTES.catalog} icon={<Package size={20} />} label="Catálogo Profissional" />
               <NavItem to={ROUTES.vehiclesBase} icon={<Car size={20} />} label="Base de Veículos" />
               <NavItem to={ROUTES.appliancesBase} icon={<Refrigerator size={20} />} label="Base de Eletros" />
@@ -394,6 +418,10 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
           </nav>
         </div>
       </div>
+
+      {activePromotion && (
+        <PromotionPopup promotion={activePromotion} onClose={() => setActivePromotion(null)} />
+      )}
     </div>
   );
 }

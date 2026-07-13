@@ -31,6 +31,7 @@ import { seedUserData } from './seed/seedUser.js';
 import { resolveCatalogUserId } from './catalog.js';
 import { createAdminRouter } from './adminRoutes.js';
 import { lookupSupplierForProduct } from './supplierRoutes.js';
+import { fetchActivePromotionForToday } from './promotionRoutes.js';
 import { mapBudget, mapFinancial } from './budgetMappers.js';
 import { createApplicatorUser } from './userProvisioning.js';
 import {
@@ -65,7 +66,7 @@ app.use(
 );
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(cookieParser());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 app.use(
   (
@@ -300,6 +301,16 @@ app.get('/api/suppliers/lookup', requireUser, async (req, res) => {
   } catch (e) {
     console.error('[suppliers/lookup]', e);
     res.status(500).json({ error: 'Erro ao buscar fornecedor' });
+  }
+});
+
+app.get('/api/promotions/active', requireUser, async (_req, res) => {
+  try {
+    const promotion = await fetchActivePromotionForToday(pool);
+    res.json(promotion);
+  } catch (e) {
+    console.error('[promotions/active]', e);
+    res.status(500).json({ error: 'Erro ao carregar promoção' });
   }
 });
 

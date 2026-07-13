@@ -22,6 +22,9 @@ export const ROUTES = {
     suppliers: '/admin/fornecedores',
     supplierNew: '/admin/fornecedores/novo',
     supplier: (id: string) => `/admin/fornecedores/${id}`,
+    promotions: '/admin/promocoes',
+    promotionNew: '/admin/promocoes/novo',
+    promotion: (id: string) => `/admin/promocoes/${id}`,
   },
 } as const;
 

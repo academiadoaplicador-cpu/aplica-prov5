@@ -199,6 +199,33 @@ export interface SupplierImportResult {
   errors: string[];
 }
 
+export interface Promotion {
+  id: string;
+  title: string;
+  description?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  bannerDesktopUrl: string;
+  bannerMobileUrl: string;
+  startsAt?: string;
+  endsAt?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromotionInput {
+  title: string;
+  description?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  bannerDesktopUrl: string;
+  bannerMobileUrl: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  isActive?: boolean;
+}
+
 export interface AdminStats {
   totalApplicants: number;
   inactiveApplicants: number;

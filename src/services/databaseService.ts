@@ -3,6 +3,7 @@ import {
   Budget,
   FinancialSettings,
   Material,
+  Promotion,
   User,
   Vehicle,
   Appliance,
@@ -198,6 +199,10 @@ export const databaseService = {
       method: 'PUT',
       body: JSON.stringify(profile),
     });
+  },
+
+  getActivePromotion: async (): Promise<Promotion | null> => {
+    return api<Promotion | null>('/promotions/active');
   },
 
   getVehicles: async (): Promise<Vehicle[]> => {

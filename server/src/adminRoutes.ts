@@ -9,6 +9,7 @@ import { createApplicatorUser, hashPassword } from './userProvisioning.js';
 import { isValidEmail, normalizeEmail } from './email.js';
 import { getPasswordValidationMessage } from './password.js';
 import { createSupplierAdminRouter } from './supplierRoutes.js';
+import { createPromotionAdminRouter } from './promotionRoutes.js';
 import { fetchCnpjLookup } from './cnpjLookup.js';
 
 function num(value: unknown): number {
@@ -84,6 +85,7 @@ export function createAdminRouter(pool: Pool): Router {
   });
 
   router.use('/suppliers', createSupplierAdminRouter(pool));
+  router.use('/promotions', createPromotionAdminRouter(pool));
 
   router.get('/stats', async (_req: Request, res: Response) => {
     try {
