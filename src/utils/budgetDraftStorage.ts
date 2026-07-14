@@ -14,6 +14,7 @@ export interface AutomotiveBudgetDraft {
   selectedPieces: string[];
   selectedMaterialId: string;
   customPricePerM2: number | null;
+  customTotalPrice: number | null;
   selectedRollWidth: number | null;
   selectedRollLength: number | null;
   activeStep: number;
@@ -29,6 +30,7 @@ export interface DecorativeBudgetDraft {
   items: DecorativeItem[];
   selectedMaterialId: string;
   customPricePerM2: number | null;
+  customTotalPrice: number | null;
   selectedRollWidth: number | null;
   selectedRollLength: number | null;
   activeStep: number;

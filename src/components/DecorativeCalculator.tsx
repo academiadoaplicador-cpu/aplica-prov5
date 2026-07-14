@@ -12,6 +12,7 @@ import {
   Refrigerator,
   Layout,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { FinancialSettings, Material, DecorativeItem, Appliance } from '../types';
@@ -126,6 +127,11 @@ export default function DecorativeCalculator() {
   const [customPricePerM2, setCustomPricePerM2] = useState<number | null>(
     restoredDraft.current?.customPricePerM2 ?? null,
   );
+  const [customTotalPrice, setCustomTotalPrice] = useState<number | null>(
+    restoredDraft.current?.customTotalPrice ?? null,
+  );
+  const [isEditingTotal, setIsEditingTotal] = useState(false);
+  const [totalDraft, setTotalDraft] = useState('');
   const [selectedRollWidth, setSelectedRollWidth] = useState<number | null>(
     restoredDraft.current?.selectedRollWidth ?? null,
   );
@@ -443,7 +449,8 @@ export default function DecorativeCalculator() {
     const laborCost = totalHours * settings.hourlyRate;
 
     const baseCost = materialCost + laborCost;
-    const totalPrice = baseCost * (1 + (settings.profitMarginPercentage / 100)) * (1 + (settings.taxPercentage / 100));
+    const suggestedPrice = baseCost * (1 + (settings.profitMarginPercentage / 100)) * (1 + (settings.taxPercentage / 100));
+    const totalPrice = customTotalPrice ?? suggestedPrice;
     const profit = totalPrice - baseCost - (totalPrice * (settings.taxPercentage / 100));
 
     return {
@@ -455,6 +462,7 @@ export default function DecorativeCalculator() {
       hours: totalHours,
       cost: baseCost,
       price: totalPrice,
+      suggestedPrice,
       profit,
     };
   }, [
@@ -463,6 +471,7 @@ export default function DecorativeCalculator() {
     rollDimensions,
     selectedMaterialId,
     customPricePerM2,
+    customTotalPrice,
     materials,
     settings,
   ]);
@@ -507,6 +516,7 @@ export default function DecorativeCalculator() {
         })),
         selectedMaterialId,
         customPricePerM2,
+        customTotalPrice,
         selectedRollWidth,
         selectedRollLength,
       }),
@@ -517,6 +527,7 @@ export default function DecorativeCalculator() {
       effectiveItems,
       selectedMaterialId,
       customPricePerM2,
+      customTotalPrice,
       selectedRollWidth,
       selectedRollLength,
     ],
@@ -651,6 +662,7 @@ export default function DecorativeCalculator() {
       items,
       selectedMaterialId,
       customPricePerM2,
+      customTotalPrice,
       selectedRollWidth,
       selectedRollLength,
       activeStep: wizard.activeStep,
@@ -1055,7 +1067,10 @@ export default function DecorativeCalculator() {
                 context={materialContext}
                 selectedMaterialId={selectedMaterialId}
                 onSelectMaterialId={setSelectedMaterialId}
-                onSelectionChange={() => setCustomPricePerM2(null)}
+                onSelectionChange={() => {
+                  setCustomPricePerM2(null);
+                  setCustomTotalPrice(null);
+                }}
                 accent="emerald"
               />
 
@@ -1169,12 +1184,56 @@ export default function DecorativeCalculator() {
 
               <div className="bg-emerald-600/10 border border-emerald-500/20 p-5 rounded-2xl shadow-inner text-center hidden lg:block">
                 <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest mb-1 font-bold">Total Sugerido</p>
-                <h4 className="text-4xl font-black text-white tracking-tighter">
-                  {formatCurrency(totals.price)}
-                </h4>
+                {isEditingTotal ? (
+                  <input
+                    type="number"
+                    autoFocus
+                    value={totalDraft}
+                    onChange={(e) => setTotalDraft(e.target.value)}
+                    onBlur={() => {
+                      setIsEditingTotal(false);
+                      const parsed = parseFloat(totalDraft.replace(',', '.'));
+                      setCustomTotalPrice(Number.isNaN(parsed) ? null : Math.round(parsed * 100) / 100);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') setIsEditingTotal(false);
+                    }}
+                    className="w-full bg-transparent text-4xl font-black text-white tracking-tighter focus:outline-none"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTotalDraft(totals.price ? totals.price.toFixed(2) : '');
+                      setIsEditingTotal(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 group"
+                  >
+                    <h4 className="text-4xl font-black text-white tracking-tighter">
+                      {formatCurrency(totals.price)}
+                    </h4>
+                    <Pencil size={16} className="text-emerald-400/50 group-hover:text-emerald-300 shrink-0" />
+                  </button>
+                )}
+                {customTotalPrice !== null && !isEditingTotal && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomTotalPrice(null)}
+                    className="text-[10px] text-emerald-400 underline hover:text-emerald-300 block mx-auto mt-2"
+                  >
+                    Restaurar valor sugerido ({formatCurrency(totals.suggestedPrice)})
+                  </button>
+                )}
               </div>
 
-              <BudgetMobileTotalHero total={totals.price} label="Total sugerido" accent="emerald" />
+              <BudgetMobileTotalHero
+                total={totals.price}
+                label="Total sugerido"
+                accent="emerald"
+                isOverridden={customTotalPrice !== null}
+                onChangeOverride={setCustomTotalPrice}
+              />
 
               {selectedMaterial && (
                 <SupplierWhatsAppButton
