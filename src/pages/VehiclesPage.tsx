@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
+import { Plus, FileSpreadsheet, Save, CheckCircle2, Download, FileDown } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { Vehicle, VehicleSize } from '../types';
 import { generateId } from '../lib/utils';
@@ -12,6 +12,7 @@ import VehicleCatalogTable from '../components/settings/VehicleCatalogTable';
 import VehicleImportPreviewModal from '../components/settings/VehicleImportPreviewModal';
 import { mergeVehicles, parseVehiclesFromExcel, type VehicleImportResult } from '../utils/vehicleImport';
 import { downloadVehiclesTemplate } from '../utils/spreadsheetTemplates';
+import { downloadVehiclesCatalog } from '../utils/vehicleExport';
 import { isVehicleMeasurementsComplete } from '../utils/vehiclePartsUtils';
 import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
@@ -143,6 +144,14 @@ export default function VehiclesPage() {
               onClick={() => downloadVehiclesTemplate()}
             >
               Baixar modelo
+            </PageButton>
+            <PageButton
+              variant="secondary"
+              icon={<FileDown size={16} />}
+              disabled={vehicles.length === 0}
+              onClick={() => downloadVehiclesCatalog(vehicles)}
+            >
+              Exportar catálogo
             </PageButton>
             <PageButton
               variant="secondary"

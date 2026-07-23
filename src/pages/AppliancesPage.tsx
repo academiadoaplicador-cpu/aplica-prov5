@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileSpreadsheet, Save, CheckCircle2, Download } from 'lucide-react';
+import { Plus, FileSpreadsheet, Save, CheckCircle2, Download, FileDown } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { Appliance } from '../types';
 import { generateId } from '../lib/utils';
@@ -12,6 +12,7 @@ import ApplianceCatalogTable from '../components/settings/ApplianceCatalogTable'
 import ApplianceImportPreviewModal from '../components/settings/ApplianceImportPreviewModal';
 import { mergeAppliances, parseAppliancesFromExcel, type ApplianceImportResult } from '../utils/applianceImport';
 import { downloadAppliancesTemplate } from '../utils/spreadsheetTemplates';
+import { downloadAppliancesCatalog } from '../utils/applianceExport';
 import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
 export default function AppliancesPage() {
@@ -143,6 +144,14 @@ export default function AppliancesPage() {
               onClick={() => downloadAppliancesTemplate()}
             >
               Baixar modelo
+            </PageButton>
+            <PageButton
+              variant="secondary"
+              icon={<FileDown size={16} />}
+              disabled={appliances.length === 0}
+              onClick={() => downloadAppliancesCatalog(appliances)}
+            >
+              Exportar catálogo
             </PageButton>
             <PageButton
               variant="secondary"
