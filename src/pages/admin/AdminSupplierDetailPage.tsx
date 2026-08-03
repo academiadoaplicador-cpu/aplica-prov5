@@ -35,6 +35,7 @@ import {
   SupplierSectionIntro,
 } from '../../components/admin/supplierAdminUi';
 import { digitsOnlyCnpj, formatCnpj } from '../../utils/cnpj';
+import { getMaterialLinesForBrand } from '../../utils/materialSelection';
 import { cn } from '../../lib/utils';
 
 type SupplierTab = 'empresa' | 'contatos' | 'vinculos';
@@ -91,6 +92,13 @@ export default function AdminSupplierDetailPage() {
     load();
     databaseService.getMaterials().then(setMaterials);
   }, [supplierId]);
+
+  useEffect(() => {
+    if (materials.length === 0) return;
+    setProductLinks((prev) =>
+      prev.filter((link) => getMaterialLinesForBrand(materials, link.brand).includes(link.line)),
+    );
+  }, [materials]);
 
   const handleSave = async () => {
     if (!supplierId) return;

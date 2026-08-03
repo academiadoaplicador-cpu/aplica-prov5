@@ -269,6 +269,25 @@ async function validateProductLinks(
   return null;
 }
 
+/**
+ * Remove vínculos que apontam para marca/linha que não existe mais no catálogo
+ * (ex.: material excluído). Evita que um vínculo antigo travado bloqueie o
+ * salvamento de fornecedores no cadastro/edição — diferente da importação em
+ * lote, aqui não faz sentido rejeitar o formulário inteiro por causa disso.
+ */
+async function sanitizeProductLinks(
+  db: Pool | PoolClient,
+  catalogUserId: string,
+  links: SupplierProductLinkInput[],
+): Promise<SupplierProductLinkInput[]> {
+  const result: SupplierProductLinkInput[] = [];
+  for (const link of links) {
+    const exists = await catalogHasBrandLine(db, catalogUserId, link.brand, link.line);
+    if (exists) result.push(link);
+  }
+  return result;
+}
+
 async function clearPrimaryForPairs(
   client: PoolClient,
   catalogUserId: string,
@@ -654,12 +673,11 @@ export function createSupplierAdminRouter(pool: Pool): Router {
     const client = await pool.connect();
     try {
       const catalogUserId = await resolveCatalogUserId(client);
-      const links = normalizeProductLinks(body.productLinks);
-      const linksError = await validateProductLinks(client, catalogUserId, links);
-      if (linksError) {
-        res.status(400).json({ error: linksError });
-        return;
-      }
+      const links = await sanitizeProductLinks(
+        client,
+        catalogUserId,
+        normalizeProductLinks(body.productLinks),
+      );
 
       const id = newContactId();
       const legalName = String(body.legalName ?? body.name).trim();
@@ -729,12 +747,11 @@ export function createSupplierAdminRouter(pool: Pool): Router {
         return;
       }
 
-      const links = normalizeProductLinks(body.productLinks);
-      const linksError = await validateProductLinks(client, catalogUserId, links);
-      if (linksError) {
-        res.status(400).json({ error: linksError });
-        return;
-      }
+      const links = await sanitizeProductLinks(
+        client,
+        catalogUserId,
+        normalizeProductLinks(body.productLinks),
+      );
 
       const legalName = String(body.legalName ?? body.name).trim();
       const cnpj = digitsOnlyCnpj(String(body.cnpj));
