@@ -12,6 +12,7 @@ export const ROUTES = {
   catalog: '/catalogo',
   appliancesBase: '/base-eletros',
   vehiclesBase: '/base-veiculos',
+  guiaTecnico: '/guia-tecnico',
   profile: '/perfil',
   admin: {
     home: '/admin',

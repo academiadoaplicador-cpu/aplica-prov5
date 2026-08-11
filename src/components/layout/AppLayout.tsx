@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+  BookOpen,
   Calculator,
   History,
   LogOut,
@@ -48,6 +49,7 @@ const MORE_MENU_PREFIXES = [
   ROUTES.catalog,
   ROUTES.appliancesBase,
   ROUTES.vehiclesBase,
+  ROUTES.guiaTecnico,
   '/admin',
 ] as const;
 
@@ -67,6 +69,7 @@ function getMobilePageTitle(pathname: string): string {
   if (pathname.startsWith(ROUTES.catalog)) return 'Catálogo';
   if (pathname.startsWith(ROUTES.vehiclesBase)) return 'Base de Veículos';
   if (pathname.startsWith(ROUTES.appliancesBase)) return 'Base de Eletros';
+  if (pathname.startsWith(ROUTES.guiaTecnico)) return 'Guia Técnico';
   if (pathname.startsWith(ROUTES.admin.promotions)) return 'Promoções';
   if (pathname.startsWith('/admin')) return 'Administração';
   return 'Aplica Pro';
@@ -85,6 +88,12 @@ function buildMoreMenuItems(user: User): MoreMenuEntry[] {
       icon: <Calculator size={20} />,
       label: 'Custos',
       searchTerms: 'custos parâmetros preço',
+    },
+    {
+      to: ROUTES.guiaTecnico,
+      icon: <BookOpen size={20} />,
+      label: 'Guia Técnico',
+      searchTerms: 'guia técnico envelopamento eletros móveis vidros manual',
     },
   ];
 
@@ -251,6 +260,10 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
           </div>
           <NavCalculatorItem mode="automotive" icon={<Car size={20} />} label="Automotivo" />
           <NavCalculatorItem mode="decorative" icon={<Home size={20} />} label="Decorativo" />
+          <div className="pt-4 pb-2 px-3">
+            <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Recursos</span>
+          </div>
+          <NavItem to={ROUTES.guiaTecnico} icon={<BookOpen size={20} />} label="Guia Técnico" />
           <div className="pt-4 pb-2 px-3">
             <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Gestão</span>
           </div>

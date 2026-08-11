@@ -9,6 +9,7 @@ import ProfileView from '../ProfileView';
 import CatalogPage from '../../pages/CatalogPage';
 import AppliancesPage from '../../pages/AppliancesPage';
 import VehiclesPage from '../../pages/VehiclesPage';
+import GuiaTecnicoPage from '../../pages/GuiaTecnicoPage';
 
 interface AppStaticRoutesProps {
   path: string;
@@ -34,6 +35,9 @@ export default function AppStaticRoutes({ path, user }: AppStaticRoutesProps) {
   }
   if (path.startsWith(ROUTES.profile)) {
     return <ProfileView key="profile" user={user} />;
+  }
+  if (path.startsWith(ROUTES.guiaTecnico)) {
+    return <GuiaTecnicoPage key="guia-tecnico" />;
   }
   if (path.startsWith(ROUTES.catalog)) {
     return (

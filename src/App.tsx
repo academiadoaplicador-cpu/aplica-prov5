@@ -16,6 +16,7 @@ import CatalogPage from './pages/CatalogPage';
 import AppliancesPage from './pages/AppliancesPage';
 import VehiclesPage from './pages/VehiclesPage';
 import BudgetHistory from './components/BudgetHistory';
+import GuiaTecnicoPage from './pages/GuiaTecnicoPage';
 import ProfileView from './components/ProfileView';
 import CostsOverview from './components/CostsOverview';
 import AdminLayout from './components/layout/AdminLayout';
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="decorativo" element={<CalculatorRouteAnchor />} />
           <Route path="orcamento" element={<BudgetHistory />} />
           <Route path="historico" element={<Navigate to={ROUTES.orcamento} replace />} />
+          <Route path="guia-tecnico" element={<GuiaTecnicoPage />} />
           <Route path="perfil" element={<ProfileView user={user!} />} />
           <Route element={<AdminRoute user={user!} />}>
             <Route path="catalogo" element={<CatalogPage />} />
