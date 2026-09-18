@@ -230,9 +230,14 @@ export default function BudgetHistory() {
                               ? 'text-amber-400 border-amber-500/30'
                               : budget.status === 'Cancelado'
                                 ? 'text-red-400 border-red-500/30'
-                                : 'text-slate-500 border-slate-700',
+                                : budget.status === 'Proposta aguardando aceite'
+                                  ? 'text-indigo-400 border-indigo-500/30'
+                                  : 'text-slate-500 border-slate-700',
                         )}
                       >
+                        <option value="Proposta aguardando aceite">
+                          Proposta aguardando aceite
+                        </option>
                         <option value="Pendente">Pendente</option>
                         <option value="Aprovado">Aprovado</option>
                         <option value="Finalizado">Finalizado</option>

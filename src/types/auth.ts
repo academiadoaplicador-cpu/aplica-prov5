@@ -8,3 +8,21 @@ export interface RegisterPayload {
     verifiedDocuments?: boolean;
   };
 }
+
+export interface ClientRegisterPayload {
+  email: string;
+  password: string;
+  profile: {
+    fullName: string;
+    phoneCountryCode?: string;
+    phoneNational?: string;
+    cep: string;
+    city: string;
+    stateName?: string;
+    stateCode: string;
+    neighborhood?: string;
+    street?: string;
+    region?: string;
+    ibge?: string;
+  };
+}

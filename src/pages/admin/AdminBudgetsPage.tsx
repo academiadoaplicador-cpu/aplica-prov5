@@ -104,6 +104,7 @@ export default function AdminBudgetsPage() {
         >
           <option value="">Todos os status</option>
           <option value="Pendente">Pendente</option>
+          <option value="Proposta aguardando aceite">Proposta aguardando aceite</option>
           <option value="Aprovado">Aprovado</option>
           <option value="Finalizado">Finalizado</option>
           <option value="Cancelado">Cancelado</option>

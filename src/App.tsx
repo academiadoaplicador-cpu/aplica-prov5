@@ -31,7 +31,23 @@ import AdminSupplierDetailPage from './pages/admin/AdminSupplierDetailPage';
 import AdminPromotionsPage from './pages/admin/AdminPromotionsPage';
 import AdminCreatePromotionPage from './pages/admin/AdminCreatePromotionPage';
 import AdminPromotionDetailPage from './pages/admin/AdminPromotionDetailPage';
-import { AdminRoute, GuestRoute, ProtectedRoute } from './routes/ProtectedRoute';
+import AdminClientsPage from './pages/admin/AdminClientsPage';
+import ClientLayout from './components/layout/ClientLayout';
+import ClientAuthPage from './pages/cliente/ClientAuthPage';
+import ClientHomePage from './pages/cliente/ClientHomePage';
+import ClientOrdersPage from './pages/cliente/ClientOrdersPage';
+import ClientProfilePage from './pages/cliente/ClientProfilePage';
+import ClientNewRequestPage from './pages/cliente/ClientNewRequestPage';
+import RegionRequestsPage from './pages/RegionRequestsPage';
+import AdminPricingPage from './pages/admin/AdminPricingPage';
+import {
+  AdminRoute,
+  ClientGuestRoute,
+  ClientRoute,
+  GuestRoute,
+  homeRouteFor,
+  ProtectedRoute,
+} from './routes/ProtectedRoute';
 import { ROUTES } from './routes/paths';
 
 function LoadingScreen() {
@@ -79,6 +95,28 @@ export default function App() {
         />
       </Route>
 
+      <Route element={<ClientGuestRoute user={user} />}>
+        <Route
+          path={ROUTES.client.login}
+          element={
+            <ClientAuthPage
+              onLogin={(u) => {
+                setUser(u);
+              }}
+            />
+          }
+        />
+      </Route>
+
+      <Route element={<ClientRoute user={user} />}>
+        <Route path="cliente" element={<ClientLayout user={user!} onLogout={() => setUser(null)} />}>
+          <Route index element={<ClientHomePage />} />
+          <Route path="pedidos" element={<ClientOrdersPage />} />
+          <Route path="pedidos/novo" element={<ClientNewRequestPage />} />
+          <Route path="perfil" element={<ClientProfilePage />} />
+        </Route>
+      </Route>
+
       <Route element={<ProtectedRoute user={user} />}>
         <Route element={<AppLayout user={user!} onLogout={() => setUser(null)} />}>
           <Route index element={<DashboardOverview />} />
@@ -88,6 +126,7 @@ export default function App() {
           <Route path="orcamento" element={<BudgetHistory />} />
           <Route path="historico" element={<Navigate to={ROUTES.orcamento} replace />} />
           <Route path="guia-tecnico" element={<GuiaTecnicoPage />} />
+          <Route path="pedidos-regiao" element={<RegionRequestsPage />} />
           <Route path="perfil" element={<ProfileView user={user!} />} />
           <Route element={<AdminRoute user={user!} />}>
             <Route path="catalogo" element={<CatalogPage />} />
@@ -99,6 +138,8 @@ export default function App() {
               <Route path="usuarios" element={<AdminUsersPage />} />
               <Route path="usuarios/novo" element={<AdminCreateUserPage />} />
               <Route path="usuarios/:userId" element={<AdminUserDetailPage />} />
+              <Route path="clientes" element={<AdminClientsPage />} />
+              <Route path="tabela-preco" element={<AdminPricingPage />} />
               <Route path="orcamentos" element={<AdminBudgetsPage />} />
               <Route path="fornecedores" element={<AdminSuppliersPage />} />
               <Route path="fornecedores/novo" element={<AdminCreateSupplierPage />} />
@@ -111,7 +152,10 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to={user ? ROUTES.dashboard : ROUTES.login} replace />} />
+      <Route
+        path="*"
+        element={<Navigate to={user ? homeRouteFor(user) : ROUTES.login} replace />}
+      />
     </Routes>
   );
 }

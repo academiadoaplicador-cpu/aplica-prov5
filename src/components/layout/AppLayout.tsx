@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen,
   Calculator,
   History,
+  Inbox,
   LogOut,
   Car,
   Home,
@@ -23,6 +24,8 @@ import { databaseService } from '../../services/databaseService';
 import { ROUTES } from '../../routes/paths';
 import { cn } from '../../lib/utils';
 import PromotionPopup, { alreadyShownToday, markShownToday } from '../PromotionPopup';
+import { AvailabilityToggle } from '../../pages/RegionRequestsPage';
+import { applicatorService } from '../../services/applicatorService';
 import {
   MobileBottomExtrasProvider,
   useMobileBottomExtrasContent,
@@ -44,6 +47,7 @@ type MoreMenuEntry = {
 };
 
 const MORE_MENU_PREFIXES = [
+  ROUTES.regionRequests,
   ROUTES.costs,
   ROUTES.profile,
   ROUTES.catalog,
@@ -70,6 +74,7 @@ function getMobilePageTitle(pathname: string): string {
   if (pathname.startsWith(ROUTES.vehiclesBase)) return 'Base de Veículos';
   if (pathname.startsWith(ROUTES.appliancesBase)) return 'Base de Eletros';
   if (pathname.startsWith(ROUTES.guiaTecnico)) return 'Guia Técnico';
+  if (pathname.startsWith(ROUTES.regionRequests)) return 'Pedidos';
   if (pathname.startsWith(ROUTES.admin.promotions)) return 'Promoções';
   if (pathname.startsWith('/admin')) return 'Administração';
   return 'Aplica Pro';
@@ -83,6 +88,12 @@ function getMobilePageSubtitle(pathname: string): string {
 
 function buildMoreMenuItems(user: User): MoreMenuEntry[] {
   const items: MoreMenuEntry[] = [
+    {
+      to: ROUTES.regionRequests,
+      icon: <Inbox size={20} />,
+      label: 'Pedidos',
+      searchTerms: 'pedidos região marketplace clientes solicitações',
+    },
     {
       to: ROUTES.costs,
       icon: <Calculator size={20} />,
@@ -167,6 +178,9 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreSearch, setMoreSearch] = useState('');
   const [activePromotion, setActivePromotion] = useState<Promotion | null>(null);
+  const [availability, setAvailability] = useState<boolean | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [openRequestCount, setOpenRequestCount] = useState(0);
 
   const moreMenuItems = useMemo(() => buildMoreMenuItems(user), [user]);
 
@@ -187,6 +201,48 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
       })
       .catch(() => {});
   }, [user.id]);
+
+  const loadSummary = useCallback(() => {
+    if (user.isAdmin) return;
+    applicatorService
+      .getSummary()
+      .then((data) => {
+        setAvailability(data.isAvailable);
+        setOpenRequestCount(data.openRequestCount);
+      })
+      .catch(() => setAvailability(null));
+  }, [user.isAdmin]);
+
+  // Mantém o contador do menu vivo: é o que avisa o aplicador de pedido novo
+  // sem ele estar com o mural aberto.
+  useEffect(() => {
+    loadSummary();
+    const interval = setInterval(loadSummary, 45_000);
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') loadSummary();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [loadSummary]);
+
+  const toggleAvailability = async () => {
+    if (availability === null) return;
+    setAvailabilityLoading(true);
+    try {
+      const result = await applicatorService.setAvailability(!availability);
+      setAvailability(result.isAvailable);
+      loadSummary();
+    } catch {
+      /* mantém o estado anterior; a página do mural mostra o erro em detalhe */
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     await databaseService.logout();
@@ -255,6 +311,12 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
         <nav className="flex-1 min-h-0 p-4 space-y-1 overflow-y-auto">
           <NavItem to={ROUTES.dashboard} icon={<LayoutDashboard size={20} />} label="Início" />
           <NavItem to={ROUTES.costs} icon={<Calculator size={20} />} label="Custos" />
+          <NavItem
+            to={ROUTES.regionRequests}
+            icon={<Inbox size={20} />}
+            label="Pedidos"
+            badge={openRequestCount}
+          />
           <div className="pt-4 pb-2 px-3">
             <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Calculadoras</span>
           </div>
@@ -280,6 +342,21 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
         </nav>
 
         <div className="mt-auto shrink-0 p-4 border-t border-slate-900 space-y-1">
+          {!user.isAdmin && (
+            <div className="pb-2">
+              <AvailabilityToggle
+                available={availability}
+                loading={availabilityLoading}
+                onToggle={() => void toggleAvailability()}
+                className="w-full justify-center"
+              />
+              <p className="mt-1.5 px-1 text-[10px] text-slate-600 leading-snug">
+                {availability
+                  ? 'Recebendo pedidos da sua cidade.'
+                  : 'Offline — pedidos novos não chegam.'}
+              </p>
+            </div>
+          )}
           <NavItem to={ROUTES.profile} icon={<UserIcon size={20} />} label="Perfil" />
           <button
             type="button"
@@ -373,6 +450,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
                         label={item.label}
                         end={item.end}
                         onNavigate={closeMore}
+                        badge={item.to === ROUTES.regionRequests ? openRequestCount : 0}
                       />
                     ))
                   )}
@@ -427,6 +505,7 @@ function AppLayoutShell({ user, onLogout }: AppLayoutProps) {
               active={isMoreMenuRoute(appPath) || moreOpen}
               expanded={moreOpen}
               onClick={toggleMore}
+              badge={openRequestCount}
             />
           </nav>
         </div>
@@ -479,12 +558,14 @@ function NavItem({
   label,
   onNavigate,
   end,
+  badge,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   onNavigate?: () => void;
   end?: boolean;
+  badge?: number;
 }) {
   const { goToRoute, isRouteActive } = useCalculatorMode();
   const isActive = isRouteActive(to, end ?? (to === ROUTES.dashboard || to === ROUTES.admin.home));
@@ -507,8 +588,14 @@ function NavItem({
         {icon}
       </div>
       <span className="text-sm font-medium">{label}</span>
-      {isActive && (
-        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50 shrink-0" />
+      {badge ? (
+        <span className="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1.5 grid place-items-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : (
+        isActive && (
+          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50 shrink-0" />
+        )
       )}
     </button>
   );
@@ -520,12 +607,14 @@ function MorePanelItem({
   label,
   end,
   onNavigate,
+  badge,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   end?: boolean;
   onNavigate: () => void;
+  badge?: number;
 }) {
   const { goToRoute, isRouteActive } = useCalculatorMode();
   const isActive = isRouteActive(to, end);
@@ -546,6 +635,11 @@ function MorePanelItem({
     >
       <div className={isActive ? 'text-indigo-400' : 'text-slate-500 shrink-0'}>{icon}</div>
       <span className="text-sm font-medium">{label}</span>
+      {badge ? (
+        <span className="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1.5 grid place-items-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -634,10 +728,12 @@ function BottomNavMore({
   active,
   expanded,
   onClick,
+  badge,
 }: {
   active: boolean;
   expanded: boolean;
   onClick: () => void;
+  badge?: number;
 }) {
   return (
     <button
@@ -652,11 +748,16 @@ function BottomNavMore({
     >
       <span
         className={cn(
-          'flex items-center justify-center rounded-lg p-1 transition-colors',
+          'relative flex items-center justify-center rounded-lg p-1 transition-colors',
           active && 'bg-indigo-600/15',
         )}
       >
         <MoreHorizontal size={20} />
+        {badge ? (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[1rem] h-4 px-1 grid place-items-center rounded-full bg-emerald-500 text-[9px] font-bold text-white">
+            {badge > 9 ? '9+' : badge}
+          </span>
+        ) : null}
       </span>
       <span className="text-[10px] font-medium leading-none">Mais</span>
     </button>
