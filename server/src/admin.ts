@@ -37,12 +37,19 @@ export function isAdminEmail(email: string): boolean {
   return email.trim().toLowerCase() === adminEmail;
 }
 
+export type UserRole = 'applicator' | 'client';
+
+export function toUserRole(value: unknown): UserRole {
+  return value === 'client' ? 'client' : 'applicator';
+}
+
 export function mapUserWithRole(row: Record<string, unknown>) {
   const email = row.email as string;
   return {
     id: row.id as string,
     email,
     businessName: row.business_name as string,
+    role: toUserRole(row.role),
     isAdmin: isAdminEmail(email),
   };
 }
@@ -122,6 +129,12 @@ export async function userIsAdmin(pool: Pool, userId: string): Promise<boolean> 
   const result = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
   if (result.rows.length === 0) return false;
   return isAdminEmail(result.rows[0].email as string);
+}
+
+export async function getUserRole(pool: Pool, userId: string): Promise<UserRole | null> {
+  const result = await pool.query('SELECT role FROM users WHERE id = $1', [userId]);
+  if (result.rows.length === 0) return null;
+  return toUserRole(result.rows[0].role);
 }
 
 export function reservedEmailMessage(): string {

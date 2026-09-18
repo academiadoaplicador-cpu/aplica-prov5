@@ -69,13 +69,27 @@ export interface BudgetPiece {
   height?: number;
 }
 
+/**
+ * 'Proposta aguardando aceite' é criado pelo marketplace: nasce quando um
+ * aplicador aceita o pedido de um cliente e ainda precisa ser refinado com o
+ * material e os parâmetros da oficina antes de virar um orçamento fechado.
+ */
+export type BudgetStatus =
+  | 'Pendente'
+  | 'Aprovado'
+  | 'Finalizado'
+  | 'Cancelado'
+  | 'Proposta aguardando aceite';
+
+export const PROPOSAL_BUDGET_STATUS = 'Proposta aguardando aceite' as const;
+
 export interface Budget {
   id: string;
   customerName: string;
   vehicleModel?: string; // Descriptive vehicle name
   applianceModel?: string; // Descriptive appliance name
   vehicleId?: string;
-  status: 'Pendente' | 'Aprovado' | 'Finalizado' | 'Cancelado';
+  status: BudgetStatus;
   date: string;
   items: BudgetPiece[];
   materialId: string;
@@ -104,11 +118,49 @@ export interface Appliance {
   depth: number;
 }
 
+/** Aplicador (oficina) ou cliente final do marketplace. */
+export type UserRole = 'applicator' | 'client';
+
 export interface User {
   id: string;
   email: string;
   businessName: string;
+  role: UserRole;
   isAdmin?: boolean;
+}
+
+/**
+ * Perfil do cliente final. Endereço fica no nível de CEP/cidade/UF — é o que
+ * o match por região precisa; a rua só entra quando houver pedido de serviço.
+ */
+export interface ClientProfile {
+  id: string;
+  fullName: string;
+  phone: string;
+  phoneCountryCode?: string;
+  phoneNational?: string;
+  cep: string;
+  street?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  neighborhood?: string;
+  city: string;
+  stateName?: string;
+  stateCode: string;
+  region?: string;
+  ibge?: string;
+}
+
+export interface AdminClientListItem {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  city?: string;
+  stateCode?: string;
+  createdAt: string;
+  isActive: boolean;
+  lastLoginAt?: string;
 }
 
 export interface AdminUserAccountFields {
@@ -374,4 +426,125 @@ export interface ApplicatorProfile {
   areasOfExpertise: AreaOfExpertise[];
   verifiedDocuments: boolean;
   documentsUrls: string[];
+}
+
+export type ServiceRequestStatus =
+  | 'Aguardando aceite'
+  | 'Aceito'
+  | 'Expirado'
+  | 'Cancelado';
+
+export interface ServiceRequestItem {
+  name?: string;
+  width: number;
+  height: number;
+  quantity?: number;
+  complexity?: number;
+}
+
+export interface ServiceRequest {
+  id: string;
+  clientId: string;
+  status: ServiceRequestStatus;
+  type: 'Automotivo' | 'Decorativo';
+  subType?: string;
+  scopeLabel: string;
+  notes: string;
+  vehicleId?: string;
+  partIds: string[];
+  items: ServiceRequestItem[];
+  materialType: string;
+  estimatedM2: number;
+  estimatedHours: number;
+  referencePricePerM2: number;
+  suggestedPrice: number;
+  priceMin: number;
+  priceMax: number;
+  city: string;
+  stateCode: string;
+  cep: string;
+  acceptedBy?: string;
+  acceptedAt?: string;
+  budgetId?: string;
+  expiresAt: string;
+  createdAt: string;
+  /** Preenchido para o cliente depois que alguém aceita. */
+  applicator?: {
+    name: string;
+    businessName: string;
+    phone: string;
+    city: string;
+  };
+  /** Preenchido no mural e na lista de aceitos do aplicador. */
+  clientName?: string;
+  client?: {
+    name: string;
+    phone: string;
+    neighborhood: string;
+  };
+}
+
+export interface PriceEstimate {
+  estimatedM2: number;
+  estimatedHours: number;
+  referencePricePerM2: number;
+  suggestedPrice: number;
+  priceMin: number;
+  priceMax: number;
+  scopeLabel: string;
+}
+
+export interface ClientCatalogVehicle {
+  id: string;
+  make: string;
+  model: string;
+  year: string;
+  size: string;
+  parts: { id: string; width: number; length: number }[];
+}
+
+export interface ClientCatalog {
+  vehicles: ClientCatalogVehicle[];
+  materialTypes: string[];
+  expiryHours: number;
+}
+
+export interface PlatformPricing {
+  hourlyRate: number;
+  profitMarginPercentage: number;
+  taxPercentage: number;
+  rangeBelowPercentage: number;
+  rangeAbovePercentage: number;
+  updatedAt?: string;
+}
+
+export type RegionRequestsResponse =
+  | {
+      eligible: true;
+      city: string;
+      stateCode: string;
+      items: ServiceRequest[];
+    }
+  | {
+      eligible: false;
+      reason: 'sem-perfil' | 'sem-regiao' | 'nao-verificado' | 'offline';
+      city?: string;
+      stateCode?: string;
+      items: ServiceRequest[];
+    };
+
+export interface ApplicatorSummary {
+  isAvailable: boolean;
+  verifiedDocuments: boolean;
+  city?: string;
+  stateCode?: string;
+  openRequestCount: number;
+}
+
+export interface ApplicatorAvailability {
+  isAvailable: boolean;
+  verifiedDocuments: boolean;
+  city?: string;
+  stateCode?: string;
+  changedAt?: string;
 }

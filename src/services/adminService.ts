@@ -7,6 +7,8 @@ import {
   AdminUserListItem,
   ApplicatorProfile,
   PaginatedResponse,
+  PlatformPricing,
+  ServiceRequest,
 } from '../types';
 
 async function adminApi<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -48,6 +50,21 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 
 export const adminService = {
   getStats: (): Promise<AdminStats> => adminApi<AdminStats>('/stats'),
+
+  getPricing: (): Promise<PlatformPricing> => adminApi<PlatformPricing>('/pricing'),
+
+  updatePricing: (payload: Partial<PlatformPricing>): Promise<PlatformPricing> =>
+    adminApi<PlatformPricing>('/pricing', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  getRequests: (params: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<ServiceRequest>> =>
+    adminApi<PaginatedResponse<ServiceRequest>>(`/requests${buildQuery(params)}`),
 
   getUsers: (params: {
     page?: number;

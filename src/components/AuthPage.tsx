@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../routes/paths';
+import { homeRouteFor } from '../routes/ProtectedRoute';
 import {
   Mail,
   Lock,
@@ -71,7 +72,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
 
   const handleAuthenticated = (user: UserType) => {
     onLogin(user);
-    navigate(ROUTES.dashboard, { replace: true });
+    navigate(homeRouteFor(user), { replace: true });
   };
 
   return (

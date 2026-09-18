@@ -227,6 +227,9 @@ export default function BudgetDetailDrawer({
                             : 'text-indigo-400 border-indigo-500/30',
                     )}
                   >
+                    <option value="Proposta aguardando aceite">
+                      Proposta aguardando aceite
+                    </option>
                     <option value="Pendente">Pendente</option>
                     <option value="Aprovado">Aprovado</option>
                     <option value="Finalizado">Finalizado</option>

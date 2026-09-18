@@ -13,6 +13,7 @@ import {
 } from './auth.js';
 import {
   ensureAdminUser,
+  getUserRole,
   mapUserWithRole,
   userIsAdmin,
 } from './admin.js';
@@ -34,6 +35,10 @@ import { lookupSupplierForProduct } from './supplierRoutes.js';
 import { fetchActivePromotionForToday } from './promotionRoutes.js';
 import { mapBudget, mapFinancial } from './budgetMappers.js';
 import { createApplicatorUser } from './userProvisioning.js';
+import { createClientUser } from './clientProvisioning.js';
+import { createClientRouter } from './clientRoutes.js';
+import { createApplicatorRouter } from './applicatorRoutes.js';
+import type { ClientProfileInput } from './clientProfileData.js';
 import {
   mapProfileRow,
   profileDbParams,
@@ -274,6 +279,34 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+/** Bloqueia contas de cliente final nas rotas de oficina (catálogo, orçamentos, perfil). */
+async function requireApplicator(req: Request, res: Response, next: NextFunction) {
+  if (!req.userId) {
+    res.status(401).json({ error: 'Usuário não autenticado' });
+    return;
+  }
+  const role = await getUserRole(pool, req.userId);
+  if (role !== 'applicator') {
+    res.status(403).json({ error: 'Acesso restrito a contas de aplicador' });
+    return;
+  }
+  next();
+}
+
+/** Espelho do anterior: rotas da área do cliente não aceitam conta de aplicador. */
+async function requireClient(req: Request, res: Response, next: NextFunction) {
+  if (!req.userId) {
+    res.status(401).json({ error: 'Usuário não autenticado' });
+    return;
+  }
+  const role = await getUserRole(pool, req.userId);
+  if (role !== 'client') {
+    res.status(403).json({ error: 'Acesso restrito a contas de cliente' });
+    return;
+  }
+  next();
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -284,7 +317,7 @@ declare global {
 
 app.get('/api/health', (req, res) => handleHealthRequest(req, res, pool));
 
-app.get('/api/suppliers/lookup', requireUser, async (req, res) => {
+app.get('/api/suppliers/lookup', requireUser, requireApplicator, async (req, res) => {
   const brand = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
   const line = typeof req.query.line === 'string' ? req.query.line.trim() : '';
   if (!brand || !line) {
@@ -304,7 +337,7 @@ app.get('/api/suppliers/lookup', requireUser, async (req, res) => {
   }
 });
 
-app.get('/api/promotions/active', requireUser, async (_req, res) => {
+app.get('/api/promotions/active', requireUser, requireApplicator, async (_req, res) => {
   try {
     const promotion = await fetchActivePromotionForToday(pool);
     res.json(promotion);
@@ -315,6 +348,8 @@ app.get('/api/promotions/active', requireUser, async (_req, res) => {
 });
 
 app.use('/api/admin', requireUser, requireAdmin, createAdminRouter(pool));
+app.use('/api/client', requireUser, requireClient, createClientRouter(pool));
+app.use('/api/applicator', requireUser, requireApplicator, createApplicatorRouter(pool));
 
 app.get('/status', async (req, res) => {
   const report = await getHealthReport(pool);
@@ -370,6 +405,7 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
         id: result.id,
         email: result.email,
         business_name: result.businessName,
+        role: 'applicator',
       },
       201,
     );
@@ -382,6 +418,62 @@ app.post('/api/auth/register', registerRateLimiter, async (req, res) => {
       }
     }
     console.error('[auth/register]', e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erro ao criar conta. Tente novamente em instantes.' });
+    }
+  } finally {
+    client?.release();
+  }
+});
+
+app.post('/api/auth/client/register', registerRateLimiter, async (req, res) => {
+  const { email, password, profile } = req.body as {
+    email?: string;
+    password?: string;
+    profile?: ClientProfileInput;
+  };
+
+  let client: PoolClient | undefined;
+
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const result = await createClientUser(client, {
+      email: email || '',
+      password: password || '',
+      profile: profile || {},
+    });
+
+    if (result.ok === false) {
+      await client.query('ROLLBACK');
+      const { status, error } = result;
+      const message =
+        status === 409 ? 'Não foi possível concluir o cadastro com este e-mail.' : error;
+      res.status(status).json({ error: message });
+      return;
+    }
+
+    await client.query('COMMIT');
+    sendAuthResponse(
+      res,
+      {
+        id: result.id,
+        email: result.email,
+        business_name: result.fullName,
+        role: 'client',
+      },
+      201,
+    );
+  } catch (e) {
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* transação já encerrada */
+      }
+    }
+    console.error('[auth/client/register]', e);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Erro ao criar conta. Tente novamente em instantes.' });
     }
@@ -413,7 +505,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   }
 
   const result = await pool.query(
-    `SELECT id, email, business_name, password_hash,
+    `SELECT id, email, business_name, password_hash, role,
             COALESCE(is_active, TRUE) AS is_active
      FROM users WHERE email = $1`,
     [normalizedEmail],
@@ -455,9 +547,10 @@ app.post('/api/auth/logout', (_req, res) => {
 });
 
 app.get('/api/auth/me', requireUser, async (req, res) => {
-  const result = await pool.query('SELECT id, email, business_name FROM users WHERE id = $1', [
-    req.userId,
-  ]);
+  const result = await pool.query(
+    'SELECT id, email, business_name, role FROM users WHERE id = $1',
+    [req.userId],
+  );
   if (result.rows.length === 0) {
     res.status(404).json({ error: 'Usuário não encontrado' });
     return;
@@ -465,7 +558,7 @@ app.get('/api/auth/me', requireUser, async (req, res) => {
   res.json({ user: mapUserWithRole(result.rows[0]) });
 });
 
-app.get('/api/financial-settings', requireUser, async (req, res) => {
+app.get('/api/financial-settings', requireUser, requireApplicator, async (req, res) => {
   const result = await pool.query('SELECT * FROM financial_settings WHERE user_id = $1', [
     req.userId,
   ]);
@@ -481,7 +574,7 @@ app.get('/api/financial-settings', requireUser, async (req, res) => {
   res.json(mapFinancial(result.rows[0]));
 });
 
-app.put('/api/financial-settings', requireUser, async (req, res) => {
+app.put('/api/financial-settings', requireUser, requireApplicator, async (req, res) => {
   const s = req.body;
   await pool.query(
     `INSERT INTO financial_settings (user_id, hourly_rate, profit_margin_percentage, tax_percentage, fixed_costs)
@@ -496,7 +589,7 @@ app.put('/api/financial-settings', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/materials', requireUser, async (_req, res) => {
+app.get('/api/materials', requireUser, requireApplicator, async (_req, res) => {
   try {
     const catalogUserId = await resolveCatalogUserId(pool);
     const result = await pool.query('SELECT * FROM materials WHERE user_id = $1 ORDER BY name', [
@@ -652,7 +745,7 @@ app.post('/api/materials/import', requireUser, requireAdmin, async (req, res) =>
   }
 });
 
-app.get('/api/vehicles', requireUser, async (_req, res) => {
+app.get('/api/vehicles', requireUser, requireApplicator, async (_req, res) => {
   try {
     const catalogUserId = await resolveCatalogUserId(pool);
     const result = await pool.query('SELECT * FROM vehicles WHERE user_id = $1 ORDER BY make, model', [
@@ -765,7 +858,7 @@ app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => 
   }
 });
 
-app.get('/api/appliances', requireUser, async (_req, res) => {
+app.get('/api/appliances', requireUser, requireApplicator, async (_req, res) => {
   try {
     const catalogUserId = await resolveCatalogUserId(pool);
     const result = await pool.query('SELECT * FROM appliances WHERE user_id = $1 ORDER BY make', [
@@ -867,7 +960,7 @@ app.post('/api/appliances/import', requireUser, requireAdmin, async (req, res) =
   }
 });
 
-app.get('/api/profile', requireUser, async (req, res) => {
+app.get('/api/profile', requireUser, requireApplicator, async (req, res) => {
   const result = await pool.query('SELECT * FROM applicator_profiles WHERE user_id = $1', [
     req.userId,
   ]);
@@ -878,7 +971,7 @@ app.get('/api/profile', requireUser, async (req, res) => {
   res.json(mapProfileRow(result.rows[0]));
 });
 
-app.put('/api/profile', requireUser, async (req, res) => {
+app.put('/api/profile', requireUser, requireApplicator, async (req, res) => {
   const body = (req.body || {}) as Record<string, unknown>;
 
   const photoUrl = body.photoUrl;
@@ -913,7 +1006,7 @@ app.put('/api/profile', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/budgets', requireUser, async (req, res) => {
+app.get('/api/budgets', requireUser, requireApplicator, async (req, res) => {
   const result = await pool.query(
     'SELECT * FROM budgets WHERE user_id = $1 ORDER BY date DESC',
     [req.userId],
@@ -921,7 +1014,7 @@ app.get('/api/budgets', requireUser, async (req, res) => {
   res.json(result.rows.map(mapBudget));
 });
 
-app.post('/api/budgets', requireUser, async (req, res) => {
+app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
   const b = req.body;
   await pool.query(
     `INSERT INTO budgets (
@@ -976,7 +1069,7 @@ app.post('/api/budgets', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/budgets/:id', requireUser, async (req, res) => {
+app.delete('/api/budgets/:id', requireUser, requireApplicator, async (req, res) => {
   await pool.query('DELETE FROM budgets WHERE user_id = $1 AND id = $2', [
     req.userId,
     req.params.id,

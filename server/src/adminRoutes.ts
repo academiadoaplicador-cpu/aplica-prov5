@@ -11,6 +11,8 @@ import { getPasswordValidationMessage } from './password.js';
 import { createSupplierAdminRouter } from './supplierRoutes.js';
 import { createPromotionAdminRouter } from './promotionRoutes.js';
 import { fetchCnpjLookup } from './cnpjLookup.js';
+import { fetchPlatformPricing, mapPlatformPricing } from './estimate.js';
+import { mapServiceRequest, sweepExpiredRequests } from './serviceRequests.js';
 
 function num(value: unknown): number {
   return Number(value);
@@ -32,8 +34,9 @@ function adminEmailParam(): string {
 }
 
 async function isApplicatorUser(pool: Pool, userId: string): Promise<boolean> {
-  const result = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
+  const result = await pool.query('SELECT email, role FROM users WHERE id = $1', [userId]);
   if (result.rows.length === 0) return false;
+  if (result.rows[0].role === 'client') return false;
   return !isAdminEmail(result.rows[0].email as string);
 }
 
@@ -44,6 +47,22 @@ function mapAdminUserFields(row: Record<string, unknown>) {
       ? new Date(row.last_login_at as string | Date).toISOString()
       : undefined,
     createdBy: (row.created_by as string) || undefined,
+  };
+}
+
+function mapAdminListClient(row: Record<string, unknown>) {
+  return {
+    id: row.id as string,
+    email: row.email as string,
+    fullName: (row.full_name as string) || (row.business_name as string),
+    phone: (row.phone as string) || '',
+    city: (row.city as string) || undefined,
+    stateCode: (row.state_code as string) || undefined,
+    createdAt: new Date(row.created_at as string | Date).toISOString(),
+    isActive: row.is_active !== false,
+    lastLoginAt: row.last_login_at
+      ? new Date(row.last_login_at as string | Date).toISOString()
+      : undefined,
   };
 }
 
@@ -110,50 +129,54 @@ export function createAdminRouter(pool: Pool): Router {
       ] = await Promise.all([
         pool.query(
           `SELECT COUNT(*)::int AS count FROM users
-           WHERE LOWER(email) != LOWER($1) AND COALESCE(is_active, TRUE) = TRUE`,
+           WHERE LOWER(email) != LOWER($1) AND role = 'applicator'
+             AND COALESCE(is_active, TRUE) = TRUE`,
           [adminEmail],
         ),
         pool.query(
           `SELECT COUNT(*)::int AS count FROM users
-           WHERE LOWER(email) != LOWER($1) AND is_active = FALSE`,
+           WHERE LOWER(email) != LOWER($1) AND role = 'applicator'
+             AND is_active = FALSE`,
           [adminEmail],
         ),
         pool.query(
           `SELECT COUNT(*)::int AS count FROM users
-           WHERE LOWER(email) != LOWER($1)
+           WHERE LOWER(email) != LOWER($1) AND role = 'applicator'
              AND created_at >= date_trunc('month', NOW())`,
           [adminEmail],
         ),
         pool.query(
           `SELECT status, COUNT(*)::int AS count FROM budgets b
            INNER JOIN users u ON u.id = b.user_id
-           WHERE LOWER(u.email) != LOWER($1)
+           WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'
            GROUP BY status`,
           [adminEmail],
         ),
         pool.query(
           `SELECT COALESCE(SUM(b.total_price), 0)::float AS gmv FROM budgets b
            INNER JOIN users u ON u.id = b.user_id
-           WHERE LOWER(u.email) != LOWER($1) AND b.status = 'Finalizado'`,
+           WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'
+             AND b.status = 'Finalizado'`,
           [adminEmail],
         ),
         pool.query(
           `SELECT COALESCE(SUM(b.profit), 0)::float AS profit FROM budgets b
            INNER JOIN users u ON u.id = b.user_id
-           WHERE LOWER(u.email) != LOWER($1) AND b.status = 'Finalizado'`,
+           WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'
+             AND b.status = 'Finalizado'`,
           [adminEmail],
         ),
         pool.query(
           `SELECT b.type, COUNT(*)::int AS count FROM budgets b
            INNER JOIN users u ON u.id = b.user_id
-           WHERE LOWER(u.email) != LOWER($1)
+           WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'
            GROUP BY b.type`,
           [adminEmail],
         ),
         pool.query(
           `SELECT COUNT(DISTINCT b.user_id)::int AS count FROM budgets b
            INNER JOIN users u ON u.id = b.user_id
-           WHERE LOWER(u.email) != LOWER($1)
+           WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'
              AND b.date::timestamptz >= NOW() - INTERVAL '30 days'`,
           [adminEmail],
         ),
@@ -260,7 +283,7 @@ export function createAdminRouter(pool: Pool): Router {
         `SELECT COUNT(*)::int AS count
          FROM users u
          LEFT JOIN applicator_profiles p ON p.user_id = u.id
-         WHERE LOWER(u.email) != LOWER($1)${searchClause}`,
+         WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'${searchClause}`,
         params,
       );
       const total = countResult.rows[0].count as number;
@@ -298,7 +321,7 @@ export function createAdminRouter(pool: Pool): Router {
            FROM budgets b
            WHERE b.user_id = u.id
          ) bs ON true
-         WHERE LOWER(u.email) != LOWER($1)${searchClause}
+         WHERE LOWER(u.email) != LOWER($1) AND u.role = 'applicator'${searchClause}
          ORDER BY u.created_at DESC
          LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
         params,
@@ -691,6 +714,208 @@ export function createAdminRouter(pool: Pool): Router {
     } catch (e) {
       console.error('[admin/profiles/verify]', e);
       res.status(500).json({ error: 'Erro ao atualizar perfil' });
+    }
+  });
+
+  router.get('/pricing', async (_req: Request, res: Response) => {
+    try {
+      res.json(await fetchPlatformPricing(pool));
+    } catch (e) {
+      console.error('[admin/pricing:get]', e);
+      res.status(500).json({ error: 'Erro ao carregar a tabela de referência' });
+    }
+  });
+
+  router.put('/pricing', async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+
+    const fields: { key: string; column: string; min: number; max: number; label: string }[] = [
+      { key: 'hourlyRate', column: 'hourly_rate', min: 1, max: 100000, label: 'Valor da hora' },
+      {
+        key: 'profitMarginPercentage',
+        column: 'profit_margin_percentage',
+        min: 0,
+        max: 300,
+        label: 'Margem',
+      },
+      { key: 'taxPercentage', column: 'tax_percentage', min: 0, max: 100, label: 'Imposto' },
+      {
+        key: 'rangeBelowPercentage',
+        column: 'range_below_percentage',
+        min: 0,
+        max: 90,
+        label: 'Variação para baixo',
+      },
+      {
+        key: 'rangeAbovePercentage',
+        column: 'range_above_percentage',
+        min: 0,
+        max: 300,
+        label: 'Variação para cima',
+      },
+    ];
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    for (const field of fields) {
+      const raw = body[field.key];
+      if (raw === undefined) continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < field.min || value > field.max) {
+        res.status(400).json({
+          error: `${field.label} deve estar entre ${field.min} e ${field.max}`,
+        });
+        return;
+      }
+      updates.push(`${field.column} = $${idx++}`);
+      values.push(value);
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ error: 'Nenhum campo para atualizar' });
+      return;
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE platform_pricing SET ${updates.join(', ')}, updated_at = NOW()
+         WHERE id = 'default' RETURNING *`,
+        values,
+      );
+      res.json(mapPlatformPricing(result.rows[0]));
+    } catch (e) {
+      console.error('[admin/pricing:put]', e);
+      res.status(500).json({ error: 'Erro ao salvar a tabela de referência' });
+    }
+  });
+
+  router.get('/requests', async (req: Request, res: Response) => {
+    try {
+      await sweepExpiredRequests(pool);
+
+      const page = parsePage(req.query.page);
+      const limit = parseLimit(req.query.limit);
+      const offset = (page - 1) * limit;
+      const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+
+      const params: unknown[] = [];
+      let filter = '';
+      if (status && status !== 'all') {
+        params.push(status);
+        filter = ` WHERE r.status = $${params.length}`;
+      }
+
+      const countResult = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM service_requests r${filter}`,
+        params,
+      );
+      const total = countResult.rows[0].count as number;
+
+      params.push(limit, offset);
+      const listResult = await pool.query(
+        `SELECT r.*, c.full_name AS client_name, u.business_name AS applicator_business
+         FROM service_requests r
+         LEFT JOIN client_profiles c ON c.user_id = r.client_id
+         LEFT JOIN users u ON u.id = r.accepted_by
+         ${filter}
+         ORDER BY r.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params,
+      );
+
+      res.json({
+        items: listResult.rows.map((r) => ({
+          ...mapServiceRequest(r),
+          clientName: (r.client_name as string) || 'Cliente',
+          applicatorBusinessName: (r.applicator_business as string) || undefined,
+        })),
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      });
+    } catch (e) {
+      console.error('[admin/requests]', e);
+      res.status(500).json({ error: 'Erro ao listar os pedidos' });
+    }
+  });
+
+  router.get('/clients', async (req: Request, res: Response) => {
+    try {
+      const page = parsePage(req.query.page);
+      const limit = parseLimit(req.query.limit);
+      const offset = (page - 1) * limit;
+      const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const statusFilter =
+        req.query.status === 'inactive'
+          ? 'inactive'
+          : req.query.status === 'all'
+            ? 'all'
+            : 'active';
+
+      const params: unknown[] = [];
+      let filterClause = '';
+      if (statusFilter === 'active') {
+        filterClause += ' AND COALESCE(u.is_active, TRUE) = TRUE';
+      } else if (statusFilter === 'inactive') {
+        filterClause += ' AND u.is_active = FALSE';
+      }
+      if (q) {
+        params.push(`%${q.toLowerCase()}%`);
+        const idx = params.length;
+        filterClause += ` AND (
+          LOWER(u.business_name) LIKE $${idx}
+          OR LOWER(u.email) LIKE $${idx}
+          OR LOWER(COALESCE(c.full_name, '')) LIKE $${idx}
+          OR LOWER(COALESCE(c.city, '')) LIKE $${idx}
+        )`;
+      }
+
+      const countResult = await pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM users u
+         LEFT JOIN client_profiles c ON c.user_id = u.id
+         WHERE u.role = 'client'${filterClause}`,
+        params,
+      );
+      const total = countResult.rows[0].count as number;
+
+      params.push(limit, offset);
+      const limitIdx = params.length - 1;
+      const offsetIdx = params.length;
+
+      const listResult = await pool.query(
+        `SELECT
+           u.id,
+           u.email,
+           u.business_name,
+           u.created_at,
+           u.is_active,
+           u.last_login_at,
+           c.full_name,
+           c.phone,
+           c.city,
+           c.state_code
+         FROM users u
+         LEFT JOIN client_profiles c ON c.user_id = u.id
+         WHERE u.role = 'client'${filterClause}
+         ORDER BY u.created_at DESC
+         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        params,
+      );
+
+      res.json({
+        items: listResult.rows.map(mapAdminListClient),
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      });
+    } catch (e) {
+      console.error('[admin/clients]', e);
+      res.status(500).json({ error: 'Erro ao listar clientes' });
     }
   });
 
