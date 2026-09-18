@@ -1,6 +1,17 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Lock, Mail, MapPin, Search, User as UserIcon } from 'lucide-react';
+import {
+  ArrowLeft,
+  ClipboardList,
+  Loader2,
+  Lock,
+  Mail,
+  MapPin,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  User as UserIcon,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../../types';
 import { ROUTES } from '../../routes/paths';
@@ -40,22 +51,35 @@ export default function ClientAuthPage({ onLogin }: ClientAuthPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-      <div className="w-full max-w-md">
-        <div className="flex flex-col items-center text-center mb-8">
-          <BrandLogo variant="compact" className="mb-4" />
-          <h1 className="text-2xl font-bold tracking-tight text-white">
-            {mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
-          </h1>
-          <p className="mt-2 text-sm text-slate-500 max-w-xs">
-            {mode === 'login'
-              ? 'Acompanhe seus pedidos de aplicação e encontre um profissional perto de você.'
-              : 'Leva menos de um minuto. Depois é só pedir um orçamento.'}
-          </p>
-        </div>
+    <div className="relative min-h-screen w-full bg-slate-950 flex flex-col lg:flex-row overflow-x-hidden">
+      <button
+        type="button"
+        onClick={() => navigate(ROUTES.chooseRole)}
+        className="absolute top-[max(1rem,env(safe-area-inset-top))] left-4 sm:left-6 z-20 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+      >
+        <ArrowLeft size={14} />
+        Escolher outro perfil
+      </button>
 
-        <div className="rounded-2xl border border-slate-800/90 bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-black/50 p-6 sm:p-7">
-          <div className="flex p-1 rounded-xl bg-slate-950 border border-slate-800 mb-6">
+      {/* Marca e argumentos à esquerda; formulário à direita. Ambos centrados. */}
+      <aside className="relative shrink-0 border-b border-slate-800/80 lg:border-b-0 lg:w-[46%] xl:w-[44%] overflow-hidden lg:[clip-path:polygon(0_0,calc(100%-3.5rem)_0,100%_100%,0_100%)]">
+        <div
+          className="absolute inset-0 bg-gradient-to-br from-emerald-950/90 via-slate-900 to-slate-950"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 hidden w-px bg-gradient-to-b from-emerald-400/10 via-emerald-400/40 to-emerald-400/10 lg:block"
+          style={{ transform: 'translateX(-1.75rem) skewX(-8deg)', transformOrigin: 'top' }}
+          aria-hidden
+        />
+        <div className="relative z-10 flex min-h-full flex-col justify-center items-center px-6 py-14 sm:px-10 sm:py-16 lg:px-14 lg:pr-24">
+          <ClientBrandPanel variant={mode} />
+        </div>
+      </aside>
+
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col justify-center items-center px-5 py-10 sm:px-8 sm:py-14 lg:-ml-8 lg:px-12">
+        <div className="w-full max-w-md">
+          <div className="flex gap-2 p-1 bg-slate-950/80 border border-slate-800/80 rounded-xl shrink-0">
             <ModeTab active={mode === 'login'} onClick={() => setMode('login')} label="Entrar" />
             <ModeTab
               active={mode === 'register'}
@@ -64,42 +88,105 @@ export default function ClientAuthPage({ onLogin }: ClientAuthPageProps) {
             />
           </div>
 
-          <AnimatePresence mode="wait" initial={false}>
-            {mode === 'login' ? (
-              <motion.div
-                key="login"
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 12 }}
-                transition={authTransition}
-              >
-                <ClientLoginForm onAuthenticated={handleAuthenticated} />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="register"
-                initial={{ opacity: 0, x: 12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -12 }}
-                transition={authTransition}
-              >
-                <ClientRegisterForm onAuthenticated={handleAuthenticated} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          <div className="mt-6">
+            <AnimatePresence mode="wait" initial={false}>
+              {mode === 'login' ? (
+                <motion.div
+                  key="login"
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 12 }}
+                  transition={authTransition}
+                >
+                  <ClientLoginForm onAuthenticated={handleAuthenticated} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="register"
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  transition={authTransition}
+                >
+                  <ClientRegisterForm onAuthenticated={handleAuthenticated} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-        <p className="mt-6 text-center text-xs text-slate-600">
-          É um aplicador profissional?{' '}
-          <button
-            type="button"
-            onClick={() => navigate(ROUTES.login)}
-            className="text-indigo-400 hover:text-indigo-300 font-medium"
-          >
-            Acessar a área da oficina
-          </button>
-        </p>
+          <p className="mt-8 text-center text-xs text-slate-600">
+            É um aplicador profissional?{' '}
+            <button
+              type="button"
+              onClick={() => navigate(ROUTES.login)}
+              className="text-indigo-400 hover:text-indigo-300 font-medium"
+            >
+              Acessar a área da oficina
+            </button>
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const CLIENT_LOGIN_HIGHLIGHTS = [
+  { icon: ClipboardList, text: 'Acompanhe seus pedidos e quem aceitou cada um' },
+  { icon: MapPin, text: 'Aplicadores verificados da sua cidade' },
+  { icon: ShieldCheck, text: 'Contato direto com o profissional depois do aceite' },
+];
+
+const CLIENT_REGISTER_HIGHLIGHTS = [
+  { icon: Sparkles, text: 'Faixa de preço na hora, sem esperar retorno' },
+  { icon: MapPin, text: 'Profissionais verificados perto de você' },
+  { icon: ShieldCheck, text: 'Sem compromisso até um aplicador aceitar' },
+];
+
+function ClientBrandPanel({ variant }: { variant: 'login' | 'register' }) {
+  const highlights =
+    variant === 'register' ? CLIENT_REGISTER_HIGHLIGHTS : CLIENT_LOGIN_HIGHLIGHTS;
+
+  return (
+    <div className="flex flex-col gap-8 lg:gap-10">
+      <div className="flex flex-col gap-5 w-full max-w-[340px] items-center text-center mx-auto lg:items-start lg:text-left lg:mx-0">
+        <BrandLogo src="/login.png" className="h-20 sm:h-24 lg:h-28 w-auto shrink-0" />
+        <div className="space-y-2 w-full flex flex-col items-center lg:items-start">
+          <h1 className="text-2xl lg:text-[1.75rem] font-bold text-white tracking-tight leading-tight">
+            APLICA PRO
+          </h1>
+          <p className="text-[10px] text-emerald-400 font-mono uppercase tracking-[0.22em] leading-relaxed">
+            Área do cliente
+          </p>
+          <p className="text-slate-500 text-sm leading-relaxed pt-1">
+            {variant === 'login'
+              ? 'Bem-vindo de volta'
+              : 'Peça um orçamento em poucos minutos'}
+          </p>
+        </div>
       </div>
+
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.ul
+          key={variant}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={authTransition}
+          className="flex flex-col gap-3.5 w-full max-w-[340px] mx-auto lg:mx-0"
+        >
+          {highlights.map(({ icon: Icon, text }) => (
+            <li
+              key={text}
+              className="flex items-center gap-3 text-slate-400 text-sm leading-snug"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600/15 border border-emerald-500/25 text-emerald-400">
+                <Icon size={18} />
+              </span>
+              <span className="flex-1">{text}</span>
+            </li>
+          ))}
+        </motion.ul>
+      </AnimatePresence>
     </div>
   );
 }

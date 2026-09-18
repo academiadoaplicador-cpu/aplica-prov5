@@ -39,6 +39,7 @@ import ClientOrdersPage from './pages/cliente/ClientOrdersPage';
 import ClientProfilePage from './pages/cliente/ClientProfilePage';
 import ClientNewRequestPage from './pages/cliente/ClientNewRequestPage';
 import RegionRequestsPage from './pages/RegionRequestsPage';
+import ChooseRolePage from './pages/ChooseRolePage';
 import AdminPricingPage from './pages/admin/AdminPricingPage';
 import {
   AdminRoute,
@@ -83,6 +84,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<GuestRoute user={user} />}>
+        <Route path={ROUTES.chooseRole} element={<ChooseRolePage />} />
         <Route
           path={ROUTES.login}
           element={
@@ -154,7 +156,7 @@ export default function App() {
 
       <Route
         path="*"
-        element={<Navigate to={user ? homeRouteFor(user) : ROUTES.login} replace />}
+        element={<Navigate to={user ? homeRouteFor(user) : ROUTES.chooseRole} replace />}
       />
     </Routes>
   );

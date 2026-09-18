@@ -76,30 +76,38 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 sm:p-6 lg:p-8 overflow-x-hidden">
-      <div className="w-full mx-auto max-w-6xl">
-        <div className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-black/50">
-          <div className="flex flex-col lg:flex-row lg:min-h-[min(640px,88vh)]">
-            <aside
-              className="relative shrink-0 border-b border-slate-800/80 lg:border-b-0 lg:w-[46%] xl:w-[44%] overflow-hidden lg:[clip-path:polygon(0_0,calc(100%-2.75rem)_0,100%_100%,0_100%)]"
-            >
-              <div
-                className="absolute inset-0 bg-gradient-to-br from-indigo-950/90 via-slate-900 to-slate-950"
-                aria-hidden
-              />
-              <div
-                className="pointer-events-none absolute inset-y-0 right-0 hidden w-px bg-gradient-to-b from-indigo-400/10 via-indigo-400/40 to-indigo-400/10 lg:block"
-                style={{ transform: 'translateX(-1.25rem) skewX(-8deg)', transformOrigin: 'top' }}
-                aria-hidden
-              />
-              <div className="relative z-10 flex min-h-full flex-col justify-center p-8 sm:p-10 lg:pr-16">
-                <AuthBrandPanel variant={mode} />
-              </div>
-            </aside>
+    <div className="relative min-h-screen w-full bg-slate-950 flex flex-col lg:flex-row overflow-x-hidden">
+      <button
+        type="button"
+        onClick={() => navigate(ROUTES.chooseRole)}
+        className="absolute top-[max(1rem,env(safe-area-inset-top))] left-4 sm:left-6 z-20 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+      >
+        <ChevronLeft size={14} />
+        Escolher outro perfil
+      </button>
 
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-950/40 p-6 sm:p-8 lg:-ml-6 lg:py-10 lg:pl-12 lg:pr-10">
-              <AuthModeToggle mode={mode} onModeChange={setMode} />
-              <div className="mt-6 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
+      {/* Marca e argumentos à esquerda; formulário à direita. Ambos centrados. */}
+      <aside
+        className="relative shrink-0 border-b border-slate-800/80 lg:border-b-0 lg:w-[46%] xl:w-[44%] overflow-hidden lg:[clip-path:polygon(0_0,calc(100%-3.5rem)_0,100%_100%,0_100%)]"
+      >
+        <div
+          className="absolute inset-0 bg-gradient-to-br from-indigo-950/90 via-slate-900 to-slate-950"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 hidden w-px bg-gradient-to-b from-indigo-400/10 via-indigo-400/40 to-indigo-400/10 lg:block"
+          style={{ transform: 'translateX(-1.75rem) skewX(-8deg)', transformOrigin: 'top' }}
+          aria-hidden
+        />
+        <div className="relative z-10 flex min-h-full flex-col justify-center items-center px-6 py-14 sm:px-10 sm:py-16 lg:px-14 lg:pr-24">
+          <AuthBrandPanel variant={mode} />
+        </div>
+      </aside>
+
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col justify-center items-center px-5 py-10 sm:px-8 sm:py-14 lg:-ml-8 lg:px-12">
+        <div className="w-full max-w-md">
+          <AuthModeToggle mode={mode} onModeChange={setMode} />
+          <div className="mt-6">
                 <AnimatePresence mode="wait" initial={false}>
                   {mode === 'login' ? (
                     <LoginForm
@@ -114,12 +122,10 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
                       onGoLogin={() => setMode('login')}
                     />
                   )}
-                </AnimatePresence>
-              </div>
-            </section>
+          </AnimatePresence>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
