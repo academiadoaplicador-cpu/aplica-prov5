@@ -1,4 +1,6 @@
 export const ROUTES = {
+  /** Escolha de perfil — porta de entrada de quem não tem sessão. */
+  chooseRole: '/acessar',
   login: '/entrar',
   dashboard: '/',
   costs: '/custos',
