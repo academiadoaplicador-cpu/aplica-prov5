@@ -5,6 +5,7 @@ export type BudgetDraftKind = 'automotive' | 'decorative';
 
 export interface AutomotiveBudgetDraft {
   customerName: string;
+  description?: string;
   selectedMake: string;
   selectedModel: string;
   selectedYear: string;
@@ -22,6 +23,7 @@ export interface AutomotiveBudgetDraft {
 
 export interface DecorativeBudgetDraft {
   customerName: string;
+  description?: string;
   subType: 'Móveis' | 'Eletrodomésticos' | 'Parede';
   selectedApplianceMake: string;
   selectedApplianceType: string;

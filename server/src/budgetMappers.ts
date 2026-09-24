@@ -20,6 +20,7 @@ export function mapBudget(row: Record<string, unknown>) {
     vehicleId: (row.vehicle_id as string) || undefined,
     status: row.status as string,
     date: row.date as string,
+    description: (row.description as string) || undefined,
     items: row.items as unknown[],
     materialId: row.material_id as string,
     customPricePerM2: row.custom_price_per_m2 != null ? num(row.custom_price_per_m2) : undefined,

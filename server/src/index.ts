@@ -1019,9 +1019,9 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
   await pool.query(
     `INSERT INTO budgets (
       user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id, status, date,
-      items, material_id, custom_price_per_m2, total_hours, total_material_meters,
+      description, items, material_id, custom_price_per_m2, total_hours, total_material_meters,
       total_material_m2, total_cost, total_price, profit, type, sub_type, vehicle_quantity, rolls_needed
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
     ON CONFLICT (user_id, id) DO UPDATE SET
       customer_name = EXCLUDED.customer_name,
       vehicle_model = EXCLUDED.vehicle_model,
@@ -1029,6 +1029,7 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       vehicle_id = EXCLUDED.vehicle_id,
       status = EXCLUDED.status,
       date = EXCLUDED.date,
+      description = EXCLUDED.description,
       items = EXCLUDED.items,
       material_id = EXCLUDED.material_id,
       custom_price_per_m2 = EXCLUDED.custom_price_per_m2,
@@ -1051,6 +1052,7 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       b.vehicleId ?? null,
       b.status,
       b.date,
+      b.description ?? null,
       JSON.stringify(b.items || []),
       b.materialId,
       b.customPricePerM2 ?? null,

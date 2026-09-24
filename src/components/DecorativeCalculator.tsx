@@ -99,6 +99,7 @@ export default function DecorativeCalculator() {
   const isRestoringDraftRef = useRef(Boolean(restoredDraft.current));
 
   const [customerName, setCustomerName] = useState(restoredDraft.current?.customerName ?? '');
+  const [description, setDescription] = useState(restoredDraft.current?.description ?? '');
   const [subType, setSubType] = useState<SubType>(
     restoredDraft.current?.subType ?? 'Eletrodomésticos',
   );
@@ -482,6 +483,7 @@ export default function DecorativeCalculator() {
     vehicleModel: `${subType}${selectedApplianceId ? ': ' + appliances.find(a => a.id === selectedApplianceId)?.model : ''}`,
     status: 'Pendente' as const,
     date: new Date().toISOString(),
+    description: description.trim() || undefined,
     items: effectiveItems.map((item) => ({
       partId: item.id,
       quantity: itemQuantity(item),
@@ -499,12 +501,13 @@ export default function DecorativeCalculator() {
     profit: totals.profit,
     type: 'Decorativo' as const,
     subType
-  }), [customerName, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances, effectiveItems]);
+  }), [customerName, description, subType, selectedApplianceId, selectedMaterialId, customPricePerM2, totals, appliances, effectiveItems]);
 
   const budgetSnapshot = useMemo(
     () =>
       JSON.stringify({
         customerName,
+        description,
         subType,
         selectedApplianceId,
         items: effectiveItems.map((item) => ({
@@ -522,6 +525,7 @@ export default function DecorativeCalculator() {
       }),
     [
       customerName,
+      description,
       subType,
       selectedApplianceId,
       effectiveItems,
@@ -654,6 +658,7 @@ export default function DecorativeCalculator() {
   useBudgetDraftPersistence(
     () => ({
       customerName,
+      description,
       subType,
       selectedApplianceMake,
       selectedApplianceType,
@@ -810,6 +815,16 @@ export default function DecorativeCalculator() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className={mobileFieldLabel}>Descrição / Observações (opcional)</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Detalhes do serviço, condições combinadas, observações para o cliente..."
+                  rows={3}
+                  className={cn(mobileFieldInput, 'h-auto py-2.5 resize-none focus:ring-emerald-500')}
+                />
               </div>
             </div>
 

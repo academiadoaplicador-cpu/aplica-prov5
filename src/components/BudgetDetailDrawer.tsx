@@ -15,16 +15,17 @@ import {
   Hash,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Budget, Material } from '../types';
-import { VEHICLE_PARTS_DATA } from '../types/vehicleParts';
+import { Budget, Material, Vehicle } from '../types';
 import { formatCurrency, cn } from '../lib/utils';
 import GeneratePdfButton from './GeneratePdfButton';
 import SupplierWhatsAppButton from './SupplierWhatsAppButton';
 import { getMaterialProductLine } from '../utils/materialSelection';
+import { getBudgetPieceNames } from '../utils/vehiclePartsUtils';
 
 interface BudgetDetailDrawerProps {
   budget: Budget | null;
   materials: Material[];
+  vehicles?: Vehicle[];
   open: boolean;
   onClose: () => void;
   onPrevious: () => void;
@@ -46,15 +47,10 @@ function formatBudgetRef(id: string): string {
   return clean.length > 8 ? clean.slice(-8) : clean;
 }
 
-function getPieceNames(budget: Budget): string[] {
-  return budget.items
-    .map((item) => VEHICLE_PARTS_DATA.find((p) => p.id === item.partId)?.name)
-    .filter((name): name is string => Boolean(name));
-}
-
 export default function BudgetDetailDrawer({
   budget,
   materials,
+  vehicles = [],
   open,
   onClose,
   onPrevious,
@@ -70,7 +66,9 @@ export default function BudgetDetailDrawer({
   officeLabel,
 }: BudgetDetailDrawerProps) {
   const material = budget ? materials.find((m) => m.id === budget.materialId) : null;
-  const pieceNames = budget && budget.type === 'Automotivo' ? getPieceNames(budget) : [];
+  const vehicle = budget ? vehicles.find((v) => v.id === budget.vehicleId) : undefined;
+  const pieceNames =
+    budget && budget.type === 'Automotivo' ? getBudgetPieceNames(budget, vehicle) : [];
   const projectLabel =
     budget?.vehicleModel || budget?.applianceModel || 'Projeto personalizado';
   const vehicleQty = Math.max(1, budget?.vehicleQuantity ?? 1);
@@ -192,6 +190,17 @@ export default function BudgetDetailDrawer({
               <DetailRow icon={<Hash size={14} />} label="Tipo">
                 {budget.subType ? `${budget.type} · ${budget.subType}` : budget.type}
               </DetailRow>
+
+              {budget.description?.trim() && (
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                    Descrição / Observações
+                  </span>
+                  <p className="text-xs text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5 whitespace-pre-wrap">
+                    {budget.description}
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">

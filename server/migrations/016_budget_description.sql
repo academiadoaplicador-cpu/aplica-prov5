@@ -1,0 +1,2 @@
+ALTER TABLE budgets
+  ADD COLUMN IF NOT EXISTS description TEXT;

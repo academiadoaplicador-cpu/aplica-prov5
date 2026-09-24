@@ -91,6 +91,8 @@ export interface Budget {
   vehicleId?: string;
   status: BudgetStatus;
   date: string;
+  /** Descrição / observações gerais do orçamento (opcional) */
+  description?: string;
   items: BudgetPiece[];
   materialId: string;
   customPricePerM2?: number;

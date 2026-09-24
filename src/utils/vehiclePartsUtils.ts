@@ -1,4 +1,4 @@
-import { Vehicle, VehicleSize } from '../types';
+import { Budget, Vehicle, VehicleSize } from '../types';
 import { VEHICLE_PARTS_DATA } from '../types/vehicleParts';
 
 export interface VehiclePartInfo {
@@ -200,4 +200,16 @@ export function isVehicleMeasurementsComplete(vehicle: Vehicle): boolean {
   const configured = getVehicleConfiguredPartIds(vehicle);
   if (configured.length === 0) return false;
   return configured.every((partId) => hasPartMeasurement(vehicle, partId));
+}
+
+/**
+ * Nomes das peças de um orçamento Automotivo, incluindo peças customizadas
+ * (fora do catálogo padrão) — usa o veículo para resolver o nome cadastrado
+ * em partMeasurements quando a peça não está em VEHICLE_PARTS_DATA.
+ */
+export function getBudgetPieceNames(budget: Budget, vehicle?: Vehicle | null): string[] {
+  const items = budget.items ?? [];
+  return items
+    .map((item) => getPartInfo(item.partId, vehicle ?? undefined).name)
+    .filter((name): name is string => Boolean(name));
 }

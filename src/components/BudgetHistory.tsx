@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { pdfService } from '../services/pdfService';
-import { Budget, Material } from '../types';
+import { Budget, Material, Vehicle } from '../types';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import BudgetDetailDrawer from './BudgetDetailDrawer';
@@ -18,6 +18,7 @@ import BudgetDetailDrawer from './BudgetDetailDrawer';
 export default function BudgetHistory() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [fixedCosts, setFixedCosts] = useState(1500);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'Tudo' | 'Automotivo' | 'Decorativo'>('Tudo');
@@ -28,10 +29,12 @@ export default function BudgetHistory() {
       databaseService.getBudgets(),
       databaseService.getFinancialSettings(),
       databaseService.getMaterials(),
-    ]).then(([b, s, m]) => {
+      databaseService.getVehicles(),
+    ]).then(([b, s, m, v]) => {
       setBudgets(b);
       setFixedCosts(s.fixedCosts);
       setMaterials(m);
+      setVehicles(v);
     });
   }, []);
 
@@ -307,6 +310,7 @@ export default function BudgetHistory() {
       <BudgetDetailDrawer
         budget={selectedBudget}
         materials={materials}
+        vehicles={vehicles}
         open={selectedBudget !== null}
         onClose={closeDetails}
         onPrevious={goToPrevious}

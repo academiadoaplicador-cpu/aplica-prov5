@@ -63,6 +63,7 @@ export default function AutomotiveCalculator() {
   const isRestoringDraftRef = useRef(Boolean(restoredDraft.current));
 
   const [customerName, setCustomerName] = useState(restoredDraft.current?.customerName ?? '');
+  const [description, setDescription] = useState(restoredDraft.current?.description ?? '');
   const [selectedMake, setSelectedMake] = useState(restoredDraft.current?.selectedMake ?? '');
   const [selectedModel, setSelectedModel] = useState(restoredDraft.current?.selectedModel ?? '');
   const [selectedYear, setSelectedYear] = useState(restoredDraft.current?.selectedYear ?? '');
@@ -336,6 +337,7 @@ export default function AutomotiveCalculator() {
     rollsNeeded: totals.rollsNeeded > 1 ? totals.rollsNeeded : undefined,
     status: 'Pendente' as const,
     date: new Date().toISOString(),
+    description: description.trim() || undefined,
     items: selectedPieces.map(p => ({ partId: p, quantity: 1 })),
     materialId: selectedMaterialId,
     customPricePerM2: customPricePerM2 || undefined,
@@ -346,12 +348,13 @@ export default function AutomotiveCalculator() {
     totalPrice: totals.price,
     profit: totals.profit,
     type: 'Automotivo' as const
-  }), [customerName, selectedVehicle, selectedVehicleId, vehicleQuantity, selectedPieces, selectedMaterialId, customPricePerM2, totals]);
+  }), [customerName, description, selectedVehicle, selectedVehicleId, vehicleQuantity, selectedPieces, selectedMaterialId, customPricePerM2, totals]);
 
   const budgetSnapshot = useMemo(
     () =>
       JSON.stringify({
         customerName,
+        description,
         selectedVehicleId,
         vehicleQuantity,
         budgetType,
@@ -364,6 +367,7 @@ export default function AutomotiveCalculator() {
       }),
     [
       customerName,
+      description,
       selectedVehicleId,
       vehicleQuantity,
       budgetType,
@@ -514,6 +518,7 @@ export default function AutomotiveCalculator() {
   useBudgetDraftPersistence(
     () => ({
       customerName,
+      description,
       selectedMake,
       selectedModel,
       selectedYear,
@@ -717,6 +722,16 @@ export default function AutomotiveCalculator() {
                   </p>
                 </div>
               )}
+              <div className="space-y-2 md:col-span-2">
+                <label className={mobileFieldLabel}>Descrição / Observações (opcional)</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Detalhes do serviço, condições combinadas, observações para o cliente..."
+                  rows={3}
+                  className={cn(mobileFieldInput, 'h-auto py-2.5 resize-none focus:ring-indigo-500')}
+                />
+              </div>
             </div>
 
             <div className="flex flex-col gap-2.5 sm:flex-row sm:gap-4 pt-4 border-t border-slate-800/80">

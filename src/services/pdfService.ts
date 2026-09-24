@@ -2,8 +2,8 @@ import { jsPDF } from 'jspdf';
 import { Budget, BudgetPiece, Material } from '../types';
 import { formatCurrency } from '../lib/utils';
 import { databaseService } from './databaseService';
-import { VEHICLE_PARTS_DATA } from '../types/vehicleParts';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
+import { getBudgetPieceNames } from '../utils/vehiclePartsUtils';
 
 const PAGE_W = 210;
 const PAGE_H = 297;
@@ -123,13 +123,6 @@ function pdfUnit(value: string, unit: 'm' | 'm2' | 'h'): string {
 function safeText(value: unknown, fallback = ''): string {
   if (value === null || value === undefined) return fallback;
   return String(value);
-}
-
-function getAutomotivePieceNames(budget: Budget): string[] {
-  const items = budget.items ?? [];
-  return items
-    .map((item) => VEHICLE_PARTS_DATA.find((p) => p.id === item.partId)?.name)
-    .filter((name): name is string => Boolean(name));
 }
 
 function getDecorativePieces(budget: Budget): BudgetPiece[] {
@@ -291,6 +284,25 @@ class PdfBuilder {
       textColor(this.doc, C.slate500);
       this.doc.text(params.pieceSummary, MARGIN + colW + 9, this.y + 18);
     }
+
+    this.y += cardH + 6;
+  }
+
+  drawDescription(text: string) {
+    const innerW = CONTENT_W - 12;
+    this.doc.setFont('helvetica', 'normal');
+    this.doc.setFontSize(8);
+    const lines = truncateLines(this.doc, text, innerW, 6);
+    const cardH = 8 + lines.length * 4;
+    this.ensureSpace(cardH + 6);
+
+    this.sectionTitle('DESCRIÇÃO / OBSERVAÇÕES');
+    this.drawCard(MARGIN, this.y, CONTENT_W, cardH, C.white, C.slate200);
+
+    textColor(this.doc, C.slate700);
+    lines.forEach((line, i) => {
+      this.doc.text(line, MARGIN + 6, this.y + 7 + i * 4);
+    });
 
     this.y += cardH + 6;
   }
@@ -504,12 +516,14 @@ export const pdfService = {
   ) => {
     let user = null;
     let materials: Awaited<ReturnType<typeof databaseService.getMaterials>> = [];
+    let vehicles: Awaited<ReturnType<typeof databaseService.getVehicles>> = [];
     let profile = null;
 
     try {
-      [user, materials] = await Promise.all([
+      [user, materials, vehicles] = await Promise.all([
         databaseService.getUser(),
         databaseService.getMaterials().catch(() => []),
+        databaseService.getVehicles().catch(() => []),
       ]);
       if (user) {
         profile = await databaseService.getProfile(user.id).catch(() => null);
@@ -544,7 +558,8 @@ export const pdfService = {
       ? `${budget.type} · ${budget.subType}`
       : budget.type;
 
-    const automotivePieces = isAutomotive ? getAutomotivePieceNames(budget) : [];
+    const vehicle = vehicles.find((v) => v.id === budget.vehicleId);
+    const automotivePieces = isAutomotive ? getBudgetPieceNames(budget, vehicle) : [];
     const decorativePieces = !isAutomotive ? getDecorativePieces(budget) : [];
     const decorativeLabels = decorativePieces.map((p) =>
       p.quantity > 1 ? `${p.name} ×${p.quantity}` : p.name!,
@@ -637,6 +652,10 @@ export const pdfService = {
       typeLabel,
       pieceSummary,
     });
+
+    if (budget.description?.trim()) {
+      pdf.drawDescription(budget.description.trim());
+    }
 
     pdf.sectionTitle('MATERIAL SELECIONADO');
     pdf.drawMaterial({
