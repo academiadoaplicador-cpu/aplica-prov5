@@ -822,8 +822,8 @@ export default function DecorativeCalculator() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Detalhes do serviço, condições combinadas, observações para o cliente..."
-                  rows={3}
-                  className={cn(mobileFieldInput, 'h-auto py-2.5 resize-none focus:ring-emerald-500')}
+                  rows={6}
+                  className={cn(mobileFieldInput, 'h-auto py-2.5 resize-y focus:ring-emerald-500')}
                 />
               </div>
             </div>
