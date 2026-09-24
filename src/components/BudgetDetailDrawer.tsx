@@ -381,7 +381,7 @@ function DetailRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex gap-3">
+    <div className="flex items-center gap-3">
       <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 shrink-0">
         {icon}
       </div>
