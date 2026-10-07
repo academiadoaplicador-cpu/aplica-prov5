@@ -18,6 +18,9 @@ import {
   type CreateRequestInput,
 } from './serviceRequests.js';
 
+// Temporariamente fora da tela do cliente; segue disponível no catálogo do aplicador.
+const CLIENT_HIDDEN_MATERIAL_TYPES = new Set<string>(['Poliéster']);
+
 export function createClientRouter(pool: Pool): Router {
   const router = Router();
 
@@ -114,7 +117,9 @@ export function createClientRouter(pool: Pool): Router {
           ).map(([id, m]) => ({ id, width: Number(m.width), length: Number(m.length) })),
         })),
         // Só oferece acabamento que tem preço de referência no catálogo global.
-        materialTypes: MATERIAL_TYPES.filter((t) => (medians.get(t) ?? 0) > 0),
+        materialTypes: MATERIAL_TYPES.filter(
+          (t) => !CLIENT_HIDDEN_MATERIAL_TYPES.has(t) && (medians.get(t) ?? 0) > 0,
+        ),
         expiryHours: REQUEST_EXPIRY_HOURS,
       });
     } catch (e) {

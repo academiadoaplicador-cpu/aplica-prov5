@@ -26,7 +26,7 @@ const inputClass =
   'w-full h-11 bg-slate-950 border border-slate-800 rounded-xl px-4 text-base sm:text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent placeholder:text-slate-600';
 const labelClass = 'text-xs text-slate-500 mb-2 block font-mono';
 
-const STEPS = ['Serviço', 'Escopo', 'Acabamento', 'Enviar'] as const;
+const STEPS = ['Serviço', 'Escopo', 'Produto', 'Enviar'] as const;
 
 const SUB_TYPES = ['Móveis', 'Eletrodomésticos', 'Parede'] as const;
 
@@ -482,7 +482,7 @@ export default function ClientNewRequestPage() {
             <dl className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2 text-sm">
               <SummaryRow label="Serviço" value={type || '—'} />
               <SummaryRow label="Escopo" value={estimate?.scopeLabel || '—'} />
-              <SummaryRow label="Acabamento" value={materialType} />
+              <SummaryRow label="Produto" value={materialType} />
               {estimate && (
                 <SummaryRow label="Área estimada" value={`${estimate.estimatedM2} m²`} />
               )}
@@ -557,7 +557,7 @@ const FINISH_HINT: Record<string, string> = {
   Cast: 'Premium, acompanha curvas complexas',
   Calandrado: 'Bom custo-benefício, superfícies planas',
   PPF: 'Película de proteção transparente',
-  Poliéster: 'Uso interno e comunicação visual',
+  Poliéster: 'Película para aplicação em vidros',
 };
 
 function EstimateBox({
