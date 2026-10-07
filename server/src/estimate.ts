@@ -52,23 +52,44 @@ export async function fetchPlatformPricing(db: Pool | PoolClient): Promise<Platf
   return mapPlatformPricing(result.rows[0]);
 }
 
-/**
- * Preço de referência de um acabamento: a mediana do catálogo global daquele tipo.
- * Mediana e não média porque alguns SKUs de importado distorcem a ponta de cima.
- */
-export async function referencePricePerM2(
+export interface CatalogPriceStats {
+  productCount: number;
+  minPerM2: number;
+  medianPerM2: number;
+  maxPerM2: number;
+}
+
+/** Preço/m² dos produtos válidos (preço > 0) do catálogo global para o tipo escolhido. */
+export async function catalogPriceStats(
   db: Pool | PoolClient,
   materialType: string,
-): Promise<number> {
+): Promise<CatalogPriceStats> {
   const catalogUserId = await resolveCatalogUserId(db);
-  const result = await db.query<{ median: string | null }>(
-    `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY price_per_m2) AS median
+  const result = await db.query<{
+    count: number;
+    min: string | null;
+    median: string | null;
+    max: string | null;
+  }>(
+    `SELECT COUNT(*)::int AS count,
+            MIN(price_per_m2) AS min,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY price_per_m2) AS median,
+            MAX(price_per_m2) AS max
      FROM materials
      WHERE user_id = $1 AND type = $2 AND price_per_m2 > 0`,
     [catalogUserId, materialType],
   );
-  const median = Number(result.rows[0]?.median);
-  return Number.isFinite(median) && median > 0 ? median : 0;
+  const row = result.rows[0];
+  const num = (v: string | null | undefined) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  return {
+    productCount: row?.count ?? 0,
+    minPerM2: num(row?.min),
+    medianPerM2: num(row?.median),
+    maxPerM2: num(row?.max),
+  };
 }
 
 export interface DecorativeItemInput {
@@ -96,6 +117,9 @@ export interface EstimateResult {
   suggestedPrice: number;
   priceMin: number;
   priceMax: number;
+  productCount: number;
+  minPricePerM2: number;
+  maxPricePerM2: number;
 }
 
 function round2(value: number): number {
@@ -135,27 +159,35 @@ export function measureScope(input: EstimateInput): { m2: number; hours: number 
   return { m2, hours };
 }
 
-export function priceFromScope(
+function finalPrice(
   scope: { m2: number; hours: number },
   pricePerM2: number,
   pricing: PlatformPricing,
-): EstimateResult {
-  const materialCost = scope.m2 * pricePerM2;
-  const laborCost = scope.hours * pricing.hourlyRate;
-  const baseCost = materialCost + laborCost;
-
-  const suggestedPrice =
+): number {
+  const baseCost = scope.m2 * pricePerM2 + scope.hours * pricing.hourlyRate;
+  return (
     baseCost *
     (1 + pricing.profitMarginPercentage / 100) *
-    (1 + pricing.taxPercentage / 100);
+    (1 + pricing.taxPercentage / 100)
+  );
+}
 
+/** A faixa vai do produto mais barato ao mais caro do tipo; a mediana fica como referência. */
+export function priceFromScope(
+  scope: { m2: number; hours: number },
+  stats: CatalogPriceStats,
+  pricing: PlatformPricing,
+): EstimateResult {
   return {
     estimatedM2: round2(scope.m2),
     estimatedHours: round2(scope.hours),
-    referencePricePerM2: round2(pricePerM2),
-    suggestedPrice: round2(suggestedPrice),
-    priceMin: round2(suggestedPrice * (1 - pricing.rangeBelowPercentage / 100)),
-    priceMax: round2(suggestedPrice * (1 + pricing.rangeAbovePercentage / 100)),
+    referencePricePerM2: round2(stats.medianPerM2),
+    suggestedPrice: round2(finalPrice(scope, stats.medianPerM2, pricing)),
+    priceMin: round2(finalPrice(scope, stats.minPerM2, pricing)),
+    priceMax: round2(finalPrice(scope, stats.maxPerM2, pricing)),
+    productCount: stats.productCount,
+    minPricePerM2: round2(stats.minPerM2),
+    maxPricePerM2: round2(stats.maxPerM2),
   };
 }
 
@@ -163,11 +195,11 @@ export async function buildEstimate(
   db: Pool | PoolClient,
   input: EstimateInput,
 ): Promise<EstimateResult> {
-  const [pricing, pricePerM2] = await Promise.all([
+  const [pricing, stats] = await Promise.all([
     fetchPlatformPricing(db),
-    referencePricePerM2(db, input.materialType),
+    catalogPriceStats(db, input.materialType),
   ]);
-  return priceFromScope(measureScope(input), pricePerM2, pricing);
+  return priceFromScope(measureScope(input), stats, pricing);
 }
 
 /** Peças de um envelopamento completo para o porte informado. */

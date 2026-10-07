@@ -493,6 +493,9 @@ export interface PriceEstimate {
   suggestedPrice: number;
   priceMin: number;
   priceMax: number;
+  productCount: number;
+  minPricePerM2: number;
+  maxPricePerM2: number;
   scopeLabel: string;
 }
 

@@ -580,7 +580,7 @@ function EstimateBox({
   return (
     <div className="rounded-xl border border-emerald-600/20 bg-emerald-600/5 p-5">
       <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-400">
-        Estimativa
+        Estimativa prévia
       </p>
       {loading || !estimate ? (
         <div className="mt-2 flex items-center gap-2 text-slate-500">
@@ -597,9 +597,15 @@ function EstimateBox({
           <p className="mt-2 text-xs text-slate-500">
             {estimate.estimatedM2} m² · cerca de {estimate.estimatedHours} h de aplicação
           </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Com base em {estimate.productCount}{' '}
+            {estimate.productCount === 1 ? 'produto' : 'produtos'} do catálogo, de{' '}
+            {formatCurrency(estimate.minPricePerM2)} a {formatCurrency(estimate.maxPricePerM2)}{' '}
+            por m², conforme marca, linha e cor/textura.
+          </p>
           <p className="mt-3 text-[11px] text-slate-600 leading-relaxed">
-            Faixa de referência da plataforma. O valor final é fechado com o aplicador que
-            aceitar o pedido, depois que ele confirmar as medidas e o material.
+            Este é um valor prévio, só para referência. O valor final é fechado com o
+            aplicador que aceitar o pedido, depois que ele confirmar as medidas e o produto.
           </p>
         </>
       )}
