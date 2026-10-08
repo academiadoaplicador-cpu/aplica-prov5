@@ -8,7 +8,7 @@ import {
   type ClientProfileInput,
 } from './clientProfileData.js';
 import { resolveCatalogUserId } from './catalog.js';
-import { buildEstimate, isEstimateAvailable, MATERIAL_TYPES } from './estimate.js';
+import { buildEstimate, CLIENT_MATERIAL_TYPES, isEstimateAvailable } from './estimate.js';
 import {
   createServiceRequest,
   mapServiceRequest,
@@ -18,9 +18,6 @@ import {
   REQUEST_EXPIRY_HOURS,
   type CreateRequestInput,
 } from './serviceRequests.js';
-
-// Temporariamente fora da tela do cliente; segue disponível no catálogo do aplicador.
-const CLIENT_HIDDEN_MATERIAL_TYPES = new Set<string>(['Poliéster']);
 
 export function createClientRouter(pool: Pool): Router {
   const router = Router();
@@ -124,12 +121,10 @@ export function createClientRouter(pool: Pool): Router {
           ).map(([id, m]) => ({ id, width: Number(m.width), length: Number(m.length) })),
         })),
         // Só oferece acabamento que tem preço de referência no catálogo global.
-        materialTypes: MATERIAL_TYPES.filter(
-          (t) => !CLIENT_HIDDEN_MATERIAL_TYPES.has(t) && (medians.get(t) ?? 0) > 0,
-        ),
+        materialTypes: CLIENT_MATERIAL_TYPES.filter((t) => (medians.get(t) ?? 0) > 0),
         // Para "só a aplicação": o cliente escolhe o material que vai fornecer. Sem preço.
         materials: materials.rows
-          .filter((m) => !CLIENT_HIDDEN_MATERIAL_TYPES.has(m.type as string))
+          .filter((m) => CLIENT_MATERIAL_TYPES.includes(m.type as string))
           .map((m) => ({
             id: m.id as string,
             type: m.type as string,

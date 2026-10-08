@@ -37,7 +37,8 @@ export default function ProposalPanel({
   const [error, setError] = useState('');
 
   const initial = request.proposal;
-  const [type, setType] = useState(initial?.materialType || request.materialType);
+  // A proposta segue o tipo que o cliente pediu: só materiais desse tipo são compatíveis.
+  const type = request.materialType;
   const [brand, setBrand] = useState('');
   const [line, setLine] = useState('');
   const [materialId, setMaterialId] = useState('');
@@ -50,11 +51,11 @@ export default function ProposalPanel({
     Promise.all([databaseService.getMaterials(), databaseService.getFinancialSettings()])
       .then(([list, financial]) => {
         if (cancelled) return;
-        setMaterials(list.filter((m) => m.pricePerM2 > 0));
+        setMaterials(list.filter((m) => m.type === type && m.pricePerM2 > 0));
         setSettings(financial);
-        const previous = initial && list.find((m) => m.id === initial.materialId);
+        const previous =
+          initial && list.find((m) => m.id === initial.materialId && m.type === type);
         if (previous) {
-          setType(previous.type);
           setBrand(previous.brand);
           setLine(previous.line);
           setMaterialId(previous.id);
@@ -74,24 +75,17 @@ export default function ProposalPanel({
     };
   }, []);
 
-  const types = useMemo(() => uniqueSorted(materials.map((m) => m.type)), [materials]);
-  const brands = useMemo(
-    () => uniqueSorted(materials.filter((m) => m.type === type).map((m) => m.brand)),
-    [materials, type],
-  );
+  const brands = useMemo(() => uniqueSorted(materials.map((m) => m.brand)), [materials]);
   const lines = useMemo(
-    () =>
-      uniqueSorted(
-        materials.filter((m) => m.type === type && m.brand === brand).map((m) => m.line),
-      ),
-    [materials, type, brand],
+    () => uniqueSorted(materials.filter((m) => m.brand === brand).map((m) => m.line)),
+    [materials, brand],
   );
   const colors = useMemo(
     () =>
       materials
-        .filter((m) => m.type === type && m.brand === brand && m.line === line)
+        .filter((m) => m.brand === brand && m.line === line)
         .sort((a, b) => a.colorTexture.localeCompare(b.colorTexture, 'pt-BR')),
-    [materials, type, brand, line],
+    [materials, brand, line],
   );
 
   const laborOnly = request.supplyMode === 'mao_de_obra';
@@ -168,24 +162,10 @@ export default function ProposalPanel({
       ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className={labelClass}>Tipo</label>
-          <select
-            className={selectClass}
-            value={type}
-            onChange={(e) => {
-              setType(e.target.value);
-              setBrand('');
-              setLine('');
-              setMaterialId('');
-            }}
-          >
-            {!types.includes(type) && <option value={type}>{type}</option>}
-            {types.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+          <label className={labelClass}>Tipo (pedido pelo cliente)</label>
+          <p className="h-10 flex items-center px-3 rounded-xl border border-slate-800 bg-slate-950/50 text-sm text-slate-300">
+            {type}
+          </p>
         </div>
         <div>
           <label className={labelClass}>Marca</label>

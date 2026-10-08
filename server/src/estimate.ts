@@ -15,6 +15,9 @@ const DECORATIVE_COMPLEXITY_MULTIPLIER: Record<number, number> = {
 export const MATERIAL_TYPES = ['Cast', 'Calandrado', 'PPF', 'Poliéster'] as const;
 export type MaterialType = (typeof MATERIAL_TYPES)[number];
 
+/** Tipos que o cliente pode pedir; Poliéster fica fora da tela do cliente por enquanto. */
+export const CLIENT_MATERIAL_TYPES: readonly string[] = ['Cast', 'Calandrado', 'PPF'];
+
 export interface PlatformPricing {
   hourlyRate: number;
   profitMarginPercentage: number;

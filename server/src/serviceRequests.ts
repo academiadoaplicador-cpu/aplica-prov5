@@ -5,7 +5,7 @@ import {
   isEstimateAvailable,
   describeParts,
   fullWrapPartIds,
-  MATERIAL_TYPES,
+  CLIENT_MATERIAL_TYPES,
   type DecorativeItemInput,
   type EstimateInput,
 } from './estimate.js';
@@ -208,7 +208,7 @@ export async function resolveScope(
     };
   }
 
-  if (!MATERIAL_TYPES.includes(materialType as (typeof MATERIAL_TYPES)[number])) {
+  if (!CLIENT_MATERIAL_TYPES.includes(materialType)) {
     return { ok: false, status: 400, error: 'Selecione um produto válido' };
   }
 
@@ -779,6 +779,13 @@ export async function sendProposal(
     const found = await loadCatalogMaterial(client, input.materialId);
     if (!found) {
       return { ok: false, status: 404, error: 'Material não encontrado no catálogo' };
+    }
+    if (found.type !== row.material_type) {
+      return {
+        ok: false,
+        status: 400,
+        error: `O cliente pediu ${row.material_type as string}. Escolha um material desse tipo.`,
+      };
     }
     material = {
       id: found.id,
