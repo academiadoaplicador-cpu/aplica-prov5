@@ -8,7 +8,7 @@ import {
   type ClientProfileInput,
 } from './clientProfileData.js';
 import { resolveCatalogUserId } from './catalog.js';
-import { buildEstimate, MATERIAL_TYPES } from './estimate.js';
+import { buildEstimate, isEstimateAvailable, MATERIAL_TYPES } from './estimate.js';
 import {
   createServiceRequest,
   mapServiceRequest,
@@ -85,7 +85,7 @@ export function createClientRouter(pool: Pool): Router {
   router.get('/catalog', async (_req: Request, res: Response) => {
     try {
       const catalogUserId = await resolveCatalogUserId(pool);
-      const [vehicles, finishes] = await Promise.all([
+      const [vehicles, finishes, materials] = await Promise.all([
         pool.query(
           `SELECT id, make, model, year, size, part_measurements
            FROM vehicles WHERE user_id = $1
@@ -98,6 +98,12 @@ export function createClientRouter(pool: Pool): Router {
            FROM materials
            WHERE user_id = $1 AND price_per_m2 > 0
            GROUP BY type`,
+          [catalogUserId],
+        ),
+        pool.query(
+          `SELECT id, type, brand, line, color_texture
+           FROM materials WHERE user_id = $1
+           ORDER BY brand, line, color_texture`,
           [catalogUserId],
         ),
       ]);
@@ -121,6 +127,16 @@ export function createClientRouter(pool: Pool): Router {
         materialTypes: MATERIAL_TYPES.filter(
           (t) => !CLIENT_HIDDEN_MATERIAL_TYPES.has(t) && (medians.get(t) ?? 0) > 0,
         ),
+        // Para "só a aplicação": o cliente escolhe o material que vai fornecer. Sem preço.
+        materials: materials.rows
+          .filter((m) => !CLIENT_HIDDEN_MATERIAL_TYPES.has(m.type as string))
+          .map((m) => ({
+            id: m.id as string,
+            type: m.type as string,
+            brand: m.brand as string,
+            line: m.line as string,
+            colorTexture: m.color_texture as string,
+          })),
         expiryHours: REQUEST_EXPIRY_HOURS,
       });
     } catch (e) {
@@ -139,7 +155,7 @@ export function createClientRouter(pool: Pool): Router {
         return;
       }
       const estimate = await buildEstimate(pool, scope.estimateInput);
-      if (estimate.referencePricePerM2 <= 0) {
+      if (!isEstimateAvailable(estimate)) {
         res.status(409).json({
           error: 'Não há preço de referência para este acabamento. Tente outro.',
         });

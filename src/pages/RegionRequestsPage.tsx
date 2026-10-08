@@ -9,6 +9,7 @@ import {
   Phone,
   RefreshCw,
   ShieldOff,
+  Wrench,
   X,
 } from 'lucide-react';
 import {
@@ -219,6 +220,7 @@ export default function RegionRequestsPage() {
                         {request.clientName} · {request.materialType} · {request.estimatedM2} m²
                         · cerca de {request.estimatedHours} h
                       </p>
+                      <ClientSuppliedBadge request={request} />
                     </div>
                     <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-mono uppercase text-amber-400">
                       <Clock size={12} />
@@ -307,6 +309,7 @@ export default function RegionRequestsPage() {
                         ? ` · aceito em ${new Date(request.acceptedAt).toLocaleDateString('pt-BR')}`
                         : ''}
                     </p>
+                    <ClientSuppliedBadge request={request} />
                     {request.client?.phone && (
                       <a
                         href={`tel:${request.client.phone}`}
@@ -374,6 +377,18 @@ export default function RegionRequestsPage() {
         </section>
       )}
     </div>
+  );
+}
+
+function ClientSuppliedBadge({ request }: { request: ServiceRequest }) {
+  if (request.supplyMode !== 'mao_de_obra') return null;
+  return (
+    <p className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
+      <Wrench size={12} />
+      Só a aplicação · cliente fornece
+      {request.clientMaterial &&
+        `: ${request.clientMaterial.product} · ${request.clientMaterial.color}`}
+    </p>
   );
 }
 

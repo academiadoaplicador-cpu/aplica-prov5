@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { resolveCatalogUserId } from './catalog.js';
 import {
   buildEstimate,
+  isEstimateAvailable,
   describeParts,
   fullWrapPartIds,
   MATERIAL_TYPES,
@@ -19,9 +20,14 @@ export type RequestStatus = 'Aguardando aceite' | 'Aceito' | 'Expirado' | 'Cance
 
 export type ProposalStatus = 'Enviada' | 'Aceita' | 'Recusada';
 
+export type SupplyMode = 'completo' | 'mao_de_obra';
+
 export interface CreateRequestInput {
   type?: string;
   subType?: string;
+  supplyMode?: SupplyMode;
+  /** Só aplicação: material do catálogo que o cliente vai fornecer. */
+  clientMaterialId?: string;
   materialType?: string;
   notes?: string;
   /** Automotivo */
@@ -65,6 +71,14 @@ export function mapServiceRequest(row: Record<string, unknown>) {
     budgetId: (row.budget_id as string) || undefined,
     expiresAt: new Date(row.expires_at as string | Date).toISOString(),
     createdAt: new Date(row.created_at as string | Date).toISOString(),
+    supplyMode: ((row.supply_mode as string) || 'completo') as SupplyMode,
+    clientMaterial: row.client_material_id
+      ? {
+          id: row.client_material_id as string,
+          product: (row.client_material_product as string) || '',
+          color: (row.client_material_color as string) || '',
+        }
+      : undefined,
     proposal: row.proposal_status
       ? {
           status: row.proposal_status as ProposalStatus,
@@ -126,16 +140,76 @@ async function loadVehicle(db: Pool | PoolClient, vehicleId: string) {
  * Tudo que define preço (medidas do veículo, dificuldade das peças, preço de
  * referência) vem do catálogo no servidor, nunca do corpo da requisição.
  */
+interface ClientMaterial {
+  id: string;
+  product: string;
+  color: string;
+}
+
+async function loadCatalogMaterial(db: Pool | PoolClient, materialId: string) {
+  const catalogUserId = await resolveCatalogUserId(db);
+  const result = await db.query(
+    `SELECT id, brand, line, color_texture, type, price_per_m2
+     FROM materials WHERE user_id = $1 AND id = $2`,
+    [catalogUserId, materialId],
+  );
+  return result.rows[0] as
+    | {
+        id: string;
+        brand: string;
+        line: string;
+        color_texture: string;
+        type: string;
+        price_per_m2: string;
+      }
+    | undefined;
+}
+
+function clientSuppliedNote(material: ClientMaterial | undefined): string | null {
+  if (!material) return null;
+  return `Somente mão de obra — material fornecido pelo cliente: ${material.product} · ${material.color}`;
+}
+
+function productLabel(material: { brand: string; line: string }): string {
+  return [material.brand, material.line].filter(Boolean).join(' · ');
+}
+
 export async function resolveScope(
   db: Pool | PoolClient,
   input: CreateRequestInput,
 ): Promise<
-  | { ok: true; estimateInput: EstimateInput; scopeLabel: string; partIds: string[] }
+  | {
+      ok: true;
+      estimateInput: EstimateInput;
+      scopeLabel: string;
+      partIds: string[];
+      supplyMode: SupplyMode;
+      clientMaterial?: ClientMaterial;
+    }
   | { ok: false; status: number; error: string }
 > {
-  const materialType = (input.materialType || '').trim();
+  const supplyMode: SupplyMode = input.supplyMode === 'mao_de_obra' ? 'mao_de_obra' : 'completo';
+  const laborOnly = supplyMode === 'mao_de_obra';
+  let materialType = (input.materialType || '').trim();
+  let clientMaterial: ClientMaterial | undefined;
+
+  if (laborOnly) {
+    const material = input.clientMaterialId
+      ? await loadCatalogMaterial(db, input.clientMaterialId)
+      : undefined;
+    if (!material) {
+      return { ok: false, status: 400, error: 'Escolha o material que você vai fornecer' };
+    }
+    materialType = material.type;
+    clientMaterial = {
+      id: material.id,
+      product: productLabel(material),
+      color: material.color_texture,
+    };
+  }
+
   if (!MATERIAL_TYPES.includes(materialType as (typeof MATERIAL_TYPES)[number])) {
-    return { ok: false, status: 400, error: 'Selecione um acabamento válido' };
+    return { ok: false, status: 400, error: 'Selecione um produto válido' };
   }
 
   if (input.type === 'Automotivo') {
@@ -174,9 +248,12 @@ export async function resolveScope(
       ok: true,
       partIds,
       scopeLabel,
+      supplyMode,
+      clientMaterial,
       estimateInput: {
         type: 'Automotivo',
         materialType,
+        laborOnly,
         partIds,
         partMeasurements: vehicle.part_measurements,
       },
@@ -212,7 +289,9 @@ export async function resolveScope(
     ok: true,
     partIds: [],
     scopeLabel,
-    estimateInput: { type: 'Decorativo', materialType, items },
+    supplyMode,
+    clientMaterial,
+    estimateInput: { type: 'Decorativo', materialType, laborOnly, items },
   };
 }
 
@@ -261,7 +340,7 @@ export async function createServiceRequest(
   }
 
   const estimate = await buildEstimate(client, scope.estimateInput);
-  if (estimate.referencePricePerM2 <= 0) {
+  if (!isEstimateAvailable(estimate)) {
     return {
       ok: false,
       status: 409,
@@ -278,13 +357,15 @@ export async function createServiceRequest(
       vehicle_id, part_ids, items, material_type,
       estimated_m2, estimated_hours, reference_price_per_m2,
       suggested_price, price_min, price_max,
-      city, state_code, cep, expires_at
+      city, state_code, cep, expires_at,
+      supply_mode, client_material_id, client_material_product, client_material_color
     ) VALUES (
       $1, $2, 'Aguardando aceite', $3, $4, $5, $6,
       $7, $8, $9, $10,
       $11, $12, $13,
       $14, $15, $16,
-      $17, $18, $19, NOW() + ($20 || ' hours')::interval
+      $17, $18, $19, NOW() + ($20 || ' hours')::interval,
+      $21, $22, $23, $24
     )`,
     [
       id,
@@ -296,7 +377,7 @@ export async function createServiceRequest(
       input.vehicleId ?? null,
       scope.partIds,
       JSON.stringify(input.items || []),
-      input.materialType,
+      scope.estimateInput.materialType,
       estimate.estimatedM2,
       estimate.estimatedHours,
       estimate.referencePricePerM2,
@@ -307,6 +388,10 @@ export async function createServiceRequest(
       stateCode,
       cep || '',
       String(REQUEST_EXPIRY_HOURS),
+      scope.supplyMode,
+      scope.clientMaterial?.id ?? null,
+      scope.clientMaterial?.product ?? null,
+      scope.clientMaterial?.color ?? null,
     ],
   );
 
@@ -492,8 +577,8 @@ export async function acceptServiceRequest(
     `INSERT INTO budgets (
       user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id,
       status, date, items, material_id, total_hours, total_material_meters,
-      total_material_m2, total_cost, total_price, profit, type, sub_type
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+      total_material_m2, total_cost, total_price, profit, type, sub_type, description
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
     [
       applicatorId,
       budgetId,
@@ -517,6 +602,7 @@ export async function acceptServiceRequest(
       0,
       request.type,
       request.subType ?? null,
+      clientSuppliedNote(request.clientMaterial),
     ],
   );
 
@@ -648,9 +734,6 @@ export async function sendProposal(
   if (finalPrice === 'invalid') {
     return { ok: false, status: 400, error: 'Valor final inválido' };
   }
-  if (!input.materialId) {
-    return { ok: false, status: 400, error: 'Escolha o material da proposta' };
-  }
 
   const current = await client.query(
     `SELECT r.*, b.status AS budget_status
@@ -678,25 +761,35 @@ export async function sendProposal(
     };
   }
 
-  const catalogUserId = await resolveCatalogUserId(client);
-  const material = (
-    await client.query(
-      `SELECT id, brand, line, color_texture, type, price_per_m2
-       FROM materials WHERE user_id = $1 AND id = $2`,
-      [catalogUserId, input.materialId],
-    )
-  ).rows[0] as
-    | {
-        id: string;
-        brand: string;
-        line: string;
-        color_texture: string;
-        type: string;
-        price_per_m2: string;
-      }
-    | undefined;
-  if (!material) {
-    return { ok: false, status: 404, error: 'Material não encontrado no catálogo' };
+  // Só aplicação: o material é o que o cliente escolheu e não entra no preço.
+  const laborOnly = row.supply_mode === 'mao_de_obra';
+  let material: { id: string; type: string; product: string; color: string; pricePerM2: number };
+  if (laborOnly) {
+    material = {
+      id: (row.client_material_id as string) || '',
+      type: row.material_type as string,
+      product: (row.client_material_product as string) || '',
+      color: (row.client_material_color as string) || '',
+      pricePerM2: 0,
+    };
+  } else {
+    if (!input.materialId) {
+      return { ok: false, status: 400, error: 'Escolha o material da proposta' };
+    }
+    const found = await loadCatalogMaterial(client, input.materialId);
+    if (!found) {
+      return { ok: false, status: 404, error: 'Material não encontrado no catálogo' };
+    }
+    material = {
+      id: found.id,
+      type: found.type,
+      product: productLabel(found),
+      color: found.color_texture,
+      pricePerM2: customPricePerM2 ?? Number(found.price_per_m2),
+    };
+    if (!(material.pricePerM2 > 0)) {
+      return { ok: false, status: 400, error: 'Informe o preço por m² deste material' };
+    }
   }
 
   const settings = (
@@ -710,19 +803,13 @@ export async function sendProposal(
   const marginPct = settings ? Number(settings.profit_margin_percentage) : 30;
   const taxPct = settings ? Number(settings.tax_percentage) : 6;
 
-  const pricePerM2 = customPricePerM2 ?? Number(material.price_per_m2);
-  if (!(pricePerM2 > 0)) {
-    return { ok: false, status: 400, error: 'Informe o preço por m² deste material' };
-  }
-
+  const pricePerM2 = material.pricePerM2;
   const m2 = Number(row.estimated_m2);
   const hours = Number(row.estimated_hours);
   const baseCost = m2 * pricePerM2 + hours * hourlyRate;
   const suggested = baseCost * (1 + marginPct / 100) * (1 + taxPct / 100);
   const price = Math.round((finalPrice ?? suggested) * 100) / 100;
   const profit = price - baseCost - price * (taxPct / 100);
-
-  const product = [material.brand, material.line].filter(Boolean).join(' · ');
 
   await client.query(
     `UPDATE service_requests
@@ -743,8 +830,8 @@ export async function sendProposal(
       requestId,
       material.id,
       material.type,
-      product,
-      material.color_texture,
+      material.product,
+      material.color,
       pricePerM2,
       price,
       (input.note || '').trim().slice(0, 1000),
@@ -766,7 +853,7 @@ export async function sendProposal(
         applicatorId,
         row.budget_id,
         material.id,
-        customPricePerM2,
+        laborOnly ? 0 : customPricePerM2,
         m2,
         hours,
         Math.round(baseCost * 100) / 100,

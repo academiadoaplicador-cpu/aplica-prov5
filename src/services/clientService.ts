@@ -5,6 +5,7 @@ import {
   PaginatedResponse,
   PriceEstimate,
   ServiceRequest,
+  SupplyMode,
   User,
 } from '../types';
 import { ClientRegisterPayload } from '../types/auth';
@@ -13,6 +14,8 @@ import { ClientRegisterPayload } from '../types/auth';
 export interface ServiceRequestDraft {
   type: 'Automotivo' | 'Decorativo';
   subType?: string;
+  supplyMode: SupplyMode;
+  clientMaterialId?: string;
   materialType: string;
   notes?: string;
   vehicleId?: string;

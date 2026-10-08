@@ -103,6 +103,8 @@ export interface DecorativeItemInput {
 export interface EstimateInput {
   type: 'Automotivo' | 'Decorativo';
   materialType: string;
+  /** Cliente fornece o material: só a mão de obra entra na conta. */
+  laborOnly?: boolean;
   /** Automotivo */
   partIds?: string[];
   partMeasurements?: Record<string, { width: number; length: number }>;
@@ -120,6 +122,7 @@ export interface EstimateResult {
   productCount: number;
   minPricePerM2: number;
   maxPricePerM2: number;
+  laborOnly: boolean;
 }
 
 function round2(value: number): number {
@@ -188,13 +191,42 @@ export function priceFromScope(
     productCount: stats.productCount,
     minPricePerM2: round2(stats.minPerM2),
     maxPricePerM2: round2(stats.maxPerM2),
+    laborOnly: false,
   };
+}
+
+/** Só aplicação: sem material, a faixa usa os percentuais da tabela da plataforma. */
+export function laborOnlyFromScope(
+  scope: { m2: number; hours: number },
+  pricing: PlatformPricing,
+): EstimateResult {
+  const suggested = finalPrice(scope, 0, pricing);
+  return {
+    estimatedM2: round2(scope.m2),
+    estimatedHours: round2(scope.hours),
+    referencePricePerM2: 0,
+    suggestedPrice: round2(suggested),
+    priceMin: round2(suggested * (1 - pricing.rangeBelowPercentage / 100)),
+    priceMax: round2(suggested * (1 + pricing.rangeAbovePercentage / 100)),
+    productCount: 0,
+    minPricePerM2: 0,
+    maxPricePerM2: 0,
+    laborOnly: true,
+  };
+}
+
+/** Sem preço de referência não dá para estimar uma cotação completa. */
+export function isEstimateAvailable(estimate: EstimateResult): boolean {
+  return estimate.laborOnly || estimate.referencePricePerM2 > 0;
 }
 
 export async function buildEstimate(
   db: Pool | PoolClient,
   input: EstimateInput,
 ): Promise<EstimateResult> {
+  if (input.laborOnly) {
+    return laborOnlyFromScope(measureScope(input), await fetchPlatformPricing(db));
+  }
   const [pricing, stats] = await Promise.all([
     fetchPlatformPricing(db),
     catalogPriceStats(db, input.materialType),

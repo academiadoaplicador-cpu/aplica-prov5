@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, ClipboardList, Clock, Loader2, Phone, Plus, X } from 'lucide-react';
+import { Check, ClipboardList, Clock, Loader2, Phone, Plus, Wrench, X } from 'lucide-react';
 import { ServiceRequest, ServiceRequestProposal, ServiceRequestStatus } from '../../types';
 import { clientService } from '../../services/clientService';
 import { ROUTES } from '../../routes/paths';
@@ -15,10 +15,12 @@ const STATUS_STYLE: Record<ServiceRequestStatus, string> = {
 
 function ProposalCard({
   proposal,
+  laborOnly,
   responding,
   onRespond,
 }: {
   proposal: ServiceRequestProposal;
+  laborOnly: boolean;
   responding: boolean;
   onRespond: (accept: boolean, reason: string) => void;
 }) {
@@ -60,7 +62,9 @@ function ProposalCard({
 
       <p className="text-2xl font-bold text-white tracking-tight">
         {formatCurrency(proposal.price)}
-        <span className="ml-2 text-[11px] font-normal text-slate-500">valor final</span>
+        <span className="ml-2 text-[11px] font-normal text-slate-500">
+          {laborOnly ? 'só a aplicação — material por sua conta' : 'valor final'}
+        </span>
       </p>
 
       {proposal.note && (
@@ -250,6 +254,14 @@ export default function ClientOrdersPage() {
                     {request.materialType} · {request.estimatedM2} m² ·{' '}
                     {new Date(request.createdAt).toLocaleDateString('pt-BR')}
                   </p>
+                  {request.supplyMode === 'mao_de_obra' && (
+                    <p className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
+                      <Wrench size={12} />
+                      Só a aplicação · você fornece
+                      {request.clientMaterial &&
+                        `: ${request.clientMaterial.product} · ${request.clientMaterial.color}`}
+                    </p>
+                  )}
                 </div>
                 <span
                   className={cn(
@@ -318,6 +330,7 @@ export default function ClientOrdersPage() {
                 (request.proposal ? (
                   <ProposalCard
                     proposal={request.proposal}
+                    laborOnly={request.supplyMode === 'mao_de_obra'}
                     responding={responding === request.id}
                     onRespond={(accept, reason) => void handleRespond(request.id, accept, reason)}
                   />

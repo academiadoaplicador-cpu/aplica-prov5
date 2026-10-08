@@ -94,11 +94,13 @@ export default function ProposalPanel({
     [materials, type, brand, line],
   );
 
+  const laborOnly = request.supplyMode === 'mao_de_obra';
   const material = materials.find((m) => m.id === materialId);
-  const pricePerM2 = parsePositive(customPrice) ?? material?.pricePerM2 ?? 0;
+  const pricePerM2 = laborOnly ? 0 : (parsePositive(customPrice) ?? material?.pricePerM2 ?? 0);
+  const ready = laborOnly || Boolean(material);
 
   const totals = useMemo(() => {
-    if (!settings || !material) return null;
+    if (!settings || !ready) return null;
     const materialCost = request.estimatedM2 * pricePerM2;
     const laborCost = request.estimatedHours * settings.hourlyRate;
     const suggested =
@@ -106,12 +108,12 @@ export default function ProposalPanel({
       (1 + settings.profitMarginPercentage / 100) *
       (1 + settings.taxPercentage / 100);
     return { materialCost, laborCost, suggested };
-  }, [settings, material, pricePerM2, request.estimatedM2, request.estimatedHours]);
+  }, [settings, ready, pricePerM2, request.estimatedM2, request.estimatedHours]);
 
   const finalValue = parsePositive(finalPrice) ?? totals?.suggested ?? 0;
 
   const handleSend = async () => {
-    if (!material) {
+    if (!ready) {
       setError('Escolha marca, linha e cor/textura do material.');
       return;
     }
@@ -119,8 +121,8 @@ export default function ProposalPanel({
     setError('');
     try {
       await applicatorService.sendProposal(request.id, {
-        materialId: material.id,
-        customPricePerM2: parsePositive(customPrice),
+        materialId: laborOnly ? undefined : material?.id,
+        customPricePerM2: laborOnly ? null : parsePositive(customPrice),
         finalPrice: parsePositive(finalPrice),
         note,
       });
@@ -144,11 +146,26 @@ export default function ProposalPanel({
   return (
     <div className="mt-4 space-y-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4">
       <p className="text-xs text-slate-300 leading-relaxed">
-        Escolha o material que você vai usar. O valor é calculado com as suas configurações
-        financeiras sobre {request.estimatedM2} m² e cerca de {request.estimatedHours} h, e
-        você pode ajustar o valor final antes de enviar ao cliente.
+        {laborOnly
+          ? 'Cotação só da aplicação: o cliente fornece o material abaixo e ele não entra no valor.'
+          : 'Escolha o material que você vai usar.'}{' '}
+        O valor é calculado com as suas configurações financeiras sobre {request.estimatedM2} m²
+        e cerca de {request.estimatedHours} h, e você pode ajustar o valor final antes de enviar
+        ao cliente.
       </p>
 
+      {laborOnly ? (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-amber-400">
+            Material fornecido pelo cliente
+          </p>
+          <p className="mt-1 text-sm text-white">
+            {request.clientMaterial
+              ? `${request.clientMaterial.product} · ${request.clientMaterial.color}`
+              : request.materialType}
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className={labelClass}>Tipo</label>
@@ -226,23 +243,26 @@ export default function ProposalPanel({
           </select>
         </div>
       </div>
+      )}
 
-      {material && totals && (
+      {totals && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Preço por m² (opcional)</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step={0.01}
-                value={customPrice}
-                onChange={(e) => setCustomPrice(e.target.value)}
-                placeholder={`Catálogo: ${material.pricePerM2.toFixed(2)}`}
-                className={inputClass}
-              />
-            </div>
+            {material && !laborOnly && (
+              <div>
+                <label className={labelClass}>Preço por m² (opcional)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step={0.01}
+                  value={customPrice}
+                  onChange={(e) => setCustomPrice(e.target.value)}
+                  placeholder={`Catálogo: ${material.pricePerM2.toFixed(2)}`}
+                  className={inputClass}
+                />
+              </div>
+            )}
             <div>
               <label className={labelClass}>Valor final (opcional)</label>
               <input
@@ -261,7 +281,9 @@ export default function ProposalPanel({
           <dl className="space-y-1.5 text-xs">
             <div className="flex justify-between gap-4">
               <dt className="text-slate-500">
-                Material ({request.estimatedM2} m² × {formatCurrency(pricePerM2)})
+                {laborOnly
+                  ? 'Material (fornecido pelo cliente)'
+                  : `Material (${request.estimatedM2} m² × ${formatCurrency(pricePerM2)})`}
               </dt>
               <dd className="text-slate-300">{formatCurrency(totals.materialCost)}</dd>
             </div>
@@ -312,7 +334,7 @@ export default function ProposalPanel({
         <button
           type="button"
           onClick={() => void handleSend()}
-          disabled={sending || !material}
+          disabled={sending || !ready}
           className="flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold"
         >
           {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}

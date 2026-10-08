@@ -7,15 +7,19 @@ import {
   Check,
   Home,
   Loader2,
+  Package,
   Plus,
+  Search,
   Send,
   Trash2,
+  Wrench,
 } from 'lucide-react';
 import {
   ClientCatalog,
   ClientCatalogVehicle,
   PriceEstimate,
   ServiceRequestItem,
+  SupplyMode,
 } from '../../types';
 import { VEHICLE_PARTS_DATA } from '../../types/vehicleParts';
 import { clientService, type ServiceRequestDraft } from '../../services/clientService';
@@ -26,7 +30,39 @@ const inputClass =
   'w-full h-11 bg-slate-950 border border-slate-800 rounded-xl px-4 text-base sm:text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent placeholder:text-slate-600';
 const labelClass = 'text-xs text-slate-500 mb-2 block font-mono';
 
-const STEPS = ['Serviço', 'Escopo', 'Produto', 'Enviar'] as const;
+type StepKey =
+  | 'cotacao'
+  | 'servico'
+  | 'escopo'
+  | 'produto'
+  | 'tipo'
+  | 'marca'
+  | 'linha'
+  | 'cor'
+  | 'enviar';
+
+const STEP_LABEL: Record<StepKey, string> = {
+  cotacao: 'Tipo de cotação',
+  servico: 'Serviço',
+  escopo: 'Escopo',
+  produto: 'Produto',
+  tipo: 'Tipo do material',
+  marca: 'Marca',
+  linha: 'Linha / produto',
+  cor: 'Cor / textura',
+  enviar: 'Enviar',
+};
+
+/** Na cotação só da aplicação, o cliente escolhe o próprio material em passos. */
+const STEPS_BY_MODE: Record<SupplyMode, StepKey[]> = {
+  completo: ['cotacao', 'servico', 'escopo', 'produto', 'enviar'],
+  mao_de_obra: ['cotacao', 'servico', 'escopo', 'tipo', 'marca', 'linha', 'cor', 'enviar'],
+};
+
+const SUPPLY_LABEL: Record<SupplyMode, string> = {
+  completo: 'Material + aplicação',
+  mao_de_obra: 'Só a aplicação (material meu)',
+};
 
 const SUB_TYPES = ['Móveis', 'Eletrodomésticos', 'Parede'] as const;
 
@@ -39,6 +75,10 @@ const SURFACE_KINDS: { complexity: number; label: string; hint: string }[] = [
 
 const PART_NAME = new Map(VEHICLE_PARTS_DATA.map((p) => [p.id, p.name]));
 
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
 function emptyItem(): ServiceRequestItem {
   return { name: '', width: 0, height: 0, quantity: 1, complexity: 1 };
 }
@@ -50,6 +90,11 @@ export default function ClientNewRequestPage() {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [step, setStep] = useState(0);
 
+  const [supplyMode, setSupplyMode] = useState<SupplyMode | null>(null);
+  const [laborType, setLaborType] = useState('');
+  const [laborBrand, setLaborBrand] = useState('');
+  const [laborLine, setLaborLine] = useState('');
+  const [clientMaterialId, setClientMaterialId] = useState('');
   const [type, setType] = useState<'Automotivo' | 'Decorativo' | null>(null);
   const [subType, setSubType] = useState<string>('Móveis');
   const [vehicleId, setVehicleId] = useState('');
@@ -91,21 +136,71 @@ export default function ClientNewRequestPage() {
       .slice(0, 40);
   }, [catalog, vehicleSearch]);
 
+  const steps = STEPS_BY_MODE[supplyMode ?? 'completo'];
+  const current = steps[step];
+  const laborOnly = supplyMode === 'mao_de_obra';
+
+  const laborMaterials = catalog?.materials ?? [];
+  const laborTypes = useMemo(
+    () => uniqueSorted(laborMaterials.map((m) => m.type)),
+    [laborMaterials],
+  );
+  const laborBrands = useMemo(
+    () => uniqueSorted(laborMaterials.filter((m) => m.type === laborType).map((m) => m.brand)),
+    [laborMaterials, laborType],
+  );
+  const laborLines = useMemo(
+    () =>
+      uniqueSorted(
+        laborMaterials
+          .filter((m) => m.type === laborType && m.brand === laborBrand)
+          .map((m) => m.line),
+      ),
+    [laborMaterials, laborType, laborBrand],
+  );
+  const laborColors = useMemo(
+    () =>
+      laborMaterials.filter(
+        (m) => m.type === laborType && m.brand === laborBrand && m.line === laborLine,
+      ),
+    [laborMaterials, laborType, laborBrand, laborLine],
+  );
+  const clientMaterial = laborMaterials.find((m) => m.id === clientMaterialId);
+
   const draft: ServiceRequestDraft | null = useMemo(() => {
-    if (!type || !materialType) return null;
+    if (!type || !supplyMode) return null;
+    const material = laborOnly
+      ? { supplyMode, clientMaterialId, materialType: laborType }
+      : { supplyMode, materialType };
+    if (!material.materialType || (laborOnly && !clientMaterialId)) return null;
     if (type === 'Automotivo') {
       if (!vehicleId) return null;
       if (scope === 'parcial' && partIds.length === 0) return null;
-      return { type, materialType, vehicleId, scope, partIds, notes };
+      return { type, ...material, vehicleId, scope, partIds, notes };
     }
     const valid = items.filter((i) => Number(i.width) > 0 && Number(i.height) > 0);
     if (valid.length === 0) return null;
-    return { type, subType, materialType, items: valid, notes };
-  }, [type, materialType, vehicleId, scope, partIds, items, subType, notes]);
+    return { type, subType, ...material, items: valid, notes };
+  }, [
+    type,
+    supplyMode,
+    laborOnly,
+    clientMaterialId,
+    laborType,
+    materialType,
+    vehicleId,
+    scope,
+    partIds,
+    items,
+    subType,
+    notes,
+  ]);
 
-  // Recalcula a faixa quando o escopo muda, mas só a partir da etapa do acabamento.
+  const showEstimate = current === 'produto' || current === 'cor' || current === 'enviar';
+
+  // Recalcula a faixa quando o escopo ou o material mudam, só nas etapas que a mostram.
   useEffect(() => {
-    if (step < 2 || !draft) {
+    if (!showEstimate || !draft) {
       setEstimate(null);
       return;
     }
@@ -132,18 +227,32 @@ export default function ClientNewRequestPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [draft, step]);
+  }, [draft, showEstimate]);
 
   const canAdvance = (): boolean => {
-    if (step === 0) return type !== null;
-    if (step === 1) {
-      if (type === 'Automotivo') {
-        return Boolean(vehicleId) && (scope === 'completo' || partIds.length > 0);
-      }
-      return items.some((i) => Number(i.width) > 0 && Number(i.height) > 0);
+    switch (current) {
+      case 'cotacao':
+        return supplyMode !== null;
+      case 'servico':
+        return type !== null;
+      case 'escopo':
+        if (type === 'Automotivo') {
+          return Boolean(vehicleId) && (scope === 'completo' || partIds.length > 0);
+        }
+        return items.some((i) => Number(i.width) > 0 && Number(i.height) > 0);
+      case 'produto':
+        return Boolean(materialType);
+      case 'tipo':
+        return Boolean(laborType);
+      case 'marca':
+        return Boolean(laborBrand);
+      case 'linha':
+        return Boolean(laborLine);
+      case 'cor':
+        return Boolean(clientMaterialId);
+      default:
+        return true;
     }
-    if (step === 2) return Boolean(materialType);
-    return true;
   };
 
   const handleSubmit = async () => {
@@ -190,14 +299,14 @@ export default function ClientNewRequestPage() {
         </p>
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">Pedir um orçamento</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Etapa {step + 1} de {STEPS.length} — {STEPS[step]}
+          Etapa {step + 1} de {steps.length} — {STEP_LABEL[current]}
         </p>
       </header>
 
       <div className="flex gap-1.5">
-        {STEPS.map((label, index) => (
+        {steps.map((key, index) => (
           <div
-            key={label}
+            key={key}
             className={cn(
               'h-1 flex-1 rounded-full transition-colors',
               index <= step ? 'bg-emerald-500' : 'bg-slate-800',
@@ -207,7 +316,29 @@ export default function ClientNewRequestPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-5">
-        {step === 0 && (
+        {current === 'cotacao' && (
+          <div className="space-y-3">
+            <label className={labelClass}>Como você quer a cotação?</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ChoiceCard
+                active={supplyMode === 'completo'}
+                onClick={() => setSupplyMode('completo')}
+                icon={<Package size={20} />}
+                title="Material + aplicação"
+                description="O aplicador indica e fornece o material, e faz a aplicação"
+              />
+              <ChoiceCard
+                active={supplyMode === 'mao_de_obra'}
+                onClick={() => setSupplyMode('mao_de_obra')}
+                icon={<Wrench size={20} />}
+                title="Só a aplicação"
+                description="Você já tem o material; o aplicador cobra apenas o serviço"
+              />
+            </div>
+          </div>
+        )}
+
+        {current === 'servico' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <ChoiceCard
               active={type === 'Automotivo'}
@@ -226,7 +357,7 @@ export default function ClientNewRequestPage() {
           </div>
         )}
 
-        {step === 1 && type === 'Automotivo' && (
+        {current === 'escopo' && type === 'Automotivo' && (
           <div className="space-y-5">
             <div>
               <label className={labelClass} htmlFor="vehicle-search">
@@ -320,7 +451,7 @@ export default function ClientNewRequestPage() {
           </div>
         )}
 
-        {step === 1 && type === 'Decorativo' && (
+        {current === 'escopo' && type === 'Decorativo' && (
           <div className="space-y-5">
             <div>
               <label className={labelClass}>O que você quer envelopar?</label>
@@ -450,7 +581,67 @@ export default function ClientNewRequestPage() {
           </div>
         )}
 
-        {step === 2 && (
+        {current === 'tipo' && (
+          <OptionList
+            label="Qual é o tipo do material que você tem?"
+            options={laborTypes.map((t) => ({
+              value: t,
+              title: t,
+              hint: FINISH_HINT[t],
+            }))}
+            selected={laborType}
+            onSelect={(value) => {
+              if (value === laborType) return;
+              setLaborType(value);
+              setLaborBrand('');
+              setLaborLine('');
+              setClientMaterialId('');
+            }}
+          />
+        )}
+
+        {current === 'marca' && (
+          <OptionList
+            label="De qual marca?"
+            options={laborBrands.map((b) => ({ value: b, title: b }))}
+            selected={laborBrand}
+            onSelect={(value) => {
+              if (value === laborBrand) return;
+              setLaborBrand(value);
+              setLaborLine('');
+              setClientMaterialId('');
+            }}
+          />
+        )}
+
+        {current === 'linha' && (
+          <OptionList
+            label="Qual linha / produto?"
+            options={laborLines.map((l) => ({ value: l, title: l }))}
+            selected={laborLine}
+            onSelect={(value) => {
+              if (value === laborLine) return;
+              setLaborLine(value);
+              setClientMaterialId('');
+            }}
+          />
+        )}
+
+        {current === 'cor' && (
+          <div className="space-y-4">
+            <OptionList
+              label="Qual cor / textura?"
+              options={laborColors.map((m) => ({ value: m.id, title: m.colorTexture || m.line }))}
+              selected={clientMaterialId}
+              onSelect={setClientMaterialId}
+            />
+            {clientMaterialId && (
+              <EstimateBox estimate={estimate} loading={estimating} error={estimateError} />
+            )}
+          </div>
+        )}
+
+        {current === 'produto' && (
           <div className="space-y-4">
             <div>
               <label className={labelClass}>Qual acabamento você prefere?</label>
@@ -475,14 +666,22 @@ export default function ClientNewRequestPage() {
           </div>
         )}
 
-        {step === 3 && (
+        {current === 'enviar' && (
           <div className="space-y-5">
             <EstimateBox estimate={estimate} loading={estimating} error={estimateError} />
 
             <dl className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2 text-sm">
+              <SummaryRow label="Cotação" value={supplyMode ? SUPPLY_LABEL[supplyMode] : '—'} />
               <SummaryRow label="Serviço" value={type || '—'} />
               <SummaryRow label="Escopo" value={estimate?.scopeLabel || '—'} />
-              <SummaryRow label="Produto" value={materialType} />
+              {laborOnly && clientMaterial ? (
+                <SummaryRow
+                  label="Seu material"
+                  value={`${clientMaterial.brand} · ${clientMaterial.line} · ${clientMaterial.colorTexture}`}
+                />
+              ) : (
+                <SummaryRow label="Produto" value={materialType} />
+              )}
               {estimate && (
                 <SummaryRow label="Área estimada" value={`${estimate.estimatedM2} m²`} />
               )}
@@ -527,7 +726,7 @@ export default function ClientNewRequestPage() {
           {step === 0 ? 'Cancelar' : 'Voltar'}
         </button>
 
-        {step < STEPS.length - 1 ? (
+        {step < steps.length - 1 ? (
           <button
             type="button"
             disabled={!canAdvance()}
@@ -597,18 +796,89 @@ function EstimateBox({
           <p className="mt-2 text-xs text-slate-500">
             {estimate.estimatedM2} m² · cerca de {estimate.estimatedHours} h de aplicação
           </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Com base em {estimate.productCount}{' '}
-            {estimate.productCount === 1 ? 'produto' : 'produtos'} do catálogo, de{' '}
-            {formatCurrency(estimate.minPricePerM2)} a {formatCurrency(estimate.maxPricePerM2)}{' '}
-            por m², conforme marca, linha e cor/textura.
-          </p>
+          {estimate.laborOnly ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Somente a mão de obra. O material é fornecido por você e não entra no valor.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">
+              Com base em {estimate.productCount}{' '}
+              {estimate.productCount === 1 ? 'produto' : 'produtos'} do catálogo, de{' '}
+              {formatCurrency(estimate.minPricePerM2)} a {formatCurrency(estimate.maxPricePerM2)}{' '}
+              por m², conforme marca, linha e cor/textura.
+            </p>
+          )}
           <p className="mt-3 text-[11px] text-slate-600 leading-relaxed">
             Este é um valor prévio, só para referência. O valor final é fechado com o
             aplicador que aceitar o pedido, depois que ele confirmar as medidas e o produto.
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+/** Lista de escolha única; com muitas opções, ganha uma busca no topo. */
+function OptionList({
+  label,
+  options,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  options: { value: string; title: string; hint?: string }[];
+  selected: string;
+  onSelect: (value: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const visible = q ? options.filter((o) => o.title.toLowerCase().includes(q)) : options;
+
+  return (
+    <div>
+      <label className={labelClass}>{label}</label>
+      {options.length > 8 && (
+        <div className="relative mb-3">
+          <Search
+            size={15}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar..."
+            className={cn(inputClass, 'pl-10')}
+          />
+        </div>
+      )}
+      <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-800 divide-y divide-slate-800/80">
+        {visible.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-slate-500">Nada encontrado.</p>
+        ) : (
+          visible.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onSelect(option.value)}
+              className={cn(
+                'w-full flex items-center gap-3 text-left px-4 py-3 transition-colors',
+                selected === option.value
+                  ? 'bg-emerald-600/10 text-emerald-300'
+                  : 'text-slate-300 hover:bg-slate-800/60',
+              )}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{option.title}</span>
+                {option.hint && (
+                  <span className="block mt-0.5 text-xs text-slate-500">{option.hint}</span>
+                )}
+              </span>
+              {selected === option.value && <Check size={15} className="shrink-0" />}
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }

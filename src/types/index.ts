@@ -438,6 +438,9 @@ export type ServiceRequestStatus =
 
 export type ProposalStatus = 'Enviada' | 'Aceita' | 'Recusada';
 
+/** 'completo': aplicador fornece o material. 'mao_de_obra': cliente fornece. */
+export type SupplyMode = 'completo' | 'mao_de_obra';
+
 /** Proposta do aplicador com o material escolhido e o valor real. */
 export interface ServiceRequestProposal {
   status: ProposalStatus;
@@ -496,6 +499,9 @@ export interface ServiceRequest {
   };
   /** Preenchido no mural e na lista de aceitos do aplicador. */
   clientName?: string;
+  supplyMode: SupplyMode;
+  /** Só aplicação: material que o cliente vai fornecer. */
+  clientMaterial?: { id: string; product: string; color: string };
   proposal?: ServiceRequestProposal;
   /** Lado do aplicador: status do orçamento gerado no aceite. */
   budgetStatus?: string;
@@ -516,6 +522,7 @@ export interface PriceEstimate {
   productCount: number;
   minPricePerM2: number;
   maxPricePerM2: number;
+  laborOnly: boolean;
   scopeLabel: string;
 }
 
@@ -528,9 +535,18 @@ export interface ClientCatalogVehicle {
   parts: { id: string; width: number; length: number }[];
 }
 
+export interface ClientCatalogMaterial {
+  id: string;
+  type: string;
+  brand: string;
+  line: string;
+  colorTexture: string;
+}
+
 export interface ClientCatalog {
   vehicles: ClientCatalogVehicle[];
   materialTypes: string[];
+  materials: ClientCatalogMaterial[];
   expiryHours: number;
 }
 
