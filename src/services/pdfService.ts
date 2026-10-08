@@ -1,9 +1,10 @@
 import { jsPDF } from 'jspdf';
-import { Budget, BudgetPiece, Material } from '../types';
+import { Budget, Material } from '../types';
 import { formatCurrency } from '../lib/utils';
 import { databaseService } from './databaseService';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
-import { getBudgetPieceNames } from '../utils/vehiclePartsUtils';
+import { getPartInfo } from '../utils/vehiclePartsUtils';
+import { getBudgetLineItems } from '../utils/budgetLineItems';
 
 const PAGE_W = 210;
 const PAGE_H = 297;
@@ -123,11 +124,6 @@ function pdfUnit(value: string, unit: 'm' | 'm2' | 'h'): string {
 function safeText(value: unknown, fallback = ''): string {
   if (value === null || value === undefined) return fallback;
   return String(value);
-}
-
-function getDecorativePieces(budget: Budget): BudgetPiece[] {
-  const items = budget.items ?? [];
-  return items.filter((item) => item.name && String(item.name).trim().length > 0);
 }
 
 function truncateLines(
@@ -328,6 +324,7 @@ class PdfBuilder {
       truncateLines(this.doc, line, innerW, 2),
     );
     const cardH = 14 + wrappedLines.length * 4;
+    this.ensureSpace(cardH + 6);
 
     this.drawCard(MARGIN, this.y, CONTENT_W, cardH, C.white, C.slate200);
     fill(this.doc, this.accent);
@@ -388,6 +385,37 @@ class PdfBuilder {
     }
 
     this.y += cardH + 4;
+  }
+
+  /** Cabeçalho de um item quando o orçamento tem vários. */
+  drawItemHeading(index: number, count: number, label: string) {
+    this.ensureSpace(70);
+    this.y += 2;
+    fill(this.doc, this.accent);
+    this.doc.roundedRect(MARGIN, this.y, CONTENT_W, 9, 1.5, 1.5, 'F');
+    this.doc.setFont('helvetica', 'bold');
+    this.doc.setFontSize(8);
+    textColor(this.doc, C.white);
+    const prefix = `ITEM ${index + 1} DE ${count}`;
+    this.doc.text(prefix, MARGIN + 4, this.y + 6);
+    const prefixW = this.doc.getTextWidth(prefix);
+    this.doc.setFont('helvetica', 'normal');
+    const labelText = truncateLines(this.doc, label, CONTENT_W - prefixW - 14, 1)[0];
+    this.doc.text(labelText, MARGIN + 8 + prefixW, this.y + 6);
+    this.y += 14;
+  }
+
+  drawItemSubtotal(value: number) {
+    this.ensureSpace(12);
+    this.drawCard(MARGIN, this.y, CONTENT_W, 9, C.slate100, C.slate200);
+    this.doc.setFont('helvetica', 'bold');
+    this.doc.setFontSize(7.5);
+    textColor(this.doc, C.slate600);
+    this.doc.text('SUBTOTAL DO ITEM', MARGIN + 4, this.y + 6);
+    this.doc.setFontSize(10);
+    textColor(this.doc, C.slate900);
+    this.doc.text(formatCurrency(value), PAGE_W - MARGIN - 4, this.y + 6.2, { align: 'right' });
+    this.y += 14;
   }
 
   drawMetrics(metrics: { label: string; value: string }[]) {
@@ -539,100 +567,96 @@ export const pdfService = {
     try {
       const logo = await resolvePdfLogo(profile?.photoUrl);
 
-    const material =
-      options?.material ??
-      materials.find((m) => m.id === budget.materialId);
-    const rollDims = getMaterialRollDimensions(material);
     const businessName = user?.businessName || 'Aplica PRO';
     const isAutomotive = budget.type === 'Automotivo';
     const accent = isAutomotive ? C.indigo600 : C.emerald600;
 
-    const projectLabel =
-      budget.vehicleModel || budget.applianceModel || 'Projeto personalizado';
-    const vehicleQty = Math.max(1, budget.vehicleQuantity ?? 1);
-    const displayProjectLabel =
-      isAutomotive && vehicleQty > 1
-        ? `${projectLabel} · ${vehicleQty} veículos`
-        : projectLabel;
-    const typeLabel = budget.subType
-      ? `${budget.type} · ${budget.subType}`
-      : budget.type;
+    const lineItems = getBudgetLineItems(budget);
+    const multi = lineItems.length > 1;
 
-    const vehicle = vehicles.find((v) => v.id === budget.vehicleId);
-    const automotivePieces = isAutomotive ? getBudgetPieceNames(budget, vehicle) : [];
-    const decorativePieces = !isAutomotive ? getDecorativePieces(budget) : [];
-    const decorativeLabels = decorativePieces.map((p) =>
-      p.quantity > 1 ? `${p.name} ×${p.quantity}` : p.name!,
-    );
+    // Cálculo e conteúdo de cada item, cada um com o próprio material.
+    const sections = lineItems.map((item) => {
+      const material =
+        (options?.material && options.material.id === item.materialId
+          ? options.material
+          : undefined) ?? materials.find((m) => m.id === item.materialId);
+      const rollDims = getMaterialRollDimensions(material);
+      const vehicleQty = Math.max(1, item.vehicleQuantity ?? 1);
+      const vehicle = vehicles.find((v) => v.id === item.vehicleId);
 
-    const pieceSummary = isAutomotive
-      ? automotivePieces.length > 0
-        ? vehicleQty > 1
-          ? `${vehicleQty} veículos · ${automotivePieces.length} peça(s) por unidade`
-          : `${automotivePieces.length} peça${automotivePieces.length > 1 ? 's' : ''}`
-        : undefined
-      : decorativeLabels.length > 0
-        ? `${decorativeLabels.length} face${decorativeLabels.length > 1 ? 's' : ''}`
-        : undefined;
+      const pieceLabels = isAutomotive
+        ? item.items
+            .map((p) => getPartInfo(p.partId, vehicle).name)
+            .filter((name): name is string => Boolean(name))
+        : item.items
+            .filter((p) => p.name && String(p.name).trim().length > 0)
+            .map((p) => (p.quantity > 1 ? `${p.name} ×${p.quantity}` : p.name!));
 
-    const materialMeta = [
-      material?.brand,
-      material?.type,
-      material?.line,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+      const rollsNeeded =
+        item.rollsNeeded ??
+        (rollDims && budgetNumber(item.totalMaterialMeters) > 0.001
+          ? Math.max(1, Math.ceil(budgetNumber(item.totalMaterialMeters) / rollDims.length))
+          : 1);
 
-    const rollInfo = rollDims
-      ? `Rolo: ${formatMeters(rollDims.width)} m (larg.) × ${formatMeters(rollDims.length)} m (comp.)`
-      : undefined;
+      const lengthMetric = {
+        label: isAutomotive && vehicleQty > 1 ? 'Comprimento total' : 'Comprimento usado',
+        value: pdfUnit(formatMeters(budgetNumber(item.totalMaterialMeters)), 'm'),
+      };
+      const areaMetric = {
+        label: 'Material usado + 15%',
+        value: pdfUnit(formatMeters(budgetNumber(item.totalMaterialM2)), 'm2'),
+      };
+      const hoursMetric = {
+        label: 'Mão de obra',
+        value: pdfUnit(budgetNumber(item.totalHours).toFixed(1), 'h'),
+      };
 
-    const rollsNeeded =
-      budget.rollsNeeded ??
-      (rollDims && budgetNumber(budget.totalMaterialMeters) > 0.001
-        ? Math.max(1, Math.ceil(budgetNumber(budget.totalMaterialMeters) / rollDims.length))
-        : 1);
+      return {
+        item,
+        vehicleQty,
+        pieceLabels,
+        material: {
+          name: material?.name || 'Material personalizado',
+          meta: [material?.brand, material?.type, material?.line].filter(Boolean).join(' · ') || '—',
+          colorTexture: material?.colorTexture || 'Padrão',
+          rollInfo: rollDims
+            ? `Rolo: ${formatMeters(rollDims.width)} m (larg.) × ${formatMeters(rollDims.length)} m (comp.)`
+            : undefined,
+          durability: material?.durability,
+        },
+        metrics: isAutomotive
+          ? [
+              { label: 'Veículos', value: String(vehicleQty) },
+              { label: 'Rolos necessários', value: String(rollsNeeded) },
+              lengthMetric,
+              areaMetric,
+              hoursMetric,
+            ]
+          : [lengthMetric, areaMetric, hoursMetric],
+      };
+    });
 
-    const lengthLabel =
-      isAutomotive && vehicleQty > 1 ? 'Comprimento total' : 'Comprimento usado';
+    const first = sections[0];
+    const displayProjectLabel = multi
+      ? lineItems.map((item) => item.label).join(' + ')
+      : isAutomotive && first.vehicleQty > 1
+        ? `${first.item.label} · ${first.vehicleQty} veículos`
+        : first.item.label;
+    const typeLabel = budget.subType ? `${budget.type} · ${budget.subType}` : budget.type;
 
-    const metrics = isAutomotive
-      ? [
-          {
-            label: 'Veículos',
-            value: String(vehicleQty),
-          },
-          {
-            label: 'Rolos necessários',
-            value: String(rollsNeeded),
-          },
-          {
-            label: lengthLabel,
-            value: pdfUnit(formatMeters(budgetNumber(budget.totalMaterialMeters)), 'm'),
-          },
-          {
-            label: 'Material usado + 15%',
-            value: pdfUnit(formatMeters(budgetNumber(budget.totalMaterialM2)), 'm2'),
-          },
-          {
-            label: 'Mão de obra',
-            value: pdfUnit(budgetNumber(budget.totalHours).toFixed(1), 'h'),
-          },
-        ]
-      : [
-          {
-            label: 'Comprimento usado',
-            value: pdfUnit(formatMeters(budgetNumber(budget.totalMaterialMeters)), 'm'),
-          },
-          {
-            label: 'Material usado + 15%',
-            value: pdfUnit(formatMeters(budgetNumber(budget.totalMaterialM2)), 'm2'),
-          },
-          {
-            label: 'Mão de obra',
-            value: pdfUnit(budgetNumber(budget.totalHours).toFixed(1), 'h'),
-          },
-        ];
+    const pieceSummary = multi
+      ? `${lineItems.length} itens no orçamento`
+      : isAutomotive
+        ? first.pieceLabels.length > 0
+          ? first.vehicleQty > 1
+            ? `${first.vehicleQty} veículos · ${first.pieceLabels.length} peça(s) por unidade`
+            : `${first.pieceLabels.length} peça${first.pieceLabels.length > 1 ? 's' : ''}`
+          : undefined
+        : first.pieceLabels.length > 0
+          ? `${first.pieceLabels.length} face${first.pieceLabels.length > 1 ? 's' : ''}`
+          : undefined;
+
+    const piecesTitle = isAutomotive ? 'PEÇAS INCLUÍDAS' : 'FACES / PEÇAS INCLUÍDAS';
 
     const pdf = new PdfBuilder(accent);
 
@@ -657,22 +681,21 @@ export const pdfService = {
       pdf.drawDescription(budget.description.trim());
     }
 
-    pdf.sectionTitle('MATERIAL SELECIONADO');
-    pdf.drawMaterial({
-      name: material?.name || 'Material personalizado',
-      meta: materialMeta || '—',
-      colorTexture: material?.colorTexture || 'Padrão',
-      rollInfo,
-      durability: material?.durability,
-    });
-
-    pdf.drawMetrics(metrics);
-    pdf.drawTotalPrice(budgetNumber(budget.totalPrice));
-
-    if (isAutomotive && automotivePieces.length > 0) {
-      pdf.drawPiecesList('PEÇAS INCLUÍDAS', automotivePieces);
-    } else if (!isAutomotive && decorativeLabels.length > 0) {
-      pdf.drawPiecesList('FACES / PEÇAS INCLUÍDAS', decorativeLabels);
+    if (multi) {
+      sections.forEach((section, index) => {
+        pdf.drawItemHeading(index, sections.length, section.item.label);
+        pdf.drawMaterial(section.material);
+        pdf.drawMetrics(section.metrics);
+        pdf.drawPiecesList(piecesTitle, section.pieceLabels);
+        pdf.drawItemSubtotal(budgetNumber(section.item.totalPrice));
+      });
+      pdf.drawTotalPrice(budgetNumber(budget.totalPrice));
+    } else {
+      pdf.sectionTitle('MATERIAL SELECIONADO');
+      pdf.drawMaterial(first.material);
+      pdf.drawMetrics(first.metrics);
+      pdf.drawTotalPrice(budgetNumber(budget.totalPrice));
+      pdf.drawPiecesList(piecesTitle, first.pieceLabels);
     }
 
     pdf.drawTerms();

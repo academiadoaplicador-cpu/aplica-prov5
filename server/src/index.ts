@@ -1020,8 +1020,9 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
     `INSERT INTO budgets (
       user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id, status, date,
       description, items, material_id, custom_price_per_m2, total_hours, total_material_meters,
-      total_material_m2, total_cost, total_price, profit, type, sub_type, vehicle_quantity, rolls_needed
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+      total_material_m2, total_cost, total_price, profit, type, sub_type, vehicle_quantity, rolls_needed,
+      line_items
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
     ON CONFLICT (user_id, id) DO UPDATE SET
       customer_name = EXCLUDED.customer_name,
       vehicle_model = EXCLUDED.vehicle_model,
@@ -1042,7 +1043,8 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       type = EXCLUDED.type,
       sub_type = EXCLUDED.sub_type,
       vehicle_quantity = EXCLUDED.vehicle_quantity,
-      rolls_needed = EXCLUDED.rolls_needed`,
+      rolls_needed = EXCLUDED.rolls_needed,
+      line_items = EXCLUDED.line_items`,
     [
       req.userId,
       b.id,
@@ -1066,6 +1068,7 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       b.subType ?? null,
       Math.max(1, Math.floor(Number(b.vehicleQuantity) || 1)),
       Math.max(1, Math.floor(Number(b.rollsNeeded) || 1)),
+      JSON.stringify(Array.isArray(b.lineItems) ? b.lineItems : []),
     ],
   );
   res.json({ ok: true });

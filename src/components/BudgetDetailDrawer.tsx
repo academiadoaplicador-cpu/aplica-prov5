@@ -21,6 +21,7 @@ import GeneratePdfButton from './GeneratePdfButton';
 import SupplierWhatsAppButton from './SupplierWhatsAppButton';
 import { getMaterialProductLine } from '../utils/materialSelection';
 import { getBudgetPieceNames } from '../utils/vehiclePartsUtils';
+import { getBudgetLineItems } from '../utils/budgetLineItems';
 
 interface BudgetDetailDrawerProps {
   budget: Budget | null;
@@ -65,15 +66,18 @@ export default function BudgetDetailDrawer({
   readOnly = false,
   officeLabel,
 }: BudgetDetailDrawerProps) {
-  const material = budget ? materials.find((m) => m.id === budget.materialId) : null;
+  const lineItems = budget ? getBudgetLineItems(budget) : [];
+  const multi = lineItems.length > 1;
+  const material =
+    budget && !multi ? materials.find((m) => m.id === budget.materialId) : null;
   const vehicle = budget ? vehicles.find((v) => v.id === budget.vehicleId) : undefined;
   const pieceNames =
-    budget && budget.type === 'Automotivo' ? getBudgetPieceNames(budget, vehicle) : [];
+    budget && !multi && budget.type === 'Automotivo' ? getBudgetPieceNames(budget, vehicle) : [];
   const projectLabel =
     budget?.vehicleModel || budget?.applianceModel || 'Projeto personalizado';
   const vehicleQty = Math.max(1, budget?.vehicleQuantity ?? 1);
   const displayProjectLabel =
-    budget?.type === 'Automotivo' && vehicleQty > 1
+    !multi && budget?.type === 'Automotivo' && vehicleQty > 1
       ? `${projectLabel} · ${vehicleQty} veículos`
       : projectLabel;
 
@@ -181,7 +185,7 @@ export default function BudgetDetailDrawer({
                 {displayProjectLabel}
               </DetailRow>
 
-              {budget.type === 'Automotivo' && vehicleQty > 1 && (
+              {!multi && budget.type === 'Automotivo' && vehicleQty > 1 && (
                 <DetailRow icon={<Car size={14} />} label="Quantidade">
                   {vehicleQty} veículos idênticos
                 </DetailRow>
@@ -265,6 +269,52 @@ export default function BudgetDetailDrawer({
                       Preço customizado: {formatCurrency(budget.customPricePerM2)}/m²
                     </p>
                   )}
+                </section>
+              )}
+
+              {multi && (
+                <section className="space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                    Itens ({lineItems.length})
+                  </span>
+                  <ul className="space-y-2">
+                    {lineItems.map((item, index) => {
+                      const itemMaterial = materials.find((m) => m.id === item.materialId);
+                      return (
+                        <li
+                          key={item.id}
+                          className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 space-y-1"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-sm font-bold text-white min-w-0 break-words">
+                              <span className="text-slate-600 font-mono text-xs mr-1.5">
+                                {index + 1}.
+                              </span>
+                              {item.label}
+                              {(item.vehicleQuantity ?? 1) > 1 && (
+                                <span className="text-slate-400 font-normal">
+                                  {' '}
+                                  · {item.vehicleQuantity} veículos
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-sm font-mono font-bold text-white shrink-0">
+                              {formatCurrency(item.totalPrice)}
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-400 break-words">
+                            {itemMaterial
+                              ? `${itemMaterial.brand} · ${itemMaterial.line} · ${itemMaterial.colorTexture}`
+                              : 'Material não encontrado no catálogo'}
+                          </p>
+                          <p className="text-[11px] text-slate-500 font-mono">
+                            {item.totalMaterialM2.toFixed(2)} m² · {item.totalHours.toFixed(1)} h ·{' '}
+                            {item.items.length} peça{item.items.length !== 1 ? 's' : ''}
+                          </p>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </section>
               )}
 

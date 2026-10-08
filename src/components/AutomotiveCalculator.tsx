@@ -20,7 +20,9 @@ import {
   hasPartMeasurement,
   isVehicleMeasurementsComplete,
 } from '../utils/vehiclePartsUtils';
-import { VehicleSize, BudgetPiece, Budget, FinancialSettings, Material, Vehicle } from '../types';
+import { BudgetLineItem, FinancialSettings, Material, Vehicle } from '../types';
+import { consolidateBudget } from '../utils/budgetLineItems';
+import BudgetLineItemsPanel from './BudgetLineItemsPanel';
 import { databaseService } from '../services/databaseService';
 import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion } from 'motion/react';
@@ -55,6 +57,7 @@ import {
   clearAutomotiveBudgetDraft,
   loadAutomotiveBudgetDraft,
   saveAutomotiveBudgetDraft,
+  type AutomotiveBudgetDraft,
 } from '../utils/budgetDraftStorage';
 import { useBudgetDraftPersistence } from '../hooks/useBudgetDraftPersistence';
 
@@ -99,6 +102,10 @@ export default function AutomotiveCalculator() {
   const [materialExpanded, setMaterialExpanded] = useState(
     !restoredDraft.current?.selectedMaterialId,
   );
+  const [lineItems, setLineItems] = useState<BudgetLineItem[]>(
+    restoredDraft.current?.lineItems ?? [],
+  );
+  const [restoreTick, setRestoreTick] = useState(0);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const { notice, showNotice, clearNotice } = useBudgetNotice();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -215,9 +222,11 @@ export default function AutomotiveCalculator() {
     setSelectedRollLength(null);
   }, [selectedMaterialId]);
 
+  // Declarado depois dos efeitos que reagem ao veículo/material: ao restaurar um
+  // rascunho ou reabrir um item, eles veem a flag ligada e não limpam o estado.
   useEffect(() => {
     isRestoringDraftRef.current = false;
-  }, []);
+  }, [restoreTick]);
 
   const rollDimensions = useMemo(
     () =>
@@ -328,33 +337,108 @@ export default function AutomotiveCalculator() {
     settings,
   ]);
 
-  const currentBudget = useMemo(() => ({
-    id: generateId(),
-    customerName,
-    vehicleModel: selectedVehicle ? `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.year})` : '',
-    vehicleId: selectedVehicleId,
-    vehicleQuantity: vehicleQuantity > 1 ? vehicleQuantity : undefined,
-    rollsNeeded: totals.rollsNeeded > 1 ? totals.rollsNeeded : undefined,
-    status: 'Pendente' as const,
-    date: new Date().toISOString(),
-    description: description.trim() || undefined,
-    items: selectedPieces.map(p => ({ partId: p, quantity: 1 })),
-    materialId: selectedMaterialId,
-    customPricePerM2: customPricePerM2 || undefined,
-    totalHours: totals.hours,
-    totalMaterialMeters: totals.usedLength,
-    totalMaterialM2: totals.materialM2,
-    totalCost: totals.cost,
-    totalPrice: totals.price,
-    profit: totals.profit,
-    type: 'Automotivo' as const
-  }), [customerName, description, selectedVehicle, selectedVehicleId, vehicleQuantity, selectedPieces, selectedMaterialId, customPricePerM2, totals]);
+  const getItemValidationMessage = useCallback((): string | null => {
+    if (!selectedVehicleId) return 'Selecione fabricante, modelo e ano do veículo.';
+    if (selectedPieces.length === 0) return 'Selecione ao menos uma peça para o orçamento.';
+    if (!selectedMaterialId) return 'Selecione o material antes de salvar ou gerar o PDF.';
+    return null;
+  }, [selectedVehicleId, selectedPieces.length, selectedMaterialId]);
+
+  const editorEmpty = !selectedVehicleId && !selectedMaterialId;
+
+  /** O veículo em edição como item do orçamento (só quando está completo). */
+  const currentLineItem = useMemo((): BudgetLineItem | null => {
+    if (getItemValidationMessage() || !selectedVehicle) return null;
+    return {
+      id: 'current',
+      label: `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.year})`,
+      vehicleId: selectedVehicleId,
+      vehicleQuantity: vehicleQuantity > 1 ? vehicleQuantity : undefined,
+      items: selectedPieces.map((p) => ({ partId: p, quantity: 1 })),
+      materialId: selectedMaterialId,
+      customPricePerM2: customPricePerM2 || undefined,
+      rollsNeeded: totals.rollsNeeded > 1 ? totals.rollsNeeded : undefined,
+      totalHours: totals.hours,
+      totalMaterialMeters: totals.usedLength,
+      totalMaterialM2: totals.materialM2,
+      totalCost: totals.cost,
+      totalPrice: totals.price,
+      profit: totals.profit,
+      editor: {
+        selectedMake,
+        selectedModel,
+        selectedYear,
+        selectedVehicleId,
+        vehicleQuantity,
+        budgetType,
+        selectedPieces,
+        selectedMaterialId,
+        customPricePerM2,
+        customTotalPrice,
+        selectedRollWidth,
+        selectedRollLength,
+      },
+    };
+  }, [
+    getItemValidationMessage,
+    selectedVehicle,
+    selectedVehicleId,
+    vehicleQuantity,
+    selectedPieces,
+    selectedMaterialId,
+    customPricePerM2,
+    customTotalPrice,
+    totals,
+    selectedMake,
+    selectedModel,
+    selectedYear,
+    budgetType,
+    selectedRollWidth,
+    selectedRollLength,
+  ]);
+
+  const allLineItems = useMemo(
+    () => (currentLineItem ? [...lineItems, currentLineItem] : lineItems),
+    [lineItems, currentLineItem],
+  );
+
+  const currentBudget = useMemo(
+    () =>
+      consolidateBudget(
+        {
+          id: generateId(),
+          customerName,
+          status: 'Pendente',
+          date: new Date().toISOString(),
+          description: description.trim() || undefined,
+          type: 'Automotivo',
+        },
+        allLineItems,
+      ),
+    [customerName, description, allLineItems],
+  );
+
+  const resetItemEditor = () => {
+    setSelectedMake('');
+    setSelectedModel('');
+    setSelectedYear('');
+    setSelectedVehicleId('');
+    setVehicleQuantity(1);
+    setBudgetType('Completo');
+    setSelectedPieces([]);
+    setSelectedMaterialId('');
+    setCustomPricePerM2(null);
+    setCustomTotalPrice(null);
+    setSelectedRollWidth(null);
+    setSelectedRollLength(null);
+  };
 
   const budgetSnapshot = useMemo(
     () =>
       JSON.stringify({
         customerName,
         description,
+        lineItems: lineItems.map((item) => [item.id, item.totalPrice]),
         selectedVehicleId,
         vehicleQuantity,
         budgetType,
@@ -368,6 +452,7 @@ export default function AutomotiveCalculator() {
     [
       customerName,
       description,
+      lineItems,
       selectedVehicleId,
       vehicleQuantity,
       budgetType,
@@ -384,14 +469,16 @@ export default function AutomotiveCalculator() {
 
   const getExportValidationMessage = useCallback((): string | null => {
     if (!customerName.trim()) return 'Informe o nome do cliente.';
-    if (!selectedVehicleId) return 'Selecione fabricante, modelo e ano do veículo.';
-    if (selectedPieces.length === 0) return 'Selecione ao menos uma peça para o orçamento.';
-    if (!selectedMaterialId) return 'Selecione o material antes de salvar ou gerar o PDF.';
-    return null;
-  }, [customerName, selectedVehicleId, selectedPieces.length, selectedMaterialId]);
+    // Com itens já adicionados, um editor vazio não impede salvar.
+    if (lineItems.length > 0 && editorEmpty) return null;
+    return getItemValidationMessage();
+  }, [customerName, lineItems.length, editorEmpty, getItemValidationMessage]);
 
   const getStepValidationMessage = useCallback(
     (stepIndex: number): string | null => {
+      if (stepIndex < 3 && lineItems.length > 0 && editorEmpty) {
+        return customerName.trim() ? null : 'Informe o nome do cliente.';
+      }
       switch (stepIndex) {
         case 0:
           if (!customerName.trim()) return 'Informe o nome do cliente.';
@@ -418,6 +505,8 @@ export default function AutomotiveCalculator() {
       budgetType,
       selectedMaterialId,
       getExportValidationMessage,
+      lineItems.length,
+      editorEmpty,
     ],
   );
 
@@ -440,37 +529,90 @@ export default function AutomotiveCalculator() {
       showNotice(validationError, 'warning');
       throw new Error(validationError);
     }
-    await pdfService.generateBudgetPDF(currentBudget, { material: selectedMaterial });
+    await pdfService.generateBudgetPDF(currentBudget);
   };
 
   const canExportBudget = !getExportValidationMessage();
 
-  const flowSteps = useMemo((): BudgetFlowStep[] => [
-    {
-      id: 'cliente',
-      label: 'Informe o cliente e selecione o veículo',
-      shortLabel: 'Cliente',
-      complete: Boolean(customerName.trim() && selectedVehicleId),
-    },
-    {
-      id: 'pecas',
-      label: 'Escolha completo ou parcial e selecione as peças',
-      shortLabel: 'Peças',
-      complete: selectedPieces.length > 0,
-    },
-    {
-      id: 'material',
-      label: 'Selecione o material e o rolo',
-      shortLabel: 'Material',
-      complete: Boolean(selectedMaterialId),
-    },
-    {
-      id: 'resumo',
-      label: 'Revise valores e salve o orçamento',
-      shortLabel: 'Revisar',
-      complete: canExportBudget,
-    },
-  ], [customerName, selectedVehicleId, selectedPieces.length, selectedMaterialId, canExportBudget]);
+  const handleAddItem = () => {
+    const itemError = getItemValidationMessage();
+    if (itemError || !currentLineItem) {
+      showNotice(itemError ?? 'Complete o veículo antes de adicionar.', 'warning');
+      return;
+    }
+    setLineItems((prev) => [...prev, { ...currentLineItem, id: generateId() }]);
+    resetItemEditor();
+    wizard.goToStep(0);
+    showNotice('Veículo adicionado ao orçamento. Monte o próximo.', 'success');
+  };
+
+  const handleEditItem = (id: string) => {
+    const item = lineItems.find((i) => i.id === id);
+    const editor = item?.editor as Partial<AutomotiveBudgetDraft> | undefined;
+    if (!item || !editor) return;
+    setLineItems((prev) => {
+      const rest = prev.filter((i) => i.id !== id);
+      return currentLineItem ? [...rest, { ...currentLineItem, id: generateId() }] : rest;
+    });
+    isRestoringDraftRef.current = true;
+    setSelectedMake(editor.selectedMake ?? '');
+    setSelectedModel(editor.selectedModel ?? '');
+    setSelectedYear(editor.selectedYear ?? '');
+    setSelectedVehicleId(editor.selectedVehicleId ?? '');
+    setVehicleQuantity(Math.max(1, editor.vehicleQuantity ?? 1));
+    setBudgetType(editor.budgetType ?? 'Completo');
+    setSelectedPieces(editor.selectedPieces ?? []);
+    setSelectedMaterialId(editor.selectedMaterialId ?? '');
+    setCustomPricePerM2(editor.customPricePerM2 ?? null);
+    setCustomTotalPrice(editor.customTotalPrice ?? null);
+    setSelectedRollWidth(editor.selectedRollWidth ?? null);
+    setSelectedRollLength(editor.selectedRollLength ?? null);
+    setRestoreTick((t) => t + 1);
+    wizard.goToStep(0);
+    showNotice(`Editando ${item.label}.`, 'success');
+  };
+
+  const handleRemoveItem = (id: string) => {
+    setLineItems((prev) => prev.filter((i) => i.id !== id));
+  };
+
+  const flowSteps = useMemo((): BudgetFlowStep[] => {
+    const onlySavedItems = lineItems.length > 0 && editorEmpty;
+    return [
+      {
+        id: 'cliente',
+        label: 'Informe o cliente e selecione o veículo',
+        shortLabel: 'Cliente',
+        complete: Boolean(customerName.trim() && (selectedVehicleId || onlySavedItems)),
+      },
+      {
+        id: 'pecas',
+        label: 'Escolha completo ou parcial e selecione as peças',
+        shortLabel: 'Peças',
+        complete: selectedPieces.length > 0 || onlySavedItems,
+      },
+      {
+        id: 'material',
+        label: 'Selecione o material e o rolo',
+        shortLabel: 'Material',
+        complete: Boolean(selectedMaterialId) || onlySavedItems,
+      },
+      {
+        id: 'resumo',
+        label: 'Revise valores e salve o orçamento',
+        shortLabel: 'Revisar',
+        complete: canExportBudget,
+      },
+    ];
+  }, [
+    customerName,
+    selectedVehicleId,
+    selectedPieces.length,
+    selectedMaterialId,
+    canExportBudget,
+    lineItems.length,
+    editorEmpty,
+  ]);
 
   const wizard = useBudgetWizard(flowSteps, restoredDraft.current?.activeStep ?? 0);
 
@@ -532,13 +674,15 @@ export default function AutomotiveCalculator() {
       selectedRollWidth,
       selectedRollLength,
       activeStep: wizard.activeStep,
+      lineItems,
     }),
     () =>
       Boolean(
         customerName.trim() ||
           selectedVehicleId ||
           selectedMaterialId ||
-          selectedPieces.length > 0,
+          selectedPieces.length > 0 ||
+          lineItems.length > 0,
       ),
     saveAutomotiveBudgetDraft,
     clearAutomotiveBudgetDraft,
@@ -550,8 +694,8 @@ export default function AutomotiveCalculator() {
         activeStep={wizard.activeStep}
         totalSteps={flowSteps.length}
         stepLabel={flowSteps[wizard.activeStep]?.shortLabel ?? ''}
-        total={totals.price}
-        showTotal={wizard.activeStep >= 2}
+        total={currentBudget.totalPrice}
+        showTotal={wizard.activeStep >= 2 || lineItems.length > 0}
         canGoBack={wizard.canGoBack}
         canGoNext={wizard.activeStep < flowSteps.length - 1}
         onBack={wizard.goBack}
@@ -564,7 +708,8 @@ export default function AutomotiveCalculator() {
       wizard.canGoBack,
       wizard.goBack,
       flowSteps,
-      totals.price,
+      currentBudget.totalPrice,
+      lineItems.length,
       tryGoNext,
     ],
   );
@@ -1083,8 +1228,15 @@ export default function AutomotiveCalculator() {
                 </div>
               )}
 
-              <div className="bg-indigo-600/10 border border-indigo-500/20 p-5 rounded-xl shadow-inner hidden lg:block">
-                <p className="text-[10px] font-mono text-indigo-400 uppercase tracking-widest mb-1 text-center font-bold">Investimento Sugerido</p>
+              <div
+                className={cn(
+                  'bg-indigo-600/10 border border-indigo-500/20 p-5 rounded-xl shadow-inner hidden',
+                  !editorEmpty && 'lg:block',
+                )}
+              >
+                <p className="text-[10px] font-mono text-indigo-400 uppercase tracking-widest mb-1 text-center font-bold">
+                  {lineItems.length > 0 ? 'Valor deste veículo' : 'Investimento Sugerido'}
+                </p>
                 {isEditingTotal ? (
                   <input
                     type="number"
@@ -1128,11 +1280,25 @@ export default function AutomotiveCalculator() {
                 )}
               </div>
 
-              <BudgetMobileTotalHero
-                total={totals.price}
+              {!editorEmpty && (
+                <BudgetMobileTotalHero
+                  total={totals.price}
+                  label={lineItems.length > 0 ? 'Valor deste veículo' : undefined}
+                  accent="indigo"
+                  isOverridden={customTotalPrice !== null}
+                  onChangeOverride={setCustomTotalPrice}
+                />
+              )}
+
+              <BudgetLineItemsPanel
+                lineItems={lineItems}
+                currentItem={currentLineItem}
+                materials={materials}
                 accent="indigo"
-                isOverridden={customTotalPrice !== null}
-                onChangeOverride={setCustomTotalPrice}
+                itemNoun="veículo"
+                onAdd={handleAddItem}
+                onEdit={handleEditItem}
+                onRemove={handleRemoveItem}
               />
 
               {selectedMaterial && (

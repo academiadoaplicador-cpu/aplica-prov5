@@ -108,6 +108,32 @@ export interface Budget {
   vehicleQuantity?: number;
   /** Quantidade de rolos necessários para o material do orçamento */
   rollsNeeded?: number;
+  /**
+   * Itens do orçamento, cada um com o próprio cálculo e material. Vazio em
+   * orçamentos de um item só criados antes desta lista existir.
+   */
+  lineItems?: BudgetLineItem[];
+}
+
+/** Um produto/serviço dentro do orçamento (ex.: um dos veículos, uma das geladeiras). */
+export interface BudgetLineItem {
+  id: string;
+  label: string;
+  vehicleId?: string;
+  vehicleQuantity?: number;
+  subType?: 'Móveis' | 'Eletrodomésticos' | 'Parede';
+  items: BudgetPiece[];
+  materialId: string;
+  customPricePerM2?: number;
+  rollsNeeded?: number;
+  totalHours: number;
+  totalMaterialMeters: number;
+  totalMaterialM2: number;
+  totalCost: number;
+  totalPrice: number;
+  profit: number;
+  /** Estado da calculadora, para reabrir o item e editar. */
+  editor?: Record<string, unknown>;
 }
 
 export interface Appliance {

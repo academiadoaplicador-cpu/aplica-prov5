@@ -36,5 +36,6 @@ export function mapBudget(row: Record<string, unknown>) {
       row.vehicle_quantity != null ? Math.max(1, num(row.vehicle_quantity)) : undefined,
     rollsNeeded:
       row.rolls_needed != null ? Math.max(1, num(row.rolls_needed)) : undefined,
+    lineItems: Array.isArray(row.line_items) ? row.line_items : [],
   };
 }

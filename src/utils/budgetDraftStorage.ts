@@ -1,4 +1,4 @@
-import { DecorativeItem } from '../types';
+import { BudgetLineItem, DecorativeItem } from '../types';
 import { databaseService } from '../services/databaseService';
 
 export type BudgetDraftKind = 'automotive' | 'decorative';
@@ -19,6 +19,7 @@ export interface AutomotiveBudgetDraft {
   selectedRollWidth: number | null;
   selectedRollLength: number | null;
   activeStep: number;
+  lineItems?: BudgetLineItem[];
 }
 
 export interface DecorativeBudgetDraft {
@@ -36,6 +37,7 @@ export interface DecorativeBudgetDraft {
   selectedRollWidth: number | null;
   selectedRollLength: number | null;
   activeStep: number;
+  lineItems?: BudgetLineItem[];
 }
 
 function draftKey(kind: BudgetDraftKind): string {
