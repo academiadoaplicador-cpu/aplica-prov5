@@ -11,7 +11,32 @@ import {
 } from './estimate.js';
 
 /** Prazo de aceite. Sem agendador: a expiração é varrida sob demanda. */
-export const REQUEST_EXPIRY_HOURS = 48;
+export const REQUEST_EXPIRY_HOURS = 12;
+
+/** Depois do aceite, prazo para o aplicador enviar o valor exato (proposta). */
+export const RESPONSE_DEADLINE_MINUTES = 60;
+
+/** Quem estoura o prazo de resposta fica sem ver aquele pedido por este tempo. */
+export const RESPONSE_BLOCK_HOURS = 12;
+
+export type RequestEvent =
+  | 'disponibilizado'
+  | 'aceito'
+  | 'proposta_enviada'
+  | 'recusado'
+  | 'prazo_resposta_expirado';
+
+export async function logRequestEvent(
+  db: Pool | PoolClient,
+  requestId: string,
+  event: RequestEvent,
+  applicatorId: string | null = null,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO service_request_events (request_id, applicator_id, event) VALUES ($1, $2, $3)`,
+    [requestId, applicatorId, event],
+  );
+}
 
 /** Status do orçamento gerado quando um aplicador aceita o pedido. */
 export const PROPOSAL_BUDGET_STATUS = 'Proposta aguardando aceite';
@@ -161,6 +186,12 @@ export function mapServiceRequest(row: Record<string, unknown>) {
     expiresAt: new Date(row.expires_at as string | Date).toISOString(),
     createdAt: new Date(row.created_at as string | Date).toISOString(),
     supplyMode: ((row.supply_mode as string) || 'completo') as SupplyMode,
+    /** Até quando o aplicador que aceitou pode enviar o valor exato. */
+    responseDeadline:
+      row.status === 'Aceito' && !row.proposal_status && row.response_due_at
+        ? new Date(row.response_due_at as string | Date).toISOString()
+        : undefined,
+    reopenedReason: (row.reopened_reason as string) || undefined,
     clientMaterial: row.client_material_id
       ? {
           id: row.client_material_id as string,
@@ -189,10 +220,16 @@ export function mapServiceRequest(row: Record<string, unknown>) {
   };
 }
 
-/** Filtro SQL: o pedido não foi recusado pelo aplicador informado no parâmetro. */
-export const NOT_REFUSED_BY = (alias: string, param: string) =>
+/**
+ * Filtro SQL: o pedido pode ir para o aplicador do parâmetro — ele não recusou
+ * o pedido e não está bloqueado nele por ter estourado o prazo de resposta.
+ */
+export const AVAILABLE_TO = (alias: string, param: string) =>
   `NOT EXISTS (SELECT 1 FROM service_request_refusals f
-               WHERE f.request_id = ${alias}.id AND f.applicator_id = ${param})`;
+               WHERE f.request_id = ${alias}.id AND f.applicator_id = ${param})
+   AND NOT EXISTS (SELECT 1 FROM service_request_blocks k
+                   WHERE k.request_id = ${alias}.id AND k.applicator_id = ${param}
+                     AND k.blocked_until > NOW())`;
 
 /**
  * Marca como expirado todo pedido que passou do prazo sem aceite.
@@ -205,6 +242,91 @@ export async function sweepExpiredRequests(db: Pool | PoolClient): Promise<numbe
      WHERE status = 'Aguardando aceite' AND expires_at <= NOW()`,
   );
   return result.rowCount ?? 0;
+}
+
+/** Volta o pedido ao mural com prazo de aceite novo e sem vínculo nem proposta. */
+async function reopenRequest(
+  client: PoolClient,
+  requestId: string,
+  reason: 'recusado' | 'prazo_resposta_expirado',
+): Promise<void> {
+  await client.query(
+    `UPDATE service_requests
+     SET status = 'Aguardando aceite',
+         accepted_by = NULL,
+         accepted_at = NULL,
+         budget_id = NULL,
+         expires_at = NOW() + ($2 || ' hours')::interval,
+         reopened_reason = $3,
+         response_due_at = NULL,
+         proposal_status = NULL,
+         proposal_material_id = NULL,
+         proposal_material_type = NULL,
+         proposal_product = NULL,
+         proposal_color = NULL,
+         proposal_price_per_m2 = NULL,
+         proposal_price = NULL,
+         proposal_note = '',
+         proposal_sent_at = NULL,
+         proposal_responded_at = NULL,
+         proposal_client_reason = '',
+         proposal_items = '[]',
+         updated_at = NOW()
+     WHERE id = $1`,
+    [requestId, String(REQUEST_EXPIRY_HOURS), reason],
+  );
+  await logRequestEvent(client, requestId, 'disponibilizado');
+}
+
+/**
+ * Aceitou e não mandou o valor exato em 1 h: o pedido passa para os outros
+ * aplicadores e quem não respondeu fica bloqueado só nele por 12 h.
+ */
+export async function sweepExpiredResponses(pool: Pool): Promise<number> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const due = await client.query<{ id: string; accepted_by: string; budget_id: string | null }>(
+      `SELECT id, accepted_by, budget_id FROM service_requests
+       WHERE status = 'Aceito' AND proposal_status IS NULL AND accepted_by IS NOT NULL
+         AND response_due_at <= NOW()
+       FOR UPDATE SKIP LOCKED`,
+    );
+    for (const row of due.rows) {
+      await client.query(
+        `INSERT INTO service_request_blocks (request_id, applicator_id, blocked_until, reason)
+         VALUES ($1, $2, NOW() + ($3 || ' hours')::interval, 'prazo_resposta_expirado')
+         ON CONFLICT (request_id, applicator_id) DO UPDATE
+         SET blocked_until = EXCLUDED.blocked_until, reason = EXCLUDED.reason, created_at = NOW()`,
+        [row.id, row.accepted_by, String(RESPONSE_BLOCK_HOURS)],
+      );
+      if (row.budget_id) {
+        await client.query(
+          `UPDATE budgets
+           SET status = 'Cancelado',
+               description = CONCAT_WS(E'\\n', NULLIF(description, ''),
+                 'Prazo de resposta expirado: o valor não foi enviado em ' || $3 || ' minutos e o pedido passou para outro aplicador.')
+           WHERE user_id = $1 AND id = $2`,
+          [row.accepted_by, row.budget_id, String(RESPONSE_DEADLINE_MINUTES)],
+        );
+      }
+      await logRequestEvent(client, row.id, 'prazo_resposta_expirado', row.accepted_by);
+      await reopenRequest(client, row.id, 'prazo_resposta_expirado');
+    }
+    await client.query('COMMIT');
+    return due.rows.length;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Aplica os dois prazos antes de qualquer listagem (não há agendador). */
+export async function sweepDeadlines(pool: Pool): Promise<void> {
+  await sweepExpiredResponses(pool);
+  await sweepExpiredRequests(pool);
 }
 
 async function loadVehicle(db: Pool | PoolClient, vehicleId: string) {
@@ -530,6 +652,8 @@ export async function createServiceRequest(
     ],
   );
 
+  await logRequestEvent(client, id, 'disponibilizado');
+
   return { ok: true, id };
 }
 
@@ -575,7 +699,7 @@ export async function fetchRegionRequests(pool: Pool, applicatorId: string) {
     };
   }
 
-  await sweepExpiredRequests(pool);
+  await sweepDeadlines(pool);
 
   const result = await pool.query(
     `SELECT r.*, c.full_name AS client_name
@@ -584,10 +708,20 @@ export async function fetchRegionRequests(pool: Pool, applicatorId: string) {
      WHERE r.status = 'Aguardando aceite'
        AND LOWER(r.city) = LOWER($1)
        AND UPPER(r.state_code) = UPPER($2)
-       AND ${NOT_REFUSED_BY('r', '$3')}
+       AND ${AVAILABLE_TO('r', '$3')}
      ORDER BY r.created_at DESC
      LIMIT 50`,
     [row.city, row.state_code, applicatorId],
+  );
+
+  // Pedidos em que este aplicador estourou o prazo de resposta e está bloqueado.
+  const blocked = await pool.query(
+    `SELECT k.request_id, k.blocked_until, r.scope_label
+     FROM service_request_blocks k
+     INNER JOIN service_requests r ON r.id = k.request_id
+     WHERE k.applicator_id = $1 AND k.blocked_until > NOW()
+     ORDER BY k.blocked_until`,
+    [applicatorId],
   );
 
   return {
@@ -597,6 +731,11 @@ export async function fetchRegionRequests(pool: Pool, applicatorId: string) {
     items: result.rows.map((r) => ({
       ...mapServiceRequest(r),
       clientName: (r.client_name as string) || 'Cliente',
+    })),
+    blocked: blocked.rows.map((b) => ({
+      requestId: b.request_id as string,
+      scopeLabel: b.scope_label as string,
+      blockedUntil: new Date(b.blocked_until as string | Date).toISOString(),
     })),
   };
 }
@@ -658,22 +797,34 @@ export async function acceptServiceRequest(
          accepted_by = $1,
          accepted_at = NOW(),
          budget_id = $2,
+         reopened_reason = NULL,
+         response_due_at = NOW() + ($6 || ' minutes')::interval,
          updated_at = NOW()
      WHERE r.id = $3
        AND r.status = 'Aguardando aceite'
        AND r.expires_at > NOW()
        AND LOWER(r.city) = LOWER($4)
        AND UPPER(r.state_code) = UPPER($5)
-       AND ${NOT_REFUSED_BY('r', '$1')}
+       AND ${AVAILABLE_TO('r', '$1')}
      RETURNING *`,
-    [applicatorId, budgetId, requestId, me.city, me.state_code],
+    [
+      applicatorId,
+      budgetId,
+      requestId,
+      me.city,
+      me.state_code,
+      String(RESPONSE_DEADLINE_MINUTES),
+    ],
   );
 
   if (claimed.rowCount === 0) {
     const existing = await client.query(
       `SELECT r.status, r.city, r.state_code,
               EXISTS (SELECT 1 FROM service_request_refusals f
-                      WHERE f.request_id = r.id AND f.applicator_id = $2) AS refused
+                      WHERE f.request_id = r.id AND f.applicator_id = $2) AS refused,
+              (SELECT k.blocked_until FROM service_request_blocks k
+               WHERE k.request_id = r.id AND k.applicator_id = $2
+                 AND k.blocked_until > NOW()) AS blocked_until
        FROM service_requests r WHERE r.id = $1`,
       [requestId, applicatorId],
     );
@@ -682,6 +833,14 @@ export async function acceptServiceRequest(
     }
     if (existing.rows[0].refused) {
       return { ok: false, status: 409, error: 'Você já recusou este pedido.' };
+    }
+    if (existing.rows[0].blocked_until) {
+      const until = new Date(existing.rows[0].blocked_until as string | Date);
+      return {
+        ok: false,
+        status: 409,
+        error: `Seu prazo de resposta neste pedido expirou. Ele volta a aparecer para você em ${until.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}, se ainda estiver aberto.`,
+      };
     }
     const status = existing.rows[0].status as RequestStatus;
     if (status === 'Aceito') {
@@ -771,6 +930,8 @@ export async function acceptServiceRequest(
     ],
   );
 
+  await logRequestEvent(client, requestId, 'aceito', applicatorId);
+
   return { ok: true, requestId, budgetId };
 }
 
@@ -826,6 +987,7 @@ export async function refuseServiceRequest(
        ON CONFLICT (request_id, applicator_id) DO NOTHING`,
       [requestId, applicatorId, reason.trim().slice(0, 500)],
     );
+    await logRequestEvent(client, requestId, 'recusado', applicatorId);
     return { ok: true };
   }
 
@@ -847,29 +1009,8 @@ export async function refuseServiceRequest(
     [requestId, applicatorId, row.budget_id, reason.trim().slice(0, 500)],
   );
 
-  await client.query(
-    `UPDATE service_requests
-     SET status = 'Aguardando aceite',
-         accepted_by = NULL,
-         accepted_at = NULL,
-         budget_id = NULL,
-         expires_at = NOW() + ($2 || ' hours')::interval,
-         proposal_status = NULL,
-         proposal_material_id = NULL,
-         proposal_material_type = NULL,
-         proposal_product = NULL,
-         proposal_color = NULL,
-         proposal_price_per_m2 = NULL,
-         proposal_price = NULL,
-         proposal_note = '',
-         proposal_sent_at = NULL,
-         proposal_responded_at = NULL,
-         proposal_client_reason = '',
-         proposal_items = '[]',
-         updated_at = NOW()
-     WHERE id = $1`,
-    [requestId, String(REQUEST_EXPIRY_HOURS)],
-  );
+  await logRequestEvent(client, requestId, 'recusado', applicatorId);
+  await reopenRequest(client, requestId, 'recusado');
 
   if (row.budget_id) {
     await client.query(
@@ -933,6 +1074,15 @@ export async function sendProposal(
   }
   if (row.proposal_status === 'Aceita') {
     return { ok: false, status: 409, error: 'O cliente já aceitou a proposta.' };
+  }
+  // O prazo vale para a primeira resposta; a varredura repassa o pedido em seguida.
+  const dueAt = row.response_due_at ? new Date(row.response_due_at as string | Date).getTime() : null;
+  if (!row.proposal_status && dueAt !== null && Date.now() > dueAt) {
+    return {
+      ok: false,
+      status: 409,
+      error: `O prazo de ${RESPONSE_DEADLINE_MINUTES} minutos para enviar o valor expirou. O pedido vai passar para outro aplicador.`,
+    };
   }
   if (row.budget_status && row.budget_status !== PROPOSAL_BUDGET_STATUS) {
     return {
@@ -1120,6 +1270,8 @@ export async function sendProposal(
       ],
     );
   }
+
+  await logRequestEvent(client, requestId, 'proposta_enviada', applicatorId);
 
   return { ok: true };
 }

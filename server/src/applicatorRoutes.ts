@@ -4,10 +4,10 @@ import {
   acceptServiceRequest,
   fetchRegionRequests,
   mapServiceRequest,
-  NOT_REFUSED_BY,
+  AVAILABLE_TO,
   refuseServiceRequest,
   sendProposal,
-  sweepExpiredRequests,
+  sweepDeadlines,
 } from './serviceRequests.js';
 
 /** Rotas de marketplace do lado da oficina: mural da região e disponibilidade. */
@@ -96,13 +96,13 @@ export function createApplicatorRouter(pool: Pool): Router {
 
       let openRequestCount = 0;
       if (eligible) {
-        await sweepExpiredRequests(pool);
+        await sweepDeadlines(pool);
         const count = await pool.query(
           `SELECT COUNT(*)::int AS count FROM service_requests r
            WHERE r.status = 'Aguardando aceite'
              AND LOWER(r.city) = LOWER($1)
              AND UPPER(r.state_code) = UPPER($2)
-             AND ${NOT_REFUSED_BY('r', '$3')}`,
+             AND ${AVAILABLE_TO('r', '$3')}`,
           [row.city, row.state_code, req.userId],
         );
         openRequestCount = count.rows[0].count as number;
@@ -235,7 +235,7 @@ export function createApplicatorRouter(pool: Pool): Router {
   /** Pedidos que este aplicador já aceitou, com o contato do cliente. */
   router.get('/requests/accepted', async (req: Request, res: Response) => {
     try {
-      await sweepExpiredRequests(pool);
+      await sweepDeadlines(pool);
       const result = await pool.query(
         `SELECT r.*, c.full_name AS client_name, c.phone AS client_phone,
                 c.neighborhood AS client_neighborhood, b.status AS budget_status

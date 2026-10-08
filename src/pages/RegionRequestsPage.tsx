@@ -9,6 +9,7 @@ import {
   Phone,
   RefreshCw,
   ShieldOff,
+  TimerOff,
   Wrench,
   X,
 } from 'lucide-react';
@@ -45,6 +46,13 @@ export default function RegionRequestsPage() {
   const [refuseReason, setRefuseReason] = useState('');
   const [refusing, setRefusing] = useState(false);
   const [proposalOpenId, setProposalOpenId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Mantém a contagem do prazo de resposta atualizada na tela.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -158,7 +166,7 @@ export default function RegionRequestsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-white">Pedidos</h1>
           <p className="mt-1 text-sm text-slate-500 max-w-lg">
             Clientes da sua cidade que pediram orçamento. O primeiro que aceitar fica com o
-            serviço.
+            serviço e tem 1 hora para enviar o valor exato.
           </p>
           {data?.city && (
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500 font-mono">
@@ -292,6 +300,32 @@ export default function RegionRequestsPage() {
         </section>
       )}
 
+      {data?.eligible && data.blocked.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+            Prazo de resposta expirado ({data.blocked.length})
+          </h2>
+          <ul className="space-y-2">
+            {data.blocked.map((block) => (
+              <li
+                key={block.requestId}
+                className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 flex items-start gap-3"
+              >
+                <TimerOff size={18} className="text-red-400 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-white break-words">{block.scopeLabel}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    O valor não foi enviado em 1 hora e o pedido passou para outro aplicador.
+                    Ele volta a aparecer para você em {formatDateTime(block.blockedUntil)}, se
+                    ainda estiver aberto.
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {accepted.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
@@ -328,6 +362,10 @@ export default function RegionRequestsPage() {
                     Aceito
                   </span>
                 </div>
+
+                {request.responseDeadline && (
+                  <ResponseDeadlineBanner deadline={request.responseDeadline} now={now} />
+                )}
 
                 {request.requestItems.length > 1 && (
                   <div className="mt-4">
@@ -391,6 +429,45 @@ export default function RegionRequestsPage() {
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function ResponseDeadlineBanner({ deadline, now }: { deadline: string; now: number }) {
+  const minutes = Math.ceil((new Date(deadline).getTime() - now) / 60_000);
+  const expired = minutes <= 0;
+  const urgent = minutes <= 15;
+  return (
+    <div
+      className={cn(
+        'mt-4 rounded-xl border px-4 py-3 flex items-start gap-3',
+        urgent ? 'border-red-500/30 bg-red-500/10' : 'border-amber-500/30 bg-amber-500/10',
+      )}
+    >
+      <Clock size={16} className={cn('shrink-0 mt-0.5', urgent ? 'text-red-400' : 'text-amber-400')} />
+      <p className={cn('text-xs leading-relaxed', urgent ? 'text-red-200' : 'text-amber-100')}>
+        {expired ? (
+          'Prazo de resposta expirado. O pedido vai passar para outro aplicador.'
+        ) : (
+          <>
+            Envie o valor exato até{' '}
+            <strong>
+              {new Date(deadline).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </strong>{' '}
+            ({minutes} min). Depois disso o pedido passa para outro aplicador e fica bloqueado
+            para você por 12 horas.
+          </>
+        )}
+      </p>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { createSupplierAdminRouter } from './supplierRoutes.js';
 import { createPromotionAdminRouter } from './promotionRoutes.js';
 import { fetchCnpjLookup } from './cnpjLookup.js';
 import { fetchPlatformPricing, mapPlatformPricing } from './estimate.js';
-import { mapServiceRequest, sweepExpiredRequests } from './serviceRequests.js';
+import { mapServiceRequest, sweepDeadlines } from './serviceRequests.js';
 
 function num(value: unknown): number {
   return Number(value);
@@ -793,7 +793,7 @@ export function createAdminRouter(pool: Pool): Router {
 
   router.get('/requests', async (req: Request, res: Response) => {
     try {
-      await sweepExpiredRequests(pool);
+      await sweepDeadlines(pool);
 
       const page = parsePage(req.query.page);
       const limit = parseLimit(req.query.limit);

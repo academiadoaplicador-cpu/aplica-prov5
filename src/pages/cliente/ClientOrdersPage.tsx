@@ -302,6 +302,14 @@ export default function ClientOrdersPage() {
 
               <RequestItemsList request={request} showProposal />
 
+              {request.status === 'Aguardando aceite' && request.reopenedReason && (
+                <p className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5">
+                  {request.reopenedReason === 'prazo_resposta_expirado'
+                    ? 'Validade da resposta expirada: o aplicador anterior não enviou o valor em 1 hora. Seu pedido voltou para outros aplicadores da região.'
+                    : 'O aplicador anterior desistiu do pedido. Ele voltou para outros aplicadores da região.'}
+                </p>
+              )}
+
 
               {request.status === 'Aguardando aceite' && (
                 <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-800">
@@ -357,6 +365,19 @@ export default function ClientOrdersPage() {
                 ) : (
                   <p className="text-xs text-slate-500">
                     O aplicador está preparando a proposta com o material e o valor final.
+                    {request.responseDeadline && (
+                      <>
+                        {' '}
+                        Ele tem até{' '}
+                        <strong className="text-slate-300">
+                          {new Date(request.responseDeadline).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </strong>{' '}
+                        para enviar. Se não enviar, seu pedido volta para outros aplicadores.
+                      </>
+                    )}
                   </p>
                 ))}
 

@@ -14,7 +14,7 @@ import {
   mapServiceRequest,
   resolveScope,
   respondProposal,
-  sweepExpiredRequests,
+  sweepDeadlines,
   REQUEST_EXPIRY_HOURS,
   type CreateRequestInput,
 } from './serviceRequests.js';
@@ -207,7 +207,7 @@ export function createClientRouter(pool: Pool): Router {
 
   router.get('/requests', async (req: Request, res: Response) => {
     try {
-      await sweepExpiredRequests(pool);
+      await sweepDeadlines(pool);
       const result = await pool.query(
         `SELECT r.*, p.full_name AS applicator_name, u.business_name AS applicator_business,
                 p.phone AS applicator_phone, p.city AS applicator_city

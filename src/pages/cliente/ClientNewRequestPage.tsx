@@ -816,7 +816,8 @@ export default function ClientNewRequestPage() {
             <p className="text-[11px] text-slate-600">
               Seu pedido fica visível para aplicadores verificados de {' '}
               <strong className="text-slate-400">sua cidade</strong> por {catalog.expiryHours}{' '}
-              horas. O primeiro que aceitar fica com o serviço e entra em contato com você.
+              horas. O primeiro que aceitar tem 1 hora para enviar o valor exato; se não
+              enviar, o pedido passa para outro aplicador.
             </p>
 
             {submitError && (

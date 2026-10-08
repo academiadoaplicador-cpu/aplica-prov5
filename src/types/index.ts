@@ -525,6 +525,10 @@ export interface ServiceRequest {
   clientId: string;
   /** Sempre ao menos um; pedidos antigos chegam como um item só. */
   requestItems: ServiceRequestItemRecord[];
+  /** Aceito e sem proposta: até quando o aplicador pode enviar o valor exato. */
+  responseDeadline?: string;
+  /** Por que o pedido voltou ao mural depois de ter sido aceito. */
+  reopenedReason?: 'recusado' | 'prazo_resposta_expirado';
   status: ServiceRequestStatus;
   type: 'Automotivo' | 'Decorativo';
   subType?: string;
@@ -623,6 +627,8 @@ export type RegionRequestsResponse =
       city: string;
       stateCode: string;
       items: ServiceRequest[];
+      /** Pedidos em que o aplicador estourou o prazo de resposta e está bloqueado. */
+      blocked: { requestId: string; scopeLabel: string; blockedUntil: string }[];
     }
   | {
       eligible: false;
