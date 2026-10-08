@@ -5,6 +5,7 @@ import { ServiceRequest, ServiceRequestProposal, ServiceRequestStatus } from '..
 import { clientService } from '../../services/clientService';
 import { ROUTES } from '../../routes/paths';
 import { formatCurrency, cn } from '../../lib/utils';
+import RequestItemsList from '../../components/marketplace/RequestItemsList';
 
 const STATUS_STYLE: Record<ServiceRequestStatus, string> = {
   'Aguardando aceite': 'text-amber-400 border-amber-500/30 bg-amber-500/10',
@@ -16,11 +17,13 @@ const STATUS_STYLE: Record<ServiceRequestStatus, string> = {
 function ProposalCard({
   proposal,
   laborOnly,
+  itemCount,
   responding,
   onRespond,
 }: {
   proposal: ServiceRequestProposal;
   laborOnly: boolean;
+  itemCount: number;
   responding: boolean;
   onRespond: (accept: boolean, reason: string) => void;
 }) {
@@ -45,24 +48,31 @@ function ProposalCard({
         )}
       </div>
 
-      <dl className="space-y-1.5 text-sm">
-        <div className="flex justify-between gap-4">
-          <dt className="text-slate-500 shrink-0">Produto</dt>
-          <dd className="text-slate-200 text-right">{proposal.product}</dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-slate-500 shrink-0">Cor / textura</dt>
-          <dd className="text-slate-200 text-right">{proposal.color}</dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-slate-500 shrink-0">Tipo</dt>
-          <dd className="text-slate-200 text-right">{proposal.materialType}</dd>
-        </div>
-      </dl>
+      {itemCount > 1 ? (
+        <p className="text-xs text-slate-400">
+          Produto, cor e valor de cada item estão na lista acima.
+        </p>
+      ) : (
+        <dl className="space-y-1.5 text-sm">
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-500 shrink-0">Produto</dt>
+            <dd className="text-slate-200 text-right">{proposal.product}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-500 shrink-0">Cor / textura</dt>
+            <dd className="text-slate-200 text-right">{proposal.color}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-slate-500 shrink-0">Tipo</dt>
+            <dd className="text-slate-200 text-right">{proposal.materialType}</dd>
+          </div>
+        </dl>
+      )}
 
       <p className="text-2xl font-bold text-white tracking-tight">
         {formatCurrency(proposal.price)}
         <span className="ml-2 text-[11px] font-normal text-slate-500">
+          {itemCount > 1 ? 'total · ' : ''}
           {laborOnly ? 'só a aplicação — material por sua conta' : 'valor final'}
         </span>
       </p>
@@ -249,17 +259,23 @@ export default function ClientOrdersPage() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-white">{request.scopeLabel}</p>
+                  <p className="text-sm font-bold text-white">
+                    {request.requestItems.length > 1
+                      ? `${request.requestItems.length} ${request.type === 'Automotivo' ? 'veículos' : 'itens'} no pedido`
+                      : request.scopeLabel}
+                  </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {request.materialType} · {request.estimatedM2} m² ·{' '}
+                    {request.requestItems.length === 1 && `${request.materialType} · `}
+                    {request.estimatedM2} m² ·{' '}
                     {new Date(request.createdAt).toLocaleDateString('pt-BR')}
                   </p>
                   {request.supplyMode === 'mao_de_obra' && (
                     <p className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
                       <Wrench size={12} />
                       Só a aplicação · você fornece
-                      {request.clientMaterial &&
-                        `: ${request.clientMaterial.product} · ${request.clientMaterial.color}`}
+                      {request.requestItems.length === 1 && request.clientMaterial
+                        ? `: ${request.clientMaterial.product} · ${request.clientMaterial.color}`
+                        : ' o material'}
                     </p>
                   )}
                 </div>
@@ -283,6 +299,9 @@ export default function ClientOrdersPage() {
                 </span>
                 <span className="text-[11px] text-slate-600">estimativa prévia</span>
               </div>
+
+              <RequestItemsList request={request} showProposal />
+
 
               {request.status === 'Aguardando aceite' && (
                 <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-800">
@@ -331,6 +350,7 @@ export default function ClientOrdersPage() {
                   <ProposalCard
                     proposal={request.proposal}
                     laborOnly={request.supplyMode === 'mao_de_obra'}
+                    itemCount={request.requestItems.length}
                     responding={responding === request.id}
                     onRespond={(accept, reason) => void handleRespond(request.id, accept, reason)}
                   />

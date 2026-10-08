@@ -20,6 +20,7 @@ import {
   ServiceRequestProposal,
 } from '../types';
 import ProposalPanel from '../components/marketplace/ProposalPanel';
+import RequestItemsList from '../components/marketplace/RequestItemsList';
 import { applicatorService } from '../services/applicatorService';
 import { formatCurrency, cn } from '../lib/utils';
 
@@ -215,10 +216,11 @@ export default function RegionRequestsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-white">{request.scopeLabel}</p>
+                      <p className="text-sm font-bold text-white">{requestTitle(request)}</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {request.clientName} · {request.materialType} · {request.estimatedM2} m²
-                        · cerca de {request.estimatedHours} h
+                        {request.clientName}
+                        {request.requestItems.length === 1 && ` · ${request.materialType}`} ·{' '}
+                        {request.estimatedM2} m² · cerca de {request.estimatedHours} h
                       </p>
                       <ClientSuppliedBadge request={request} />
                     </div>
@@ -227,6 +229,8 @@ export default function RegionRequestsPage() {
                       {hoursLeft(request.expiresAt)}
                     </span>
                   </div>
+
+                  <RequestItemsList request={request} />
 
                   {request.notes && (
                     <p className="text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5">
@@ -301,7 +305,7 @@ export default function RegionRequestsPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-white">{request.scopeLabel}</p>
+                    <p className="text-sm font-bold text-white">{requestTitle(request)}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {request.client?.name}
                       {request.client?.neighborhood ? ` · ${request.client.neighborhood}` : ''}
@@ -325,7 +329,18 @@ export default function RegionRequestsPage() {
                   </span>
                 </div>
 
-                {request.proposal && <ProposalSummary proposal={request.proposal} />}
+                {request.requestItems.length > 1 && (
+                  <div className="mt-4">
+                    <RequestItemsList request={request} showProposal />
+                  </div>
+                )}
+
+                {request.proposal && (
+                  <ProposalSummary
+                    proposal={request.proposal}
+                    itemCount={request.requestItems.length}
+                  />
+                )}
 
                 {request.status === 'Aceito' &&
                   request.proposal?.status !== 'Aceita' &&
@@ -380,14 +395,22 @@ export default function RegionRequestsPage() {
   );
 }
 
+function requestTitle(request: ServiceRequest): string {
+  const count = request.requestItems.length;
+  if (count <= 1) return request.scopeLabel;
+  return `${count} ${request.type === 'Automotivo' ? 'veículos' : 'itens'} no pedido`;
+}
+
 function ClientSuppliedBadge({ request }: { request: ServiceRequest }) {
   if (request.supplyMode !== 'mao_de_obra') return null;
+  const single = request.requestItems.length === 1;
   return (
     <p className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
       <Wrench size={12} />
       Só a aplicação · cliente fornece
-      {request.clientMaterial &&
-        `: ${request.clientMaterial.product} · ${request.clientMaterial.color}`}
+      {single && request.clientMaterial
+        ? `: ${request.clientMaterial.product} · ${request.clientMaterial.color}`
+        : ' o material'}
     </p>
   );
 }
@@ -398,7 +421,13 @@ const PROPOSAL_LABEL: Record<ProposalStatus, { text: string; className: string }
   Recusada: { text: 'Cliente recusou', className: 'text-red-400' },
 };
 
-function ProposalSummary({ proposal }: { proposal: ServiceRequestProposal }) {
+function ProposalSummary({
+  proposal,
+  itemCount,
+}: {
+  proposal: ServiceRequestProposal;
+  itemCount: number;
+}) {
   const label = PROPOSAL_LABEL[proposal.status];
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 space-y-1">
@@ -411,9 +440,14 @@ function ProposalSummary({ proposal }: { proposal: ServiceRequestProposal }) {
         </span>
       </div>
       <p className="text-sm text-white">
-        {proposal.product} · {proposal.color}
+        {itemCount > 1
+          ? `${itemCount} itens (detalhes acima)`
+          : `${proposal.product} · ${proposal.color}`}
       </p>
-      <p className="text-sm font-bold text-white">{formatCurrency(proposal.price)}</p>
+      <p className="text-sm font-bold text-white">
+        {itemCount > 1 && <span className="font-normal text-slate-400">Total: </span>}
+        {formatCurrency(proposal.price)}
+      </p>
       {proposal.status === 'Recusada' && proposal.clientReason && (
         <p className="text-xs text-red-300/80">Motivo do cliente: {proposal.clientReason}</p>
       )}

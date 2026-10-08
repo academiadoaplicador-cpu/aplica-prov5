@@ -480,6 +480,36 @@ export interface ServiceRequestProposal {
   clientReason: string;
   sentAt: string;
   respondedAt?: string;
+  /** Material e valor de cada item do pedido; o preço acima é a soma. */
+  items: ServiceRequestProposalItem[];
+}
+
+export interface ServiceRequestProposalItem {
+  requestItemId: string;
+  materialId: string;
+  materialType: string;
+  product: string;
+  color: string;
+  pricePerM2: number;
+  price: number;
+}
+
+/** Item do pedido (um veículo, uma geladeira...) com escopo e estimativa próprios. */
+export interface ServiceRequestItemRecord {
+  id: string;
+  subType?: string;
+  scopeLabel: string;
+  vehicleId?: string;
+  partIds: string[];
+  items: ServiceRequestItem[];
+  materialType: string;
+  clientMaterial?: { id: string; product: string; color: string };
+  estimatedM2: number;
+  estimatedHours: number;
+  referencePricePerM2: number;
+  suggestedPrice: number;
+  priceMin: number;
+  priceMax: number;
 }
 
 export interface ServiceRequestItem {
@@ -493,6 +523,8 @@ export interface ServiceRequestItem {
 export interface ServiceRequest {
   id: string;
   clientId: string;
+  /** Sempre ao menos um; pedidos antigos chegam como um item só. */
+  requestItems: ServiceRequestItemRecord[];
   status: ServiceRequestStatus;
   type: 'Automotivo' | 'Decorativo';
   subType?: string;

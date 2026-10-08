@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Send } from 'lucide-react';
-import { FinancialSettings, Material, ServiceRequest } from '../../types';
+import {
+  FinancialSettings,
+  Material,
+  ServiceRequest,
+  ServiceRequestItemRecord,
+} from '../../types';
 import { databaseService } from '../../services/databaseService';
 import { applicatorService } from '../../services/applicatorService';
 import { formatCurrency } from '../../lib/utils';
@@ -20,7 +25,44 @@ function parsePositive(value: string): number | null {
   return value.trim() !== '' && Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Monta a proposta com o material do catálogo e o valor real para o cliente. */
+interface ItemDraft {
+  brand: string;
+  line: string;
+  materialId: string;
+  customPrice: string;
+  finalPrice: string;
+}
+
+const EMPTY_DRAFT: ItemDraft = { brand: '', line: '', materialId: '', customPrice: '', finalPrice: '' };
+
+/** Conta de um item, igual à das calculadoras e à do servidor. */
+function computeItem(
+  item: ServiceRequestItemRecord,
+  draft: ItemDraft,
+  materials: Material[],
+  settings: FinancialSettings | null,
+  laborOnly: boolean,
+) {
+  const material = materials.find((m) => m.id === draft.materialId);
+  const ready = laborOnly || Boolean(material);
+  const pricePerM2 = laborOnly ? 0 : (parsePositive(draft.customPrice) ?? material?.pricePerM2 ?? 0);
+  if (!settings || !ready) return { material, ready, pricePerM2, totals: null, finalValue: 0 };
+  const materialCost = item.estimatedM2 * pricePerM2;
+  const laborCost = item.estimatedHours * settings.hourlyRate;
+  const suggested =
+    (materialCost + laborCost) *
+    (1 + settings.profitMarginPercentage / 100) *
+    (1 + settings.taxPercentage / 100);
+  return {
+    material,
+    ready,
+    pricePerM2,
+    totals: { materialCost, laborCost, suggested },
+    finalValue: parsePositive(draft.finalPrice) ?? suggested,
+  };
+}
+
+/** Monta a proposta com material do catálogo e valor real de cada item do pedido. */
 export default function ProposalPanel({
   request,
   onSent,
@@ -35,34 +77,39 @@ export default function ProposalPanel({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+  const [note, setNote] = useState(request.proposal?.note || '');
 
-  const initial = request.proposal;
-  // A proposta segue o tipo que o cliente pediu: só materiais desse tipo são compatíveis.
-  const type = request.materialType;
-  const [brand, setBrand] = useState('');
-  const [line, setLine] = useState('');
-  const [materialId, setMaterialId] = useState('');
-  const [customPrice, setCustomPrice] = useState('');
-  const [finalPrice, setFinalPrice] = useState(initial ? String(initial.price) : '');
-  const [note, setNote] = useState(initial?.note || '');
+  const items = request.requestItems;
+  const multi = items.length > 1;
+  const laborOnly = request.supplyMode === 'mao_de_obra';
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([databaseService.getMaterials(), databaseService.getFinancialSettings()])
       .then(([list, financial]) => {
         if (cancelled) return;
-        setMaterials(list.filter((m) => m.type === type && m.pricePerM2 > 0));
+        const priced = list.filter((m) => m.pricePerM2 > 0);
+        setMaterials(priced);
         setSettings(financial);
-        const previous =
-          initial && list.find((m) => m.id === initial.materialId && m.type === type);
-        if (previous) {
-          setBrand(previous.brand);
-          setLine(previous.line);
-          setMaterialId(previous.id);
-          if (initial.pricePerM2 !== previous.pricePerM2) {
-            setCustomPrice(String(initial.pricePerM2));
+        // Reabre a proposta anterior como ponto de partida, item a item.
+        const initial: Record<string, ItemDraft> = {};
+        for (const item of items) {
+          const previous = request.proposal?.items.find((p) => p.requestItemId === item.id);
+          const draft = { ...EMPTY_DRAFT };
+          if (previous) {
+            draft.finalPrice = String(previous.price);
+            const mat = priced.find((m) => m.id === previous.materialId && m.type === item.materialType);
+            if (mat && !laborOnly) {
+              draft.brand = mat.brand;
+              draft.line = mat.line;
+              draft.materialId = mat.id;
+              if (previous.pricePerM2 !== mat.pricePerM2) draft.customPrice = String(previous.pricePerM2);
+            }
           }
+          initial[item.id] = draft;
         }
+        setDrafts(initial);
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Erro ao carregar o catálogo');
@@ -75,50 +122,37 @@ export default function ProposalPanel({
     };
   }, []);
 
-  const brands = useMemo(() => uniqueSorted(materials.map((m) => m.brand)), [materials]);
-  const lines = useMemo(
-    () => uniqueSorted(materials.filter((m) => m.brand === brand).map((m) => m.line)),
-    [materials, brand],
+  const results = items.map((item) =>
+    computeItem(item, drafts[item.id] ?? EMPTY_DRAFT, materials, settings, laborOnly),
   );
-  const colors = useMemo(
-    () =>
-      materials
-        .filter((m) => m.brand === brand && m.line === line)
-        .sort((a, b) => a.colorTexture.localeCompare(b.colorTexture, 'pt-BR')),
-    [materials, brand, line],
-  );
+  const allReady = results.every((r) => r.ready);
+  const total = results.reduce((acc, r) => acc + r.finalValue, 0);
 
-  const laborOnly = request.supplyMode === 'mao_de_obra';
-  const material = materials.find((m) => m.id === materialId);
-  const pricePerM2 = laborOnly ? 0 : (parsePositive(customPrice) ?? material?.pricePerM2 ?? 0);
-  const ready = laborOnly || Boolean(material);
-
-  const totals = useMemo(() => {
-    if (!settings || !ready) return null;
-    const materialCost = request.estimatedM2 * pricePerM2;
-    const laborCost = request.estimatedHours * settings.hourlyRate;
-    const suggested =
-      (materialCost + laborCost) *
-      (1 + settings.profitMarginPercentage / 100) *
-      (1 + settings.taxPercentage / 100);
-    return { materialCost, laborCost, suggested };
-  }, [settings, ready, pricePerM2, request.estimatedM2, request.estimatedHours]);
-
-  const finalValue = parsePositive(finalPrice) ?? totals?.suggested ?? 0;
+  const updateDraft = (itemId: string, patch: Partial<ItemDraft>) =>
+    setDrafts((prev) => ({ ...prev, [itemId]: { ...(prev[itemId] ?? EMPTY_DRAFT), ...patch } }));
 
   const handleSend = async () => {
-    if (!ready) {
-      setError('Escolha marca, linha e cor/textura do material.');
+    const missing = results.findIndex((r) => !r.ready);
+    if (missing >= 0) {
+      setError(
+        `${multi ? `Item ${missing + 1}: ` : ''}escolha marca, linha e cor/textura do material.`,
+      );
       return;
     }
     setSending(true);
     setError('');
     try {
       await applicatorService.sendProposal(request.id, {
-        materialId: laborOnly ? undefined : material?.id,
-        customPricePerM2: laborOnly ? null : parsePositive(customPrice),
-        finalPrice: parsePositive(finalPrice),
         note,
+        items: items.map((item, index) => {
+          const draft = drafts[item.id] ?? EMPTY_DRAFT;
+          return {
+            requestItemId: item.id,
+            materialId: laborOnly ? undefined : results[index].material?.id,
+            customPricePerM2: laborOnly ? null : parsePositive(draft.customPrice),
+            finalPrice: parsePositive(draft.finalPrice),
+          };
+        }),
       });
       await onSent();
     } catch (e) {
@@ -141,151 +175,36 @@ export default function ProposalPanel({
     <div className="mt-4 space-y-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4">
       <p className="text-xs text-slate-300 leading-relaxed">
         {laborOnly
-          ? 'Cotação só da aplicação: o cliente fornece o material abaixo e ele não entra no valor.'
-          : 'Escolha o material que você vai usar.'}{' '}
-        O valor é calculado com as suas configurações financeiras sobre {request.estimatedM2} m²
-        e cerca de {request.estimatedHours} h, e você pode ajustar o valor final antes de enviar
+          ? 'Cotação só da aplicação: o cliente fornece o material e ele não entra no valor.'
+          : `Escolha o material que você vai usar${multi ? ' em cada item' : ''}.`}{' '}
+        O valor é calculado com as suas configurações financeiras sobre a área e as horas
+        estimadas{multi ? ' de cada item' : ''}, e você pode ajustar o valor final antes de enviar
         ao cliente.
       </p>
 
-      {laborOnly ? (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-amber-400">
-            Material fornecido pelo cliente
-          </p>
-          <p className="mt-1 text-sm text-white">
-            {request.clientMaterial
-              ? `${request.clientMaterial.product} · ${request.clientMaterial.color}`
-              : request.materialType}
-          </p>
+      {items.map((item, index) => (
+        <div key={item.id}>
+          <ItemEditor
+            item={item}
+            index={index}
+            multi={multi}
+            laborOnly={laborOnly}
+            draft={drafts[item.id] ?? EMPTY_DRAFT}
+            onChange={(patch) => updateDraft(item.id, patch)}
+            materials={materials}
+            settings={settings}
+            result={results[index]}
+          />
         </div>
-      ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className={labelClass}>Tipo (pedido pelo cliente)</label>
-          <p className="h-10 flex items-center px-3 rounded-xl border border-slate-800 bg-slate-950/50 text-sm text-slate-300">
-            {type}
-          </p>
-        </div>
-        <div>
-          <label className={labelClass}>Marca</label>
-          <select
-            className={selectClass}
-            value={brand}
-            disabled={brands.length === 0}
-            onChange={(e) => {
-              setBrand(e.target.value);
-              setLine('');
-              setMaterialId('');
-            }}
-          >
-            <option value="">{brands.length === 0 ? 'Nenhum produto deste tipo' : 'Selecione'}</option>
-            {brands.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={labelClass}>Linha / produto</label>
-          <select
-            className={selectClass}
-            value={line}
-            disabled={!brand}
-            onChange={(e) => {
-              setLine(e.target.value);
-              setMaterialId('');
-            }}
-          >
-            <option value="">Selecione</option>
-            {lines.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={labelClass}>Cor / textura</label>
-          <select
-            className={selectClass}
-            value={materialId}
-            disabled={!line}
-            onChange={(e) => setMaterialId(e.target.value)}
-          >
-            <option value="">Selecione</option>
-            {colors.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.colorTexture || m.name} — {formatCurrency(m.pricePerM2)}/m²
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      )}
+      ))}
 
-      {totals && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {material && !laborOnly && (
-              <div>
-                <label className={labelClass}>Preço por m² (opcional)</label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step={0.01}
-                  value={customPrice}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                  placeholder={`Catálogo: ${material.pricePerM2.toFixed(2)}`}
-                  className={inputClass}
-                />
-              </div>
-            )}
-            <div>
-              <label className={labelClass}>Valor final (opcional)</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step={0.01}
-                value={finalPrice}
-                onChange={(e) => setFinalPrice(e.target.value)}
-                placeholder={`Sugerido: ${totals.suggested.toFixed(2)}`}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">
-                {laborOnly
-                  ? 'Material (fornecido pelo cliente)'
-                  : `Material (${request.estimatedM2} m² × ${formatCurrency(pricePerM2)})`}
-              </dt>
-              <dd className="text-slate-300">{formatCurrency(totals.materialCost)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">
-                Mão de obra ({request.estimatedHours} h × {formatCurrency(settings!.hourlyRate)})
-              </dt>
-              <dd className="text-slate-300">{formatCurrency(totals.laborCost)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">
-                Sugerido (margem {settings!.profitMarginPercentage}% + imposto{' '}
-                {settings!.taxPercentage}%)
-              </dt>
-              <dd className="text-slate-300">{formatCurrency(totals.suggested)}</dd>
-            </div>
-            <div className="flex justify-between gap-4 pt-2 border-t border-slate-800">
-              <dt className="text-white font-bold">Valor para o cliente</dt>
-              <dd className="text-white font-bold">{formatCurrency(finalValue)}</dd>
-            </div>
-          </dl>
-        </>
+      {multi && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+          <span className="text-sm font-bold text-white">Total para o cliente</span>
+          <span className="text-lg font-black font-mono text-indigo-300">
+            {allReady ? formatCurrency(total) : '—'}
+          </span>
+        </div>
       )}
 
       <div>
@@ -314,13 +233,201 @@ export default function ProposalPanel({
         <button
           type="button"
           onClick={() => void handleSend()}
-          disabled={sending || !ready}
+          disabled={sending || !allReady}
           className="flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold"
         >
           {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           Enviar proposta ao cliente
         </button>
       </div>
+    </div>
+  );
+}
+
+function ItemEditor({
+  item,
+  index,
+  multi,
+  laborOnly,
+  draft,
+  onChange,
+  materials,
+  settings,
+  result,
+}: {
+  item: ServiceRequestItemRecord;
+  index: number;
+  multi: boolean;
+  laborOnly: boolean;
+  draft: ItemDraft;
+  onChange: (patch: Partial<ItemDraft>) => void;
+  materials: Material[];
+  settings: FinancialSettings | null;
+  result: ReturnType<typeof computeItem>;
+}) {
+  // Só materiais do tipo que o cliente pediu para este item são compatíveis.
+  const compatible = useMemo(
+    () => materials.filter((m) => m.type === item.materialType),
+    [materials, item.materialType],
+  );
+  const brands = useMemo(() => uniqueSorted(compatible.map((m) => m.brand)), [compatible]);
+  const lines = useMemo(
+    () => uniqueSorted(compatible.filter((m) => m.brand === draft.brand).map((m) => m.line)),
+    [compatible, draft.brand],
+  );
+  const colors = useMemo(
+    () =>
+      compatible
+        .filter((m) => m.brand === draft.brand && m.line === draft.line)
+        .sort((a, b) => a.colorTexture.localeCompare(b.colorTexture, 'pt-BR')),
+    [compatible, draft.brand, draft.line],
+  );
+  const { material, totals, pricePerM2, finalValue } = result;
+
+  return (
+    <div className={multi ? 'space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3 sm:p-4' : 'space-y-4'}>
+      {multi && (
+        <p className="text-sm font-bold text-white leading-snug break-words">
+          <span className="text-indigo-300 font-mono text-xs mr-1.5">Item {index + 1}</span>
+          {item.scopeLabel}
+          <span className="text-slate-500 font-normal"> · {item.materialType}</span>
+        </p>
+      )}
+
+      {laborOnly ? (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-amber-400">
+            Material fornecido pelo cliente
+          </p>
+          <p className="mt-1 text-sm text-white">
+            {item.clientMaterial
+              ? `${item.clientMaterial.product} · ${item.clientMaterial.color}`
+              : item.materialType}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Tipo (pedido pelo cliente)</label>
+            <p className="h-10 flex items-center px-3 rounded-xl border border-slate-800 bg-slate-950/50 text-sm text-slate-300">
+              {item.materialType}
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Marca</label>
+            <select
+              className={selectClass}
+              value={draft.brand}
+              disabled={brands.length === 0}
+              onChange={(e) => onChange({ brand: e.target.value, line: '', materialId: '' })}
+            >
+              <option value="">{brands.length === 0 ? 'Nenhum produto deste tipo' : 'Selecione'}</option>
+              {brands.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Linha / produto</label>
+            <select
+              className={selectClass}
+              value={draft.line}
+              disabled={!draft.brand}
+              onChange={(e) => onChange({ line: e.target.value, materialId: '' })}
+            >
+              <option value="">Selecione</option>
+              {lines.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Cor / textura</label>
+            <select
+              className={selectClass}
+              value={draft.materialId}
+              disabled={!draft.line}
+              onChange={(e) => onChange({ materialId: e.target.value })}
+            >
+              <option value="">Selecione</option>
+              {colors.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.colorTexture || m.name} — {formatCurrency(m.pricePerM2)}/m²
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {totals && settings && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {material && !laborOnly && (
+              <div>
+                <label className={labelClass}>Preço por m² (opcional)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step={0.01}
+                  value={draft.customPrice}
+                  onChange={(e) => onChange({ customPrice: e.target.value })}
+                  placeholder={`Catálogo: ${material.pricePerM2.toFixed(2)}`}
+                  className={inputClass}
+                />
+              </div>
+            )}
+            <div>
+              <label className={labelClass}>Valor final (opcional)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={0.01}
+                value={draft.finalPrice}
+                onChange={(e) => onChange({ finalPrice: e.target.value })}
+                placeholder={`Sugerido: ${totals.suggested.toFixed(2)}`}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <dl className="space-y-1.5 text-xs">
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">
+                {laborOnly
+                  ? 'Material (fornecido pelo cliente)'
+                  : `Material (${item.estimatedM2} m² × ${formatCurrency(pricePerM2)})`}
+              </dt>
+              <dd className="text-slate-300 shrink-0">{formatCurrency(totals.materialCost)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">
+                Mão de obra ({item.estimatedHours} h × {formatCurrency(settings.hourlyRate)})
+              </dt>
+              <dd className="text-slate-300 shrink-0">{formatCurrency(totals.laborCost)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">
+                Sugerido (margem {settings.profitMarginPercentage}% + imposto{' '}
+                {settings.taxPercentage}%)
+              </dt>
+              <dd className="text-slate-300 shrink-0">{formatCurrency(totals.suggested)}</dd>
+            </div>
+            <div className="flex justify-between gap-4 pt-2 border-t border-slate-800">
+              <dt className="text-white font-bold">
+                {multi ? 'Valor deste item' : 'Valor para o cliente'}
+              </dt>
+              <dd className="text-white font-bold shrink-0">{formatCurrency(finalValue)}</dd>
+            </div>
+          </dl>
+        </>
+      )}
     </div>
   );
 }

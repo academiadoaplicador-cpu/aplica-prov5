@@ -22,7 +22,11 @@ import {
   SupplyMode,
 } from '../../types';
 import { VEHICLE_PARTS_DATA } from '../../types/vehicleParts';
-import { clientService, type ServiceRequestDraft } from '../../services/clientService';
+import {
+  clientService,
+  type ServiceRequestDraft,
+  type ServiceRequestItemDraft,
+} from '../../services/clientService';
 import { ROUTES } from '../../routes/paths';
 import { formatCurrency, cn } from '../../lib/utils';
 
@@ -83,6 +87,20 @@ function emptyItem(): ServiceRequestItem {
   return { name: '', width: 0, height: 0, quantity: 1, complexity: 1 };
 }
 
+const MAX_ITEMS = 10;
+
+interface AddedItem {
+  key: string;
+  draft: ServiceRequestItemDraft;
+  productLabel: string;
+  estimate: PriceEstimate;
+}
+
+function itemDraftOf(draft: ServiceRequestDraft): ServiceRequestItemDraft {
+  const { type: _type, supplyMode: _mode, notes: _notes, requestItems: _items, ...item } = draft;
+  return item;
+}
+
 export default function ClientNewRequestPage() {
   const navigate = useNavigate();
 
@@ -104,6 +122,8 @@ export default function ClientNewRequestPage() {
   const [items, setItems] = useState<ServiceRequestItem[]>([emptyItem()]);
   const [materialType, setMaterialType] = useState('');
   const [notes, setNotes] = useState('');
+  /** Itens já prontos; o item em montagem nos passos entra junto ao enviar. */
+  const [addedItems, setAddedItems] = useState<AddedItem[]>([]);
 
   const [estimate, setEstimate] = useState<PriceEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -255,12 +275,57 @@ export default function ClientNewRequestPage() {
     }
   };
 
+  const currentProductLabel =
+    laborOnly && clientMaterial
+      ? `${clientMaterial.brand} · ${clientMaterial.line} · ${clientMaterial.colorTexture}`
+      : materialType;
+
+  /** O item montado nos passos, quando está completo e já tem estimativa. */
+  const currentItem: AddedItem | null =
+    draft && estimate && !estimating
+      ? { key: 'current', draft: itemDraftOf(draft), productLabel: currentProductLabel, estimate }
+      : null;
+  const allItems = currentItem ? [...addedItems, currentItem] : addedItems;
+  const escopoStep = steps.indexOf('escopo');
+  const lastStep = steps.length - 1;
+  // Um pedido não mistura tipos de cotação nem veículo com móveis.
+  const lockedChoice = addedItems.length > 0;
+
+  const resetCurrentItem = () => {
+    setVehicleId('');
+    setVehicleSearch('');
+    setScope('completo');
+    setPartIds([]);
+    setItems([emptyItem()]);
+    setLaborType('');
+    setLaborBrand('');
+    setLaborLine('');
+    setClientMaterialId('');
+  };
+
+  const handleAddAnother = () => {
+    if (!currentItem) return;
+    setAddedItems((prev) => [...prev, { ...currentItem, key: crypto.randomUUID() }]);
+    resetCurrentItem();
+    setStep(escopoStep);
+  };
+
+  const handleRemoveItem = (key: string) => {
+    setAddedItems((prev) => prev.filter((item) => item.key !== key));
+  };
+
   const handleSubmit = async () => {
-    if (!draft) return;
+    if (!type || !supplyMode || allItems.length === 0) return;
     setSubmitting(true);
     setSubmitError('');
     try {
-      await clientService.createRequest(draft);
+      await clientService.createRequest({
+        type,
+        supplyMode,
+        notes,
+        materialType: allItems[0].draft.materialType,
+        requestItems: allItems.map((item) => item.draft),
+      });
       navigate(ROUTES.client.orders, { replace: true });
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Não foi possível enviar o pedido');
@@ -300,6 +365,9 @@ export default function ClientNewRequestPage() {
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">Pedir um orçamento</h1>
         <p className="mt-2 text-sm text-slate-500">
           Etapa {step + 1} de {steps.length} — {STEP_LABEL[current]}
+          {addedItems.length > 0 && current !== 'enviar' && (
+            <span className="text-emerald-400"> · item {addedItems.length + 1}</span>
+          )}
         </p>
       </header>
 
@@ -322,38 +390,61 @@ export default function ClientNewRequestPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <ChoiceCard
                 active={supplyMode === 'completo'}
-                onClick={() => setSupplyMode('completo')}
+                onClick={() => !lockedChoice && setSupplyMode('completo')}
                 icon={<Package size={20} />}
                 title="Material + aplicação"
                 description="O aplicador indica e fornece o material, e faz a aplicação"
               />
               <ChoiceCard
                 active={supplyMode === 'mao_de_obra'}
-                onClick={() => setSupplyMode('mao_de_obra')}
+                onClick={() => !lockedChoice && setSupplyMode('mao_de_obra')}
                 icon={<Wrench size={20} />}
                 title="Só a aplicação"
                 description="Você já tem o material; o aplicador cobra apenas o serviço"
               />
             </div>
+            {lockedChoice && <LockedNotice />}
           </div>
         )}
 
         {current === 'servico' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <ChoiceCard
-              active={type === 'Automotivo'}
-              onClick={() => setType('Automotivo')}
-              icon={<Car size={20} />}
-              title="Veículo"
-              description="Envelopamento de carro, moto, van ou frota"
-            />
-            <ChoiceCard
-              active={type === 'Decorativo'}
-              onClick={() => setType('Decorativo')}
-              icon={<Home size={20} />}
-              title="Móveis e ambientes"
-              description="Móveis, eletrodomésticos ou parede"
-            />
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ChoiceCard
+                active={type === 'Automotivo'}
+                onClick={() => !lockedChoice && setType('Automotivo')}
+                icon={<Car size={20} />}
+                title="Veículo"
+                description="Envelopamento de carro, moto, van ou frota"
+              />
+              <ChoiceCard
+                active={type === 'Decorativo'}
+                onClick={() => !lockedChoice && setType('Decorativo')}
+                icon={<Home size={20} />}
+                title="Móveis e ambientes"
+                description="Móveis, eletrodomésticos ou parede"
+              />
+            </div>
+            {lockedChoice && <LockedNotice />}
+          </div>
+        )}
+
+        {current === 'escopo' && addedItems.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-emerald-600/20 bg-emerald-600/5 px-4 py-3">
+            <p className="text-xs text-slate-300">
+              {addedItems.length} {addedItems.length === 1 ? 'item pronto' : 'itens prontos'}.
+              Monte o próximo ou volte ao resumo.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                resetCurrentItem();
+                setStep(lastStep);
+              }}
+              className="shrink-0 text-xs font-bold text-emerald-400 hover:text-emerald-300"
+            >
+              Ir para o resumo sem adicionar
+            </button>
           </div>
         )}
 
@@ -668,24 +759,45 @@ export default function ClientNewRequestPage() {
 
         {current === 'enviar' && (
           <div className="space-y-5">
-            <EstimateBox estimate={estimate} loading={estimating} error={estimateError} />
+            {addedItems.length === 0 ? (
+              <>
+                <EstimateBox estimate={estimate} loading={estimating} error={estimateError} />
 
-            <dl className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2 text-sm">
-              <SummaryRow label="Cotação" value={supplyMode ? SUPPLY_LABEL[supplyMode] : '—'} />
-              <SummaryRow label="Serviço" value={type || '—'} />
-              <SummaryRow label="Escopo" value={estimate?.scopeLabel || '—'} />
-              {laborOnly && clientMaterial ? (
-                <SummaryRow
-                  label="Seu material"
-                  value={`${clientMaterial.brand} · ${clientMaterial.line} · ${clientMaterial.colorTexture}`}
-                />
-              ) : (
-                <SummaryRow label="Produto" value={materialType} />
-              )}
-              {estimate && (
-                <SummaryRow label="Área estimada" value={`${estimate.estimatedM2} m²`} />
-              )}
-            </dl>
+                <dl className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2 text-sm">
+                  <SummaryRow label="Cotação" value={supplyMode ? SUPPLY_LABEL[supplyMode] : '—'} />
+                  <SummaryRow label="Serviço" value={type || '—'} />
+                  <SummaryRow label="Escopo" value={estimate?.scopeLabel || '—'} />
+                  <SummaryRow
+                    label={laborOnly ? 'Seu material' : 'Produto'}
+                    value={currentProductLabel || '—'}
+                  />
+                  {estimate && (
+                    <SummaryRow label="Área estimada" value={`${estimate.estimatedM2} m²`} />
+                  )}
+                </dl>
+              </>
+            ) : (
+              <ItemsSummary
+                items={allItems}
+                currentKey={currentItem?.key}
+                laborOnly={laborOnly}
+                supplyLabel={supplyMode ? SUPPLY_LABEL[supplyMode] : ''}
+                onRemove={handleRemoveItem}
+                estimating={estimating}
+                estimateError={estimateError}
+              />
+            )}
+
+            {currentItem && allItems.length < MAX_ITEMS && (
+              <button
+                type="button"
+                onClick={handleAddAnother}
+                className="w-full flex items-center justify-center gap-2 min-h-11 px-4 rounded-xl border border-emerald-600/30 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-300 text-sm font-bold transition-colors"
+              >
+                <Plus size={16} />
+                {type === 'Automotivo' ? 'Adicionar outro veículo' : 'Adicionar outro item'}
+              </button>
+            )}
 
             <div>
               <label className={labelClass} htmlFor="request-notes">
@@ -739,7 +851,7 @@ export default function ClientNewRequestPage() {
         ) : (
           <button
             type="button"
-            disabled={submitting || !estimate}
+            disabled={submitting || estimating || allItems.length === 0}
             onClick={() => void handleSubmit()}
             className="flex items-center gap-2 h-11 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors"
           >
@@ -814,6 +926,102 @@ function EstimateBox({
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+function LockedNotice() {
+  return (
+    <p className="text-[11px] text-slate-500">
+      Já há itens neste pedido. Para mudar esta escolha, remova os itens no resumo.
+    </p>
+  );
+}
+
+/** Resumo do pedido com vários itens: estimativa de cada um e a soma. */
+function ItemsSummary({
+  items,
+  currentKey,
+  laborOnly,
+  supplyLabel,
+  onRemove,
+  estimating,
+  estimateError,
+}: {
+  items: AddedItem[];
+  currentKey?: string;
+  laborOnly: boolean;
+  supplyLabel: string;
+  onRemove: (key: string) => void;
+  estimating: boolean;
+  estimateError: string;
+}) {
+  const min = items.reduce((acc, item) => acc + item.estimate.priceMin, 0);
+  const max = items.reduce((acc, item) => acc + item.estimate.priceMax, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-emerald-600/20 bg-emerald-600/5 p-5">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-400">
+          Estimativa prévia · {items.length} itens
+        </p>
+        <p className="mt-1 text-2xl font-bold text-white tracking-tight">
+          {formatCurrency(min)}
+          <span className="mx-2 text-slate-600 font-normal">a</span>
+          {formatCurrency(max)}
+        </p>
+        <p className="mt-2 text-[11px] text-slate-500">
+          {supplyLabel}. Soma das faixas de cada item. O valor final é fechado com o aplicador
+          que aceitar o pedido.
+        </p>
+      </div>
+
+      <ul className="rounded-xl border border-slate-800 bg-slate-950/60 divide-y divide-slate-800/80">
+        {items.map((item, index) => (
+          <li key={item.key} className="flex items-start gap-3 px-4 py-3">
+            <span className="mt-0.5 text-[10px] font-mono text-slate-600 w-5 shrink-0">
+              {index + 1}.
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-white break-words">
+                {item.estimate.scopeLabel}
+              </p>
+              <p className="text-xs text-slate-500 break-words">
+                {laborOnly ? 'Seu material: ' : ''}
+                {item.productLabel} · {item.estimate.estimatedM2} m²
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {formatCurrency(item.estimate.priceMin)} a {formatCurrency(item.estimate.priceMax)}
+              </p>
+            </div>
+            {item.key === currentKey ? (
+              <span
+                title="Use Voltar para ajustar este item"
+                className="shrink-0 text-[10px] font-mono uppercase text-emerald-400 mt-0.5"
+              >
+                atual
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onRemove(item.key)}
+                aria-label="Remover item"
+                className="shrink-0 min-h-10 min-w-10 flex items-center justify-center rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {estimating && (
+        <p className="flex items-center gap-2 text-xs text-slate-500">
+          <Loader2 size={13} className="animate-spin" />
+          Calculando o último item...
+        </p>
+      )}
+      {estimateError && <p className="text-xs text-red-400">{estimateError}</p>}
     </div>
   );
 }

@@ -10,18 +10,24 @@ import {
 } from '../types';
 import { ClientRegisterPayload } from '../types/auth';
 
-/** O que o assistente envia; o servidor recalcula tudo que define preço. */
-export interface ServiceRequestDraft {
-  type: 'Automotivo' | 'Decorativo';
+/** Um item do pedido (um veículo, uma geladeira...). */
+export interface ServiceRequestItemDraft {
   subType?: string;
-  supplyMode: SupplyMode;
   clientMaterialId?: string;
   materialType: string;
-  notes?: string;
   vehicleId?: string;
   scope?: 'completo' | 'parcial';
   partIds?: string[];
   items?: { name?: string; width: number; height: number; quantity?: number; complexity?: number }[];
+}
+
+/** O que o assistente envia; o servidor recalcula tudo que define preço. */
+export interface ServiceRequestDraft extends ServiceRequestItemDraft {
+  type: 'Automotivo' | 'Decorativo';
+  supplyMode: SupplyMode;
+  notes?: string;
+  /** Vários itens no mesmo pedido; sem a lista, o próprio rascunho é o único item. */
+  requestItems?: ServiceRequestItemDraft[];
 }
 
 async function api<T>(path: string, options: RequestInit = {}, timeoutMs = 60_000): Promise<T> {

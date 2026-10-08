@@ -22,14 +22,12 @@ export type ProposalStatus = 'Enviada' | 'Aceita' | 'Recusada';
 
 export type SupplyMode = 'completo' | 'mao_de_obra';
 
-export interface CreateRequestInput {
-  type?: string;
+/** O que define um item do pedido (um veículo, uma geladeira...). */
+export interface RequestItemInput {
   subType?: string;
-  supplyMode?: SupplyMode;
   /** Só aplicação: material do catálogo que o cliente vai fornecer. */
   clientMaterialId?: string;
   materialType?: string;
-  notes?: string;
   /** Automotivo */
   vehicleId?: string;
   scope?: 'completo' | 'parcial';
@@ -38,12 +36,103 @@ export interface CreateRequestInput {
   items?: DecorativeItemInput[];
 }
 
+export interface CreateRequestInput extends RequestItemInput {
+  type?: string;
+  supplyMode?: SupplyMode;
+  notes?: string;
+  /** Vários itens no mesmo pedido; sem a lista, o próprio corpo é o único item. */
+  requestItems?: RequestItemInput[];
+}
+
+export const MAX_REQUEST_ITEMS = 10;
+
+/** Item do pedido como fica gravado: escopo, produto e estimativa próprios. */
+export interface RequestItemRecord {
+  id: string;
+  subType?: string;
+  scopeLabel: string;
+  vehicleId?: string;
+  partIds: string[];
+  items: DecorativeItemInput[];
+  materialType: string;
+  clientMaterial?: ClientMaterial;
+  estimatedM2: number;
+  estimatedHours: number;
+  referencePricePerM2: number;
+  suggestedPrice: number;
+  priceMin: number;
+  priceMax: number;
+}
+
+/** Proposta do aplicador para um item do pedido. */
+export interface ProposalItemRecord {
+  requestItemId: string;
+  materialId: string;
+  materialType: string;
+  product: string;
+  color: string;
+  pricePerM2: number;
+  price: number;
+}
+
 export type CreateRequestResult =
   | { ok: true; id: string }
   | { ok: false; status: number; error: string };
 
+function readRequestItems(row: Record<string, unknown>): RequestItemRecord[] {
+  if (Array.isArray(row.request_items) && row.request_items.length > 0) {
+    return row.request_items as RequestItemRecord[];
+  }
+  return [
+    {
+      id: 'item-1',
+      subType: (row.sub_type as string) || undefined,
+      scopeLabel: row.scope_label as string,
+      vehicleId: (row.vehicle_id as string) || undefined,
+      partIds: (row.part_ids as string[]) || [],
+      items: Array.isArray(row.items) ? (row.items as DecorativeItemInput[]) : [],
+      materialType: row.material_type as string,
+      clientMaterial: row.client_material_id
+        ? {
+            id: row.client_material_id as string,
+            product: (row.client_material_product as string) || '',
+            color: (row.client_material_color as string) || '',
+          }
+        : undefined,
+      estimatedM2: Number(row.estimated_m2),
+      estimatedHours: Number(row.estimated_hours),
+      referencePricePerM2: Number(row.reference_price_per_m2),
+      suggestedPrice: Number(row.suggested_price),
+      priceMin: Number(row.price_min),
+      priceMax: Number(row.price_max),
+    },
+  ];
+}
+
+function readProposalItems(
+  row: Record<string, unknown>,
+  requestItems: RequestItemRecord[],
+): ProposalItemRecord[] {
+  if (Array.isArray(row.proposal_items) && row.proposal_items.length > 0) {
+    return row.proposal_items as ProposalItemRecord[];
+  }
+  return [
+    {
+      requestItemId: requestItems[0]?.id ?? 'item-1',
+      materialId: (row.proposal_material_id as string) || '',
+      materialType: (row.proposal_material_type as string) || '',
+      product: (row.proposal_product as string) || '',
+      color: (row.proposal_color as string) || '',
+      pricePerM2: Number(row.proposal_price_per_m2),
+      price: Number(row.proposal_price),
+    },
+  ];
+}
+
 export function mapServiceRequest(row: Record<string, unknown>) {
+  const requestItems = readRequestItems(row);
   return {
+    requestItems,
     id: row.id as string,
     clientId: row.client_id as string,
     status: row.status as RequestStatus,
@@ -94,6 +183,7 @@ export function mapServiceRequest(row: Record<string, unknown>) {
           respondedAt: row.proposal_responded_at
             ? new Date(row.proposal_responded_at as string | Date).toISOString()
             : undefined,
+          items: readProposalItems(row, requestItems),
         }
       : undefined,
   };
@@ -333,20 +423,62 @@ export async function createServiceRequest(
     };
   }
 
-  const scope = await resolveScope(client, input);
-  if (scope.ok === false) {
-    const { status, error } = scope;
-    return { ok: false, status, error };
-  }
-
-  const estimate = await buildEstimate(client, scope.estimateInput);
-  if (!isEstimateAvailable(estimate)) {
+  const itemInputs = input.requestItems?.length ? input.requestItems : [input];
+  if (itemInputs.length > MAX_REQUEST_ITEMS) {
     return {
       ok: false,
-      status: 409,
-      error: 'Não há preço de referência para este acabamento. Tente outro.',
+      status: 400,
+      error: `Máximo de ${MAX_REQUEST_ITEMS} itens por pedido.`,
     };
   }
+
+  // Cada item é resolvido e estimado sozinho; o pedido soma os itens.
+  const records: RequestItemRecord[] = [];
+  let supplyMode: SupplyMode = 'completo';
+  for (const [index, itemInput] of itemInputs.entries()) {
+    const scope = await resolveScope(client, {
+      ...itemInput,
+      type: input.type,
+      supplyMode: input.supplyMode,
+    });
+    const prefix = itemInputs.length > 1 ? `Item ${index + 1}: ` : '';
+    if (scope.ok === false) {
+      return { ok: false, status: scope.status, error: prefix + scope.error };
+    }
+    const estimate = await buildEstimate(client, scope.estimateInput);
+    if (!isEstimateAvailable(estimate)) {
+      return {
+        ok: false,
+        status: 409,
+        error: `${prefix}Não há preço de referência para este produto. Tente outro.`,
+      };
+    }
+    supplyMode = scope.supplyMode;
+    records.push({
+      id: `item-${index + 1}`,
+      subType: input.type === 'Decorativo' ? itemInput.subType || undefined : undefined,
+      scopeLabel: scope.scopeLabel,
+      vehicleId: input.type === 'Automotivo' ? itemInput.vehicleId : undefined,
+      partIds: scope.partIds,
+      items: scope.estimateInput.items ?? [],
+      materialType: scope.estimateInput.materialType,
+      clientMaterial: scope.clientMaterial,
+      estimatedM2: estimate.estimatedM2,
+      estimatedHours: estimate.estimatedHours,
+      referencePricePerM2: estimate.referencePricePerM2,
+      suggestedPrice: estimate.suggestedPrice,
+      priceMin: estimate.priceMin,
+      priceMax: estimate.priceMax,
+    });
+  }
+
+  const first = records[0];
+  const total = (key: 'estimatedM2' | 'estimatedHours' | 'suggestedPrice' | 'priceMin' | 'priceMax') =>
+    Math.round(records.reduce((acc, r) => acc + r[key], 0) * 100) / 100;
+  const scopeLabel =
+    records.length > 1
+      ? `${records.length} itens: ${records.map((r) => r.scopeLabel).join('; ')}`
+      : first.scopeLabel;
 
   const notes = (input.notes || '').trim().slice(0, 1000);
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
@@ -358,40 +490,43 @@ export async function createServiceRequest(
       estimated_m2, estimated_hours, reference_price_per_m2,
       suggested_price, price_min, price_max,
       city, state_code, cep, expires_at,
-      supply_mode, client_material_id, client_material_product, client_material_color
+      supply_mode, client_material_id, client_material_product, client_material_color,
+      request_items
     ) VALUES (
       $1, $2, 'Aguardando aceite', $3, $4, $5, $6,
       $7, $8, $9, $10,
       $11, $12, $13,
       $14, $15, $16,
       $17, $18, $19, NOW() + ($20 || ' hours')::interval,
-      $21, $22, $23, $24
+      $21, $22, $23, $24,
+      $25
     )`,
     [
       id,
       clientId,
       input.type,
-      input.subType ?? null,
-      scope.scopeLabel,
+      first.subType ?? null,
+      scopeLabel,
       notes,
-      input.vehicleId ?? null,
-      scope.partIds,
-      JSON.stringify(input.items || []),
-      scope.estimateInput.materialType,
-      estimate.estimatedM2,
-      estimate.estimatedHours,
-      estimate.referencePricePerM2,
-      estimate.suggestedPrice,
-      estimate.priceMin,
-      estimate.priceMax,
+      first.vehicleId ?? null,
+      first.partIds,
+      JSON.stringify(first.items),
+      first.materialType,
+      total('estimatedM2'),
+      total('estimatedHours'),
+      first.referencePricePerM2,
+      total('suggestedPrice'),
+      total('priceMin'),
+      total('priceMax'),
       city,
       stateCode,
       cep || '',
       String(REQUEST_EXPIRY_HOURS),
-      scope.supplyMode,
-      scope.clientMaterial?.id ?? null,
-      scope.clientMaterial?.product ?? null,
-      scope.clientMaterial?.color ?? null,
+      supplyMode,
+      first.clientMaterial?.id ?? null,
+      first.clientMaterial?.product ?? null,
+      first.clientMaterial?.color ?? null,
+      JSON.stringify(records.length > 1 ? records : []),
     ],
   );
 
@@ -569,6 +704,34 @@ export async function acceptServiceRequest(
   );
   const customerName = (clientProfile.rows[0]?.full_name as string) || 'Cliente';
 
+  // Com vários itens, o orçamento já nasce com um item para cada item do pedido.
+  const multi = request.requestItems.length > 1;
+  const lineItems = multi
+    ? request.requestItems.map((item) => ({
+        id: item.id,
+        label: item.scopeLabel,
+        vehicleId: item.vehicleId,
+        subType: item.subType,
+        items: budgetPiecesFor(request.type, item),
+        materialId: item.clientMaterial?.id ?? '',
+        totalHours: item.estimatedHours,
+        totalMaterialMeters: 0,
+        totalMaterialM2: item.estimatedM2,
+        totalCost: 0,
+        totalPrice: item.suggestedPrice,
+        profit: 0,
+      }))
+    : [];
+  const description = multi
+    ? request.requestItems
+        .map((item, i) => {
+          const note = clientSuppliedNote(item.clientMaterial);
+          return note ? `Item ${i + 1}: ${note}` : null;
+        })
+        .filter(Boolean)
+        .join('\n') || null
+    : clientSuppliedNote(request.clientMaterial);
+
   // Vira um orçamento na conta do aplicador, já como proposta a ser fechada.
   // Custo e material ficam zerados de propósito: a estimativa do cliente usa o
   // preço de referência da plataforma, e o aplicador precisa refinar com o
@@ -577,8 +740,9 @@ export async function acceptServiceRequest(
     `INSERT INTO budgets (
       user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id,
       status, date, items, material_id, total_hours, total_material_meters,
-      total_material_m2, total_cost, total_price, profit, type, sub_type, description
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+      total_material_m2, total_cost, total_price, profit, type, sub_type, description,
+      line_items
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [
       applicatorId,
       budgetId,
@@ -602,11 +766,25 @@ export async function acceptServiceRequest(
       0,
       request.type,
       request.subType ?? null,
-      clientSuppliedNote(request.clientMaterial),
+      description,
+      JSON.stringify(lineItems),
     ],
   );
 
   return { ok: true, requestId, budgetId };
+}
+
+function budgetPiecesFor(type: string, item: RequestItemRecord) {
+  if (type === 'Automotivo') {
+    return item.partIds.map((partId) => ({ partId, quantity: 1 }));
+  }
+  return item.items.map((surface, i) => ({
+    partId: `s${i + 1}`,
+    quantity: Math.max(1, Math.floor(Number(surface.quantity) || 1)),
+    name: surface.name || `Superfície ${i + 1}`,
+    width: Number(surface.width),
+    height: Number(surface.height),
+  }));
 }
 
 export type ActionResult = { ok: true } | { ok: false; status: number; error: string };
@@ -687,6 +865,7 @@ export async function refuseServiceRequest(
          proposal_sent_at = NULL,
          proposal_responded_at = NULL,
          proposal_client_reason = '',
+         proposal_items = '[]',
          updated_at = NOW()
      WHERE id = $1`,
     [requestId, String(REQUEST_EXPIRY_HOURS)],
@@ -702,11 +881,22 @@ export async function refuseServiceRequest(
   return { ok: true };
 }
 
-export interface ProposalInput {
+export interface ProposalItemInput {
+  /** Item do pedido a que esta parte da proposta se refere. */
+  requestItemId?: string;
   materialId?: string;
   customPricePerM2?: number | null;
   finalPrice?: number | null;
+}
+
+export interface ProposalInput extends ProposalItemInput {
   note?: string;
+  /** Uma entrada por item do pedido; sem a lista, o corpo vale para o único item. */
+  items?: ProposalItemInput[];
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function optionalPositive(value: unknown): number | null | 'invalid' {
@@ -716,9 +906,9 @@ function optionalPositive(value: unknown): number | null | 'invalid' {
 }
 
 /**
- * O aplicador define o material (catálogo) e o valor real do pedido que aceitou.
- * A conta é a mesma das calculadoras, com as configurações financeiras dele,
- * sobre a área e as horas estimadas do pedido; o valor final pode ser ajustado.
+ * O aplicador define o material (catálogo) e o valor real de cada item do pedido
+ * que aceitou. A conta é a mesma das calculadoras, com as configurações financeiras
+ * dele, sobre a área e as horas estimadas do item; o valor final pode ser ajustado.
  */
 export async function sendProposal(
   client: PoolClient,
@@ -726,15 +916,6 @@ export async function sendProposal(
   applicatorId: string,
   input: ProposalInput,
 ): Promise<ActionResult> {
-  const customPricePerM2 = optionalPositive(input.customPricePerM2);
-  const finalPrice = optionalPositive(input.finalPrice);
-  if (customPricePerM2 === 'invalid') {
-    return { ok: false, status: 400, error: 'Preço por m² inválido' };
-  }
-  if (finalPrice === 'invalid') {
-    return { ok: false, status: 400, error: 'Valor final inválido' };
-  }
-
   const current = await client.query(
     `SELECT r.*, b.status AS budget_status
      FROM service_requests r
@@ -761,43 +942,12 @@ export async function sendProposal(
     };
   }
 
-  // Só aplicação: o material é o que o cliente escolheu e não entra no preço.
-  const laborOnly = row.supply_mode === 'mao_de_obra';
-  let material: { id: string; type: string; product: string; color: string; pricePerM2: number };
-  if (laborOnly) {
-    material = {
-      id: (row.client_material_id as string) || '',
-      type: row.material_type as string,
-      product: (row.client_material_product as string) || '',
-      color: (row.client_material_color as string) || '',
-      pricePerM2: 0,
-    };
-  } else {
-    if (!input.materialId) {
-      return { ok: false, status: 400, error: 'Escolha o material da proposta' };
-    }
-    const found = await loadCatalogMaterial(client, input.materialId);
-    if (!found) {
-      return { ok: false, status: 404, error: 'Material não encontrado no catálogo' };
-    }
-    if (found.type !== row.material_type) {
-      return {
-        ok: false,
-        status: 400,
-        error: `O cliente pediu ${row.material_type as string}. Escolha um material desse tipo.`,
-      };
-    }
-    material = {
-      id: found.id,
-      type: found.type,
-      product: productLabel(found),
-      color: found.color_texture,
-      pricePerM2: customPricePerM2 ?? Number(found.price_per_m2),
-    };
-    if (!(material.pricePerM2 > 0)) {
-      return { ok: false, status: 400, error: 'Informe o preço por m² deste material' };
-    }
-  }
+  const request = mapServiceRequest(row);
+  const requestItems = request.requestItems;
+  const multi = requestItems.length > 1;
+  const inputs: ProposalItemInput[] = input.items?.length
+    ? input.items
+    : [{ ...input, requestItemId: requestItems[0].id }];
 
   const settings = (
     await client.query(
@@ -810,13 +960,93 @@ export async function sendProposal(
   const marginPct = settings ? Number(settings.profit_margin_percentage) : 30;
   const taxPct = settings ? Number(settings.tax_percentage) : 6;
 
-  const pricePerM2 = material.pricePerM2;
-  const m2 = Number(row.estimated_m2);
-  const hours = Number(row.estimated_hours);
-  const baseCost = m2 * pricePerM2 + hours * hourlyRate;
-  const suggested = baseCost * (1 + marginPct / 100) * (1 + taxPct / 100);
-  const price = Math.round((finalPrice ?? suggested) * 100) / 100;
-  const profit = price - baseCost - price * (taxPct / 100);
+  // Só aplicação: o material é o que o cliente escolheu e não entra no preço.
+  const laborOnly = request.supplyMode === 'mao_de_obra';
+
+  const computed: {
+    item: RequestItemRecord;
+    proposal: ProposalItemRecord;
+    customPricePerM2: number | null;
+    baseCost: number;
+    profit: number;
+  }[] = [];
+
+  for (const [index, item] of requestItems.entries()) {
+    const prefix = multi ? `Item ${index + 1}: ` : '';
+    const itemInput =
+      inputs.find((i) => i.requestItemId === item.id) ?? (multi ? undefined : inputs[0]);
+    if (!itemInput) {
+      return { ok: false, status: 400, error: `${prefix}escolha o material e o valor deste item.` };
+    }
+    const customPricePerM2 = optionalPositive(itemInput.customPricePerM2);
+    const finalPrice = optionalPositive(itemInput.finalPrice);
+    if (customPricePerM2 === 'invalid') {
+      return { ok: false, status: 400, error: `${prefix}preço por m² inválido` };
+    }
+    if (finalPrice === 'invalid') {
+      return { ok: false, status: 400, error: `${prefix}valor final inválido` };
+    }
+
+    let material: { id: string; type: string; product: string; color: string; pricePerM2: number };
+    if (laborOnly) {
+      material = {
+        id: item.clientMaterial?.id ?? '',
+        type: item.materialType,
+        product: item.clientMaterial?.product ?? '',
+        color: item.clientMaterial?.color ?? '',
+        pricePerM2: 0,
+      };
+    } else {
+      if (!itemInput.materialId) {
+        return { ok: false, status: 400, error: `${prefix}escolha o material da proposta` };
+      }
+      const found = await loadCatalogMaterial(client, itemInput.materialId);
+      if (!found) {
+        return { ok: false, status: 404, error: `${prefix}material não encontrado no catálogo` };
+      }
+      if (found.type !== item.materialType) {
+        return {
+          ok: false,
+          status: 400,
+          error: `${prefix}o cliente pediu ${item.materialType}. Escolha um material desse tipo.`,
+        };
+      }
+      material = {
+        id: found.id,
+        type: found.type,
+        product: productLabel(found),
+        color: found.color_texture,
+        pricePerM2: customPricePerM2 ?? Number(found.price_per_m2),
+      };
+      if (!(material.pricePerM2 > 0)) {
+        return { ok: false, status: 400, error: `${prefix}informe o preço por m² deste material` };
+      }
+    }
+
+    const baseCost = item.estimatedM2 * material.pricePerM2 + item.estimatedHours * hourlyRate;
+    const suggested = baseCost * (1 + marginPct / 100) * (1 + taxPct / 100);
+    const price = round2(finalPrice ?? suggested);
+    computed.push({
+      item,
+      customPricePerM2: laborOnly ? 0 : customPricePerM2,
+      baseCost,
+      profit: price - baseCost - price * (taxPct / 100),
+      proposal: {
+        requestItemId: item.id,
+        materialId: material.id,
+        materialType: material.type,
+        product: material.product,
+        color: material.color,
+        pricePerM2: material.pricePerM2,
+        price,
+      },
+    });
+  }
+
+  const first = computed[0];
+  const totalPrice = round2(computed.reduce((acc, c) => acc + c.proposal.price, 0));
+  const totalCost = round2(computed.reduce((acc, c) => acc + c.baseCost, 0));
+  const totalProfit = round2(computed.reduce((acc, c) => acc + c.profit, 0));
 
   await client.query(
     `UPDATE service_requests
@@ -828,6 +1058,7 @@ export async function sendProposal(
          proposal_price_per_m2 = $6,
          proposal_price = $7,
          proposal_note = $8,
+         proposal_items = $9,
          proposal_sent_at = NOW(),
          proposal_responded_at = NULL,
          proposal_client_reason = '',
@@ -835,17 +1066,35 @@ export async function sendProposal(
      WHERE id = $1`,
     [
       requestId,
-      material.id,
-      material.type,
-      material.product,
-      material.color,
-      pricePerM2,
-      price,
+      first.proposal.materialId,
+      first.proposal.materialType,
+      first.proposal.product,
+      first.proposal.color,
+      first.proposal.pricePerM2,
+      totalPrice,
       (input.note || '').trim().slice(0, 1000),
+      JSON.stringify(multi ? computed.map((c) => c.proposal) : []),
     ],
   );
 
   if (row.budget_id) {
+    const lineItems = multi
+      ? computed.map((c) => ({
+          id: c.item.id,
+          label: c.item.scopeLabel,
+          vehicleId: c.item.vehicleId,
+          subType: c.item.subType,
+          items: budgetPiecesFor(request.type, c.item),
+          materialId: c.proposal.materialId,
+          customPricePerM2: c.customPricePerM2 ?? undefined,
+          totalHours: c.item.estimatedHours,
+          totalMaterialMeters: 0,
+          totalMaterialM2: c.item.estimatedM2,
+          totalCost: round2(c.baseCost),
+          totalPrice: c.proposal.price,
+          profit: round2(c.profit),
+        }))
+      : [];
     await client.query(
       `UPDATE budgets
        SET material_id = $3,
@@ -854,18 +1103,20 @@ export async function sendProposal(
            total_hours = $6,
            total_cost = $7,
            total_price = $8,
-           profit = $9
+           profit = $9,
+           line_items = $10
        WHERE user_id = $1 AND id = $2`,
       [
         applicatorId,
         row.budget_id,
-        material.id,
-        laborOnly ? 0 : customPricePerM2,
-        m2,
-        hours,
-        Math.round(baseCost * 100) / 100,
-        price,
-        Math.round(profit * 100) / 100,
+        first.proposal.materialId,
+        multi ? null : first.customPricePerM2,
+        request.estimatedM2,
+        request.estimatedHours,
+        totalCost,
+        totalPrice,
+        totalProfit,
+        JSON.stringify(lineItems),
       ],
     );
   }

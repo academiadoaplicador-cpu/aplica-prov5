@@ -58,10 +58,13 @@ export const applicatorService = {
   sendProposal: (
     id: string,
     input: {
-      materialId: string;
-      customPricePerM2?: number | null;
-      finalPrice?: number | null;
       note?: string;
+      items: {
+        requestItemId: string;
+        materialId?: string;
+        customPricePerM2?: number | null;
+        finalPrice?: number | null;
+      }[];
     },
   ): Promise<{ ok: true }> =>
     api<{ ok: true }>(`/requests/${id}/proposal`, {
