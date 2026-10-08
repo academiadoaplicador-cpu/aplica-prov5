@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ClipboardList, Clock, Loader2, Phone, Plus, X } from 'lucide-react';
-import { ServiceRequest, ServiceRequestStatus } from '../../types';
+import { Check, ClipboardList, Clock, Loader2, Phone, Plus, X } from 'lucide-react';
+import { ServiceRequest, ServiceRequestProposal, ServiceRequestStatus } from '../../types';
 import { clientService } from '../../services/clientService';
 import { ROUTES } from '../../routes/paths';
 import { formatCurrency, cn } from '../../lib/utils';
@@ -12,6 +12,125 @@ const STATUS_STYLE: Record<ServiceRequestStatus, string> = {
   Expirado: 'text-slate-500 border-slate-700 bg-slate-800/50',
   Cancelado: 'text-red-400 border-red-500/30 bg-red-500/10',
 };
+
+function ProposalCard({
+  proposal,
+  responding,
+  onRespond,
+}: {
+  proposal: ServiceRequestProposal;
+  responding: boolean;
+  onRespond: (accept: boolean, reason: string) => void;
+}) {
+  const [refusing, setRefusing] = useState(false);
+  const [reason, setReason] = useState('');
+
+  return (
+    <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-indigo-300">
+          Proposta do aplicador
+        </p>
+        {proposal.status === 'Aceita' && (
+          <span className="text-[10px] font-mono font-bold uppercase text-emerald-400">
+            Você aceitou
+          </span>
+        )}
+        {proposal.status === 'Recusada' && (
+          <span className="text-[10px] font-mono font-bold uppercase text-red-400">
+            Você recusou
+          </span>
+        )}
+      </div>
+
+      <dl className="space-y-1.5 text-sm">
+        <div className="flex justify-between gap-4">
+          <dt className="text-slate-500 shrink-0">Produto</dt>
+          <dd className="text-slate-200 text-right">{proposal.product}</dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-slate-500 shrink-0">Cor / textura</dt>
+          <dd className="text-slate-200 text-right">{proposal.color}</dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-slate-500 shrink-0">Tipo</dt>
+          <dd className="text-slate-200 text-right">{proposal.materialType}</dd>
+        </div>
+      </dl>
+
+      <p className="text-2xl font-bold text-white tracking-tight">
+        {formatCurrency(proposal.price)}
+        <span className="ml-2 text-[11px] font-normal text-slate-500">valor final</span>
+      </p>
+
+      {proposal.note && (
+        <p className="text-xs text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5 whitespace-pre-line">
+          {proposal.note}
+        </p>
+      )}
+
+      {proposal.status === 'Recusada' && (
+        <p className="text-xs text-slate-500">
+          O aplicador pode enviar uma nova proposta.
+        </p>
+      )}
+
+      {proposal.status === 'Enviada' &&
+        (refusing ? (
+          <div className="space-y-2">
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={500}
+              rows={2}
+              placeholder="Conte o motivo (opcional) — ajuda o aplicador a ajustar a proposta"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-red-500 focus:border-transparent placeholder:text-slate-600"
+            />
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRefusing(false)}
+                disabled={responding}
+                className="h-10 px-4 rounded-xl border border-slate-800 text-sm text-slate-400 hover:text-white disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={() => onRespond(false, reason)}
+                disabled={responding}
+                className="flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-bold"
+              >
+                {responding ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                Confirmar recusa
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setRefusing(true)}
+              disabled={responding}
+              className="flex items-center justify-center gap-1.5 h-10 px-4 rounded-xl border border-slate-800 text-sm text-slate-400 hover:text-red-300 hover:border-red-500/30 disabled:opacity-50"
+            >
+              <X size={14} />
+              Recusar
+            </button>
+            <button
+              type="button"
+              onClick={() => onRespond(true, '')}
+              disabled={responding}
+              className="flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold"
+            >
+              {responding ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              Aceitar proposta
+            </button>
+          </div>
+        ))}
+    </div>
+  );
+}
 
 function hoursLeft(expiresAt: string): string {
   const ms = new Date(expiresAt).getTime() - Date.now();
@@ -26,6 +145,7 @@ export default function ClientOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [responding, setResponding] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +171,20 @@ export default function ClientOrdersPage() {
       setError(e instanceof Error ? e.message : 'Erro ao cancelar');
     } finally {
       setCancelling(null);
+    }
+  };
+
+  const handleRespond = async (id: string, accept: boolean, reason: string) => {
+    setResponding(id);
+    setError('');
+    try {
+      await clientService.respondProposal(id, accept, reason);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao responder a proposta');
+      await load();
+    } finally {
+      setResponding(null);
     }
   };
 
@@ -135,7 +269,7 @@ export default function ClientOrdersPage() {
                 <span className="text-lg font-bold text-white tracking-tight">
                   {formatCurrency(request.priceMax)}
                 </span>
-                <span className="text-[11px] text-slate-600">faixa estimada</span>
+                <span className="text-[11px] text-slate-600">estimativa prévia</span>
               </div>
 
               {request.status === 'Aguardando aceite' && (
@@ -179,6 +313,19 @@ export default function ClientOrdersPage() {
                   )}
                 </div>
               )}
+
+              {request.status === 'Aceito' &&
+                (request.proposal ? (
+                  <ProposalCard
+                    proposal={request.proposal}
+                    responding={responding === request.id}
+                    onRespond={(accept, reason) => void handleRespond(request.id, accept, reason)}
+                  />
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    O aplicador está preparando a proposta com o material e o valor final.
+                  </p>
+                ))}
 
               {request.status === 'Expirado' && (
                 <p className="pt-3 border-t border-slate-800 text-xs text-slate-500">

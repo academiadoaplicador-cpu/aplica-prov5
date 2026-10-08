@@ -13,6 +13,7 @@ import {
   createServiceRequest,
   mapServiceRequest,
   resolveScope,
+  respondProposal,
   sweepExpiredRequests,
   REQUEST_EXPIRY_HOURS,
   type CreateRequestInput,
@@ -223,6 +224,51 @@ export function createClientRouter(pool: Pool): Router {
     } catch (e) {
       console.error('[client/requests:get]', e);
       res.status(500).json({ error: 'Erro ao carregar seus pedidos' });
+    }
+  });
+
+  router.post('/requests/:id/proposal/:action', async (req: Request, res: Response) => {
+    const { action } = req.params;
+    if (action !== 'accept' && action !== 'refuse') {
+      res.status(404).json({ error: 'Ação inválida' });
+      return;
+    }
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+    let client: PoolClient | undefined;
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const result = await respondProposal(
+        client,
+        req.params.id,
+        req.userId!,
+        action === 'accept',
+        reason,
+      );
+      if (result.ok === false) {
+        await client.query('ROLLBACK');
+        const { status, error } = result;
+        res.status(status).json({ error });
+        return;
+      }
+
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (e) {
+      if (client) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          /* transação já encerrada */
+        }
+      }
+      console.error('[client/requests:proposal]', e);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erro ao responder a proposta' });
+      }
+    } finally {
+      client?.release();
     }
   });
 

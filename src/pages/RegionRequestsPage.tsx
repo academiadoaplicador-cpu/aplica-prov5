@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   Check,
   Clock,
+  FileText,
   Loader2,
   MapPin,
   Phone,
   RefreshCw,
   ShieldOff,
+  X,
 } from 'lucide-react';
-import { RegionRequestsResponse, ServiceRequest } from '../types';
+import {
+  PROPOSAL_BUDGET_STATUS,
+  ProposalStatus,
+  RegionRequestsResponse,
+  ServiceRequest,
+  ServiceRequestProposal,
+} from '../types';
+import ProposalPanel from '../components/marketplace/ProposalPanel';
 import { applicatorService } from '../services/applicatorService';
-import { ROUTES } from '../routes/paths';
 import { formatCurrency, cn } from '../lib/utils';
 
 function hoursLeft(expiresAt: string): string {
@@ -24,7 +31,6 @@ function hoursLeft(expiresAt: string): string {
 }
 
 export default function RegionRequestsPage() {
-  const navigate = useNavigate();
   const [data, setData] = useState<RegionRequestsResponse | null>(null);
   const [accepted, setAccepted] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +39,10 @@ export default function RegionRequestsPage() {
   const [error, setError] = useState('');
   const [available, setAvailable] = useState<boolean | null>(null);
   const [togglingAvailability, setTogglingAvailability] = useState(false);
+  const [refuseOpenId, setRefuseOpenId] = useState<string | null>(null);
+  const [refuseReason, setRefuseReason] = useState('');
+  const [refusing, setRefusing] = useState(false);
+  const [proposalOpenId, setProposalOpenId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -94,14 +104,40 @@ export default function RegionRequestsPage() {
     setAccepting(id);
     setError('');
     try {
-      const result = await applicatorService.acceptRequest(id);
+      await applicatorService.acceptRequest(id);
       await load();
-      if (result.budgetId) navigate(ROUTES.orcamento);
+      setProposalOpenId(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível aceitar');
       await load();
     } finally {
       setAccepting(null);
+    }
+  };
+
+  const openRefuse = (id: string) => {
+    setRefuseOpenId(id);
+    setRefuseReason('');
+  };
+
+  const closeRefuse = () => {
+    setRefuseOpenId(null);
+    setRefuseReason('');
+  };
+
+  const handleRefuse = async (id: string) => {
+    setRefusing(true);
+    setError('');
+    try {
+      await applicatorService.refuseRequest(id, refuseReason);
+      setRefuseOpenId(null);
+      setRefuseReason('');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível recusar');
+      await load();
+    } finally {
+      setRefusing(false);
     }
   };
 
@@ -207,20 +243,42 @@ export default function RegionRequestsPage() {
                         {formatCurrency(request.priceMax)}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleAccept(request.id)}
-                      disabled={accepting !== null}
-                      className="shrink-0 flex items-center justify-center gap-2 h-11 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-colors"
-                    >
-                      {accepting === request.id ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Check size={16} />
-                      )}
-                      Aceitar pedido
-                    </button>
+                    <div className="flex flex-col-reverse sm:flex-row gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openRefuse(request.id)}
+                        disabled={accepting !== null || refuseOpenId === request.id}
+                        className="flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-slate-800 text-sm text-slate-400 hover:text-red-300 hover:border-red-500/30 disabled:opacity-50 transition-colors"
+                      >
+                        <X size={16} />
+                        Recusar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleAccept(request.id)}
+                        disabled={accepting !== null}
+                        className="flex items-center justify-center gap-2 h-11 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-colors"
+                      >
+                        {accepting === request.id ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Check size={16} />
+                        )}
+                        Aceitar pedido
+                      </button>
+                    </div>
                   </div>
+
+                  {refuseOpenId === request.id && (
+                    <RefusePanel
+                      message="Este pedido some do seu mural e continua disponível para os outros aplicadores da região."
+                      reason={refuseReason}
+                      onReasonChange={setRefuseReason}
+                      loading={refusing}
+                      onCancel={closeRefuse}
+                      onConfirm={() => void handleRefuse(request.id)}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
@@ -263,11 +321,136 @@ export default function RegionRequestsPage() {
                     Aceito
                   </span>
                 </div>
+
+                {request.proposal && <ProposalSummary proposal={request.proposal} />}
+
+                {request.status === 'Aceito' &&
+                  request.proposal?.status !== 'Aceita' &&
+                  (!request.budgetStatus || request.budgetStatus === PROPOSAL_BUDGET_STATUS) &&
+                  (refuseOpenId === request.id ? (
+                    <RefusePanel
+                      message="O pedido volta para os outros aplicadores da região e o orçamento gerado para você fica como cancelado. Você não verá mais este pedido."
+                      reason={refuseReason}
+                      onReasonChange={setRefuseReason}
+                      loading={refusing}
+                      onCancel={closeRefuse}
+                      onConfirm={() => void handleRefuse(request.id)}
+                    />
+                  ) : proposalOpenId === request.id ? (
+                    <ProposalPanel
+                      request={request}
+                      onCancel={() => setProposalOpenId(null)}
+                      onSent={async () => {
+                        setProposalOpenId(null);
+                        await load();
+                      }}
+                    />
+                  ) : (
+                    <div className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openRefuse(request.id)}
+                        className="flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl border border-slate-800 text-xs text-slate-400 hover:text-red-300 hover:border-red-500/30"
+                      >
+                        <X size={13} />
+                        Recusar orçamento
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeRefuse();
+                          setProposalOpenId(request.id);
+                        }}
+                        className="flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs text-white font-bold"
+                      >
+                        <FileText size={13} />
+                        {request.proposal ? 'Editar proposta' : 'Montar proposta'}
+                      </button>
+                    </div>
+                  ))}
               </li>
             ))}
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+const PROPOSAL_LABEL: Record<ProposalStatus, { text: string; className: string }> = {
+  Enviada: { text: 'Aguardando o cliente', className: 'text-amber-400' },
+  Aceita: { text: 'Cliente aceitou', className: 'text-emerald-400' },
+  Recusada: { text: 'Cliente recusou', className: 'text-red-400' },
+};
+
+function ProposalSummary({ proposal }: { proposal: ServiceRequestProposal }) {
+  const label = PROPOSAL_LABEL[proposal.status];
+  return (
+    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 space-y-1">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-slate-600">
+          Sua proposta
+        </p>
+        <span className={cn('text-[10px] font-mono font-bold uppercase', label.className)}>
+          {label.text}
+        </span>
+      </div>
+      <p className="text-sm text-white">
+        {proposal.product} · {proposal.color}
+      </p>
+      <p className="text-sm font-bold text-white">{formatCurrency(proposal.price)}</p>
+      {proposal.status === 'Recusada' && proposal.clientReason && (
+        <p className="text-xs text-red-300/80">Motivo do cliente: {proposal.clientReason}</p>
+      )}
+    </div>
+  );
+}
+
+function RefusePanel({
+  message,
+  reason,
+  onReasonChange,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  message: string;
+  reason: string;
+  onReasonChange: (value: string) => void;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="mt-4 space-y-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+      <p className="text-xs text-slate-300 leading-relaxed">{message}</p>
+      <textarea
+        value={reason}
+        onChange={(e) => onReasonChange(e.target.value)}
+        maxLength={500}
+        rows={2}
+        placeholder="Motivo (opcional)"
+        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-red-500 focus:border-transparent placeholder:text-slate-600"
+      />
+      <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={loading}
+          className="h-10 px-4 rounded-xl border border-slate-800 text-sm text-slate-400 hover:text-white hover:border-slate-700 disabled:opacity-50"
+        >
+          Voltar
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={loading}
+          className="flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-bold"
+        >
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+          Confirmar recusa
+        </button>
+      </div>
     </div>
   );
 }

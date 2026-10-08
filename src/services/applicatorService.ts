@@ -49,6 +49,26 @@ export const applicatorService = {
   acceptRequest: (id: string): Promise<{ ok: true; budgetId: string }> =>
     api<{ ok: true; budgetId: string }>(`/requests/${id}/accept`, { method: 'POST' }),
 
+  refuseRequest: (id: string, reason: string): Promise<{ ok: true }> =>
+    api<{ ok: true }>(`/requests/${id}/refuse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  sendProposal: (
+    id: string,
+    input: {
+      materialId: string;
+      customPricePerM2?: number | null;
+      finalPrice?: number | null;
+      note?: string;
+    },
+  ): Promise<{ ok: true }> =>
+    api<{ ok: true }>(`/requests/${id}/proposal`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   getAcceptedRequests: (): Promise<ServiceRequest[]> =>
     api<ServiceRequest[]>('/requests/accepted'),
 };

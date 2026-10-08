@@ -436,6 +436,23 @@ export type ServiceRequestStatus =
   | 'Expirado'
   | 'Cancelado';
 
+export type ProposalStatus = 'Enviada' | 'Aceita' | 'Recusada';
+
+/** Proposta do aplicador com o material escolhido e o valor real. */
+export interface ServiceRequestProposal {
+  status: ProposalStatus;
+  materialId: string;
+  materialType: string;
+  product: string;
+  color: string;
+  pricePerM2: number;
+  price: number;
+  note: string;
+  clientReason: string;
+  sentAt: string;
+  respondedAt?: string;
+}
+
 export interface ServiceRequestItem {
   name?: string;
   width: number;
@@ -479,6 +496,9 @@ export interface ServiceRequest {
   };
   /** Preenchido no mural e na lista de aceitos do aplicador. */
   clientName?: string;
+  proposal?: ServiceRequestProposal;
+  /** Lado do aplicador: status do orçamento gerado no aceite. */
+  budgetStatus?: string;
   client?: {
     name: string;
     phone: string;

@@ -105,6 +105,13 @@ export const clientService = {
   cancelRequest: async (id: string): Promise<void> => {
     await api(`/client/requests/${id}/cancel`, { method: 'POST' });
   },
+
+  respondProposal: async (id: string, accept: boolean, reason = ''): Promise<void> => {
+    await api(`/client/requests/${id}/proposal/${accept ? 'accept' : 'refuse'}`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
 };
 
 export const adminClientService = {

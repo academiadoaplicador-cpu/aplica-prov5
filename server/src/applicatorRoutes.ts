@@ -4,6 +4,9 @@ import {
   acceptServiceRequest,
   fetchRegionRequests,
   mapServiceRequest,
+  NOT_REFUSED_BY,
+  refuseServiceRequest,
+  sendProposal,
   sweepExpiredRequests,
 } from './serviceRequests.js';
 
@@ -95,11 +98,12 @@ export function createApplicatorRouter(pool: Pool): Router {
       if (eligible) {
         await sweepExpiredRequests(pool);
         const count = await pool.query(
-          `SELECT COUNT(*)::int AS count FROM service_requests
-           WHERE status = 'Aguardando aceite'
-             AND LOWER(city) = LOWER($1)
-             AND UPPER(state_code) = UPPER($2)`,
-          [row.city, row.state_code],
+          `SELECT COUNT(*)::int AS count FROM service_requests r
+           WHERE r.status = 'Aguardando aceite'
+             AND LOWER(r.city) = LOWER($1)
+             AND UPPER(r.state_code) = UPPER($2)
+             AND ${NOT_REFUSED_BY('r', '$3')}`,
+          [row.city, row.state_code, req.userId],
         );
         openRequestCount = count.rows[0].count as number;
       }
@@ -161,15 +165,83 @@ export function createApplicatorRouter(pool: Pool): Router {
     }
   });
 
+  router.post('/requests/:id/refuse', async (req: Request, res: Response) => {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+    let client: PoolClient | undefined;
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const result = await refuseServiceRequest(client, req.params.id, req.userId!, reason);
+      if (result.ok === false) {
+        await client.query('ROLLBACK');
+        const { status, error } = result;
+        res.status(status).json({ error });
+        return;
+      }
+
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (e) {
+      if (client) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          /* transação já encerrada */
+        }
+      }
+      console.error('[requests:refuse]', e);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erro ao recusar o pedido' });
+      }
+    } finally {
+      client?.release();
+    }
+  });
+
+  router.post('/requests/:id/proposal', async (req: Request, res: Response) => {
+    let client: PoolClient | undefined;
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const result = await sendProposal(client, req.params.id, req.userId!, req.body || {});
+      if (result.ok === false) {
+        await client.query('ROLLBACK');
+        const { status, error } = result;
+        res.status(status).json({ error });
+        return;
+      }
+
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (e) {
+      if (client) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          /* transação já encerrada */
+        }
+      }
+      console.error('[requests:proposal]', e);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erro ao enviar a proposta' });
+      }
+    } finally {
+      client?.release();
+    }
+  });
+
   /** Pedidos que este aplicador já aceitou, com o contato do cliente. */
   router.get('/requests/accepted', async (req: Request, res: Response) => {
     try {
       await sweepExpiredRequests(pool);
       const result = await pool.query(
         `SELECT r.*, c.full_name AS client_name, c.phone AS client_phone,
-                c.neighborhood AS client_neighborhood
+                c.neighborhood AS client_neighborhood, b.status AS budget_status
          FROM service_requests r
          LEFT JOIN client_profiles c ON c.user_id = r.client_id
+         LEFT JOIN budgets b ON b.user_id = r.accepted_by AND b.id = r.budget_id
          WHERE r.accepted_by = $1
          ORDER BY r.accepted_at DESC
          LIMIT 100`,
@@ -178,6 +250,7 @@ export function createApplicatorRouter(pool: Pool): Router {
       res.json(
         result.rows.map((r) => ({
           ...mapServiceRequest(r),
+          budgetStatus: (r.budget_status as string) || undefined,
           client: {
             name: (r.client_name as string) || 'Cliente',
             phone: (r.client_phone as string) || '',
