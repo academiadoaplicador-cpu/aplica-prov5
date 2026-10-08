@@ -214,6 +214,8 @@ export default function DecorativeCalculator() {
       { id: generateId(), name: `Frente (${app.type})`, width: app.width, height: app.height, complexity: 2 },
       { id: generateId(), name: 'Lateral Dir', width: app.depth, height: app.height, complexity: 1 },
       { id: generateId(), name: 'Lateral Esq', width: app.depth, height: app.height, complexity: 1 },
+      // Teto = largura × profundidade, sem margem: a sobra de 15% do rolo cobre as perdas.
+      { id: generateId(), name: 'Teto', width: app.width, height: app.depth, complexity: 1 },
     ]);
   }, [selectedApplianceId, subType, appliances]);
 
