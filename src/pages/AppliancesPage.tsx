@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileSpreadsheet, Save, CheckCircle2, Download, FileDown } from 'lucide-react';
+import { Plus, FileSpreadsheet, Download, FileDown } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { Appliance } from '../types';
 import { generateId } from '../lib/utils';
@@ -10,6 +10,7 @@ import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlo
 import ImportProgressBar from '../components/settings/ImportProgressBar';
 import ApplianceCatalogTable from '../components/settings/ApplianceCatalogTable';
 import ApplianceImportPreviewModal from '../components/settings/ApplianceImportPreviewModal';
+import ApplianceFormPanel from '../components/settings/ApplianceFormPanel';
 import { mergeAppliances, parseAppliancesFromExcel, type ApplianceImportResult } from '../utils/applianceImport';
 import { downloadAppliancesTemplate } from '../utils/spreadsheetTemplates';
 import { downloadAppliancesCatalog } from '../utils/applianceExport';
@@ -17,8 +18,9 @@ import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
 export default function AppliancesPage() {
   const [appliances, setAppliances] = useState<Appliance[]>([]);
-  const [isSaved, setIsSaved] = useState(false);
-  const [editingApplianceId, setEditingApplianceId] = useState<string | null>(null);
+  const [panelAppliance, setPanelAppliance] = useState<Appliance | null>(null);
+  const [isNewAppliance, setIsNewAppliance] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importPreview, setImportPreview] = useState<ApplianceImportResult | null>(null);
@@ -47,33 +49,52 @@ export default function AppliancesPage() {
     databaseService.getAppliances().then(setAppliances);
   }, []);
 
-  const handleSave = async () => {
-    await databaseService.setAppliances(appliances);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
+  // O destaque do registro salvo some sozinho depois de alguns segundos.
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
   const addAppliance = () => {
-    const newAppliance: Appliance = {
+    setPanelAppliance({
       id: generateId(),
       make: '',
-      model: 'Novo Eletro',
+      model: '',
       type: 'Geladeira',
-      width: 0.7,
-      height: 1.8,
-      depth: 0.7,
-    };
-    setAppliances([newAppliance, ...appliances]);
-    setEditingApplianceId(newAppliance.id);
+      width: 0,
+      height: 0,
+      depth: 0,
+    });
+    setIsNewAppliance(true);
   };
 
-  const updateAppliance = (id: string, updates: Partial<Appliance>) => {
-    setAppliances(appliances.map((a) => (a.id === id ? { ...a, ...updates } : a)));
+  const editAppliance = (id: string) => {
+    const appliance = appliances.find((a) => a.id === id);
+    if (!appliance) return;
+    setPanelAppliance(appliance);
+    setIsNewAppliance(false);
   };
 
-  const removeAppliance = (id: string) => {
-    setAppliances(appliances.filter((a) => a.id !== id));
-    if (editingApplianceId === id) setEditingApplianceId(null);
+  const handleSaveAppliance = async (draft: Appliance) => {
+    const saved = await databaseService.saveAppliance(draft);
+    setAppliances((prev) =>
+      prev.some((a) => a.id === saved.id)
+        ? prev.map((a) => (a.id === saved.id ? saved : a))
+        : [saved, ...prev],
+    );
+    const label = `${saved.make} ${saved.model}`;
+    setImportStatus(isNewAppliance ? `Eletro ${label} cadastrado.` : `Eletro ${label} atualizado.`);
+    setImportErrors([]);
+    setPanelAppliance(null);
+    setHighlightId(saved.id);
+  };
+
+  const removeAppliance = async (id: string) => {
+    const appliance = appliances.find((a) => a.id === id);
+    if (!appliance || !confirm(`Excluir o eletro ${appliance.make} ${appliance.model}?`)) return;
+    await databaseService.deleteAppliance(id);
+    setAppliances((prev) => prev.filter((a) => a.id !== id));
   };
 
   return (
@@ -161,13 +182,6 @@ export default function AppliancesPage() {
             >
               Importar planilha
             </PageButton>
-            <PageButton
-              variant="secondary"
-              icon={isSaved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-              onClick={() => void handleSave()}
-            >
-              {isSaved ? 'Salvo' : 'Salvar alterações'}
-            </PageButton>
             <PageButton variant="primary" icon={<Plus size={16} />} onClick={addAppliance}>
               Novo eletro
             </PageButton>
@@ -185,6 +199,13 @@ export default function AppliancesPage() {
         }
       />
 
+      <ApplianceFormPanel
+        appliance={panelAppliance}
+        isNew={isNewAppliance}
+        onClose={() => setPanelAppliance(null)}
+        onSave={handleSaveAppliance}
+      />
+
       <PagePanel>
         {appliances.length === 0 ? (
           <div className="p-8">
@@ -193,10 +214,9 @@ export default function AppliancesPage() {
         ) : (
           <ApplianceCatalogTable
             appliances={appliances}
-            editingId={editingApplianceId}
-            onSelectRow={setEditingApplianceId}
-            onUpdate={updateAppliance}
-            onRemove={removeAppliance}
+            highlightId={highlightId}
+            onEdit={editAppliance}
+            onRemove={(id) => void removeAppliance(id)}
           />
         )}
       </PagePanel>

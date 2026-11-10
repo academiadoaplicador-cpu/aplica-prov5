@@ -15,9 +15,11 @@ import {
   Pencil,
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
-import { FinancialSettings, Material, DecorativeItem, Appliance, BudgetLineItem } from '../types';
+import { FinancialSettings, Material, DecorativeItem, Appliance, BudgetLineItem, PaymentTerms } from '../types';
 import { consolidateBudget } from '../utils/budgetLineItems';
 import BudgetLineItemsPanel from './BudgetLineItemsPanel';
+import BudgetPaymentTermsPanel from './BudgetPaymentTermsPanel';
+import { hasPaymentTerms, normalizePaymentTerms } from '../constants/paymentMethods';
 import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { pdfService } from '../services/pdfService';
@@ -39,6 +41,7 @@ import {
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
+import BudgetCuttingPlan from './BudgetCuttingPlan';
 import { filterMaterialsByContext, getMaterialProductLine } from '../utils/materialSelection';
 import SupplierWhatsAppButton from './SupplierWhatsAppButton';
 import {
@@ -147,6 +150,10 @@ export default function DecorativeCalculator() {
   );
   const [lineItems, setLineItems] = useState<BudgetLineItem[]>(
     restoredDraft.current?.lineItems ?? [],
+  );
+  /** null = segue o padrão da configuração; ajustado, vale só para este orçamento. */
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerms | null>(
+    restoredDraft.current?.paymentTerms ? normalizePaymentTerms(restoredDraft.current.paymentTerms) : null,
   );
   const [restoreTick, setRestoreTick] = useState(0);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
@@ -452,6 +459,7 @@ export default function DecorativeCalculator() {
     let usedLength = 0;
     let rollAreaM2 = 0;
     let finalM2 = 0;
+    let rollsNeeded = 1;
     let hasRollPricing = false;
 
     if (rollDimensions && nestingParts.length > 0) {
@@ -463,6 +471,7 @@ export default function DecorativeCalculator() {
       usedLength = usage.usedLength;
       rollAreaM2 = usage.rollAreaM2;
       finalM2 = usage.materialM2;
+      rollsNeeded = usage.rollsNeeded;
       hasRollPricing = true;
     }
 
@@ -477,6 +486,7 @@ export default function DecorativeCalculator() {
     return {
       m2: totalM2,
       usedLength,
+      rollsNeeded,
       rollAreaM2,
       finalM2,
       hasRollPricing,
@@ -518,6 +528,7 @@ export default function DecorativeCalculator() {
       })),
       materialId: selectedMaterialId,
       customPricePerM2: customPricePerM2 || undefined,
+      rollsNeeded: totals.rollsNeeded > 1 ? totals.rollsNeeded : undefined,
       totalHours: totals.hours,
       totalMaterialMeters: totals.usedLength,
       totalMaterialM2: totals.finalM2,
@@ -559,6 +570,11 @@ export default function DecorativeCalculator() {
     [lineItems, currentLineItem],
   );
 
+  const effectivePaymentTerms = useMemo(
+    () => paymentTerms ?? normalizePaymentTerms(settings.paymentTerms),
+    [paymentTerms, settings.paymentTerms],
+  );
+
   const currentBudget = useMemo(
     () =>
       consolidateBudget(
@@ -569,10 +585,11 @@ export default function DecorativeCalculator() {
           date: new Date().toISOString(),
           description: description.trim() || undefined,
           type: 'Decorativo',
+          paymentTerms: hasPaymentTerms(effectivePaymentTerms) ? effectivePaymentTerms : undefined,
         },
         allLineItems,
       ),
-    [customerName, description, allLineItems],
+    [customerName, description, allLineItems, effectivePaymentTerms],
   );
 
   const defaultItemsFor = (cat: SubType): DecorativeItem[] => [
@@ -605,6 +622,7 @@ export default function DecorativeCalculator() {
         customerName,
         description,
         lineItems: lineItems.map((item) => [item.id, item.totalPrice]),
+        paymentTerms: effectivePaymentTerms,
         subType,
         selectedApplianceId,
         items: effectiveItems.map((item) => ({
@@ -624,6 +642,7 @@ export default function DecorativeCalculator() {
       customerName,
       description,
       lineItems,
+      effectivePaymentTerms,
       subType,
       selectedApplianceId,
       effectiveItems,
@@ -819,6 +838,7 @@ export default function DecorativeCalculator() {
       selectedRollLength,
       activeStep: wizard.activeStep,
       lineItems,
+      paymentTerms,
     }),
     () =>
       Boolean(
@@ -1205,6 +1225,10 @@ export default function DecorativeCalculator() {
               )}
             </div>
           )}
+
+          <div className={cn(wizard.stepPanelClass(3))}>
+            <BudgetCuttingPlan lineItems={allLineItems} materials={materials} accent="emerald" />
+          </div>
         </div>
 
         <div
@@ -1325,6 +1349,12 @@ export default function DecorativeCalculator() {
                         <span className="text-slate-400 italic leading-snug">Comprimento usado no rolo</span>
                         <span className="font-mono text-white shrink-0">{totals.usedLength.toFixed(2)} m</span>
                       </div>
+                      {totals.rollsNeeded > 1 && (
+                        <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
+                          <span className="text-slate-400 italic leading-snug">Rolos necessários</span>
+                          <span className="font-mono text-amber-300 font-bold shrink-0">{totals.rollsNeeded}×</span>
+                        </div>
+                      )}
                       <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:items-center text-xs">
                         <span className="text-slate-400 italic leading-snug">Área usada no rolo</span>
                         <span className="font-mono text-white shrink-0">{totals.rollAreaM2.toFixed(2)} m²</span>
@@ -1438,6 +1468,15 @@ export default function DecorativeCalculator() {
                   }}
                 />
               )}
+
+              <BudgetPaymentTermsPanel
+                value={effectivePaymentTerms}
+                isCustom={paymentTerms !== null}
+                onChange={setPaymentTerms}
+                onReset={() => setPaymentTerms(null)}
+                accent="emerald"
+                total={currentBudget.totalPrice}
+              />
 
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}

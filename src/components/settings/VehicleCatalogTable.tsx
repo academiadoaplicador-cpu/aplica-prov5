@@ -2,7 +2,7 @@ import { useState } from 'react';
 import BudgetNotice from '../budget-mobile/BudgetNotice';
 import { useBudgetNotice } from '../../hooks/useBudgetNotice';
 import { Trash2, Pencil, CheckCircle2, AlertCircle, Ruler, Plus } from 'lucide-react';
-import { Vehicle, VehicleSize } from '../../types';
+import { Vehicle } from '../../types';
 import {
   findVehiclePartWithSameName,
   getAvailableStandardPartsToAdd,
@@ -15,18 +15,17 @@ import DataTable, { type DataTableColumn } from './DataTable';
 
 interface VehicleCatalogTableProps {
   vehicles: Vehicle[];
-  editingId: string | null;
-  onSelectRow: (id: string | null) => void;
-  onUpdate: (id: string, updates: Partial<Vehicle>) => void;
+  /** Veículo recém-salvo, destacado na lista. */
+  highlightId: string | null;
+  onEdit: (id: string) => void;
   onRemove: (id: string) => void;
   isVehicleComplete: (vehicle: Vehicle) => boolean;
 }
 
 export default function VehicleCatalogTable({
   vehicles,
-  editingId,
-  onSelectRow,
-  onUpdate,
+  highlightId,
+  onEdit,
   onRemove,
   isVehicleComplete,
 }: VehicleCatalogTableProps) {
@@ -92,7 +91,7 @@ export default function VehicleCatalogTable({
         <div className="flex items-center justify-end gap-1">
           <button
             type="button"
-            onClick={() => onSelectRow(editingId === v.id ? null : v.id)}
+            onClick={() => onEdit(v.id)}
             className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10"
             title="Editar"
           >
@@ -116,8 +115,8 @@ export default function VehicleCatalogTable({
       rows={vehicles}
       getRowId={(v) => v.id}
       columns={columns}
-      selectedId={editingId}
-      onSelectRow={onSelectRow}
+      onSelectRow={(id) => id && onEdit(id)}
+      highlightId={highlightId}
       defaultSort={{ columnId: 'make', direction: 'asc' }}
       searchPlaceholder="Buscar fabricante, modelo, ano..."
       filterRow={(v, q) =>
@@ -125,36 +124,11 @@ export default function VehicleCatalogTable({
       }
       emptyMessage="Nenhum veículo na lista."
       itemLabel="veículos"
-      renderExpanded={(vehicle) => (
-          <div className="space-y-5">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-indigo-400">Editar veículo</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-              <Field label="Fabricante" value={vehicle.make} onChange={(v) => onUpdate(vehicle.id, { make: v })} />
-              <Field label="Modelo" value={vehicle.model} onChange={(v) => onUpdate(vehicle.id, { model: v })} />
-              <Field label="Ano" value={vehicle.year} onChange={(v) => onUpdate(vehicle.id, { year: v })} />
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-mono text-slate-500">Porte</label>
-                <select
-                  value={vehicle.size}
-                  onChange={(e) => onUpdate(vehicle.id, { size: e.target.value as VehicleSize })}
-                  className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-base sm:text-sm text-white"
-                >
-                  {Object.values(VehicleSize).map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <VehiclePartsEditor vehicle={vehicle} onUpdate={onUpdate} />
-          </div>
-      )}
     />
   );
 }
 
-function VehiclePartsEditor({
+export function VehiclePartsEditor({
   vehicle,
   onUpdate,
 }: {
@@ -457,26 +431,5 @@ function PartMeasurementInput({
       }}
       className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-indigo-400 font-mono"
     />
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-[9px] uppercase font-mono text-slate-500">{label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-base sm:text-sm text-white"
-      />
-    </div>
   );
 }

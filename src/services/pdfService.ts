@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
-import { Budget, Material } from '../types';
+import { Budget, Material, PaymentTerms } from '../types';
+import { hasPaymentTerms, paymentMethodLines } from '../constants/paymentMethods';
 import { formatCurrency } from '../lib/utils';
 import { databaseService } from './databaseService';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
@@ -469,8 +470,109 @@ class PdfBuilder {
     this.y += boxH + 8;
   }
 
-  drawTerms() {
-    this.ensureSpace(11 + 36);
+  /** Formas de pagamento em destaque, logo abaixo do valor total. */
+  drawPaymentTerms(paymentTerms: PaymentTerms | undefined, total: number) {
+    if (!hasPaymentTerms(paymentTerms)) return;
+
+    const methods = paymentMethodLines(paymentTerms, total);
+    const notes = paymentTerms.notes.trim().replace(/\s+/g, ' ');
+    const rowH = 5.5;
+    const innerLeft = MARGIN + 5;
+    const innerRight = PAGE_W - MARGIN - 5;
+    const dotW = 3; // bolinha + espaço antes do nome
+    const gapW = 7; // entre uma forma e a próxima
+
+    // Formas lado a lado, quebrando linha quando não cabem: ocupa pouca altura.
+    const measured = methods.map((m) => {
+      this.doc.setFont('helvetica', 'bold');
+      this.doc.setFontSize(9);
+      const labelW = this.doc.getTextWidth(m.label);
+      this.doc.setFont('helvetica', 'normal');
+      this.doc.setFontSize(8.5);
+      const detailW = m.detail ? this.doc.getTextWidth(m.detail) + 1.5 : 0;
+      return { ...m, labelW, width: dotW + labelW + detailW };
+    });
+    const lines: (typeof measured)[] = [];
+    let cursor = innerLeft;
+    measured.forEach((m) => {
+      const current = lines[lines.length - 1];
+      if (current && cursor + m.width <= innerRight) {
+        current.push(m);
+        cursor += m.width + gapW;
+      } else {
+        lines.push([m]);
+        cursor = innerLeft + m.width + gapW;
+      }
+    });
+
+    this.doc.setFont('helvetica', 'normal');
+    this.doc.setFontSize(7.5);
+    const noteLines = notes
+      ? truncateLines(this.doc, `Observações: ${notes}`, CONTENT_W - 10, 4)
+      : [];
+    const notesH = noteLines.length > 0 ? (lines.length > 0 ? 3 : 0) + noteLines.length * 3.6 : 0;
+    const cardH = 4 + lines.length * rowH + notesH + 3;
+    this.ensureSpace(11 + cardH + 4);
+
+    this.sectionTitle('FORMAS DE PAGAMENTO');
+    this.drawCard(MARGIN, this.y, CONTENT_W, cardH, C.white, C.slate200);
+
+    let lineY = this.y + 4 + 3.6;
+    lines.forEach((line) => {
+      let x = innerLeft;
+      line.forEach((m) => {
+        fill(this.doc, this.accent);
+        this.doc.circle(x + 0.9, lineY - 1.1, 0.9, 'F');
+
+        this.doc.setFont('helvetica', 'bold');
+        this.doc.setFontSize(9);
+        textColor(this.doc, C.slate900);
+        this.doc.text(m.label, x + dotW, lineY);
+
+        if (m.detail) {
+          this.doc.setFont('helvetica', 'normal');
+          this.doc.setFontSize(8.5);
+          textColor(this.doc, C.slate600);
+          const maxW = innerRight - (x + dotW + m.labelW + 1.5);
+          const detail = truncateLines(this.doc, m.detail, maxW, 1)[0];
+          this.doc.text(detail, x + dotW + m.labelW + 1.5, lineY);
+        }
+        x += m.width + gapW;
+      });
+      lineY += rowH;
+    });
+
+    if (noteLines.length > 0) {
+      if (lines.length > 0) {
+        stroke(this.doc, C.slate200);
+        this.doc.setLineWidth(0.2);
+        this.doc.line(MARGIN + 5, lineY - 3.3, PAGE_W - MARGIN - 5, lineY - 3.3);
+        lineY += 0.2;
+      }
+      this.doc.setFont('helvetica', 'normal');
+      this.doc.setFontSize(7.5);
+      textColor(this.doc, C.slate700);
+      this.doc.text(noteLines, MARGIN + 5, lineY);
+    }
+
+    this.y += cardH + 4;
+  }
+
+  drawTerms(paymentTerms: PaymentTerms | undefined) {
+    // Com formas de pagamento, elas já têm a própria seção acima.
+    const terms = [
+      'Validade: 10 dias corridos a partir da emissão.',
+      'Prazo de execução: a combinar conforme agenda.',
+      'Garantia de 6 meses contra descolamentos ou defeitos de aplicação.',
+      ...(hasPaymentTerms(paymentTerms)
+        ? []
+        : ['Pagamento e condições comerciais: a definir na aprovação.']),
+    ];
+
+    // Título (11) + linhas (4,6 cada) até a última caber acima do rodapé
+    // (maxY). Se não couber tudo, os termos vão inteiros para a próxima página.
+    const maxY = FOOTER_Y - 6;
+    this.ensureSpace(11 + (terms.length - 1) * 4.6 + (FOOTER_Y - maxY));
 
     this.sectionTitle('TERMOS E CONDIÇÕES');
 
@@ -478,17 +580,9 @@ class PdfBuilder {
     this.doc.setFontSize(7);
     textColor(this.doc, C.slate600);
 
-    const terms = [
-      'Validade: 10 dias corridos a partir da emissão.',
-      'Prazo de execução: a combinar conforme agenda.',
-      'Garantia de 6 meses contra descolamentos ou defeitos de aplicação.',
-      'Pagamento e condições comerciais: a definir na aprovação.',
-    ];
-
-    const maxY = FOOTER_Y - 12;
     terms.forEach((term, i) => {
       if (this.y > maxY) return;
-      const lines = truncateLines(this.doc, `${i + 1}. ${term}`, CONTENT_W, 2);
+      const lines = truncateLines(this.doc, `${i + 1}. ${term}`, CONTENT_W, 3);
       this.doc.text(lines, MARGIN, this.y);
       this.y += lines.length * 3.6 + 1;
     });
@@ -690,15 +784,17 @@ export const pdfService = {
         pdf.drawItemSubtotal(budgetNumber(section.item.totalPrice));
       });
       pdf.drawTotalPrice(budgetNumber(budget.totalPrice));
+      pdf.drawPaymentTerms(budget.paymentTerms, budgetNumber(budget.totalPrice));
     } else {
       pdf.sectionTitle('MATERIAL SELECIONADO');
       pdf.drawMaterial(first.material);
       pdf.drawMetrics(first.metrics);
       pdf.drawTotalPrice(budgetNumber(budget.totalPrice));
+      pdf.drawPaymentTerms(budget.paymentTerms, budgetNumber(budget.totalPrice));
       pdf.drawPiecesList(piecesTitle, first.pieceLabels);
     }
 
-    pdf.drawTerms();
+    pdf.drawTerms(budget.paymentTerms);
     pdf.drawFooter(user?.email);
 
     const safeName =

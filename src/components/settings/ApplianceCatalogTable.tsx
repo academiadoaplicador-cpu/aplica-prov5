@@ -4,17 +4,16 @@ import DataTable, { type DataTableColumn } from './DataTable';
 
 interface ApplianceCatalogTableProps {
   appliances: Appliance[];
-  editingId: string | null;
-  onSelectRow: (id: string | null) => void;
-  onUpdate: (id: string, updates: Partial<Appliance>) => void;
+  /** Eletro recém-salvo, destacado na lista. */
+  highlightId: string | null;
+  onEdit: (id: string) => void;
   onRemove: (id: string) => void;
 }
 
 export default function ApplianceCatalogTable({
   appliances,
-  editingId,
-  onSelectRow,
-  onUpdate,
+  highlightId,
+  onEdit,
   onRemove,
 }: ApplianceCatalogTableProps) {
   const columns: DataTableColumn<Appliance>[] = [
@@ -77,7 +76,7 @@ export default function ApplianceCatalogTable({
         <div className="flex items-center justify-end gap-1">
           <button
             type="button"
-            onClick={() => onSelectRow(editingId === a.id ? null : a.id)}
+            onClick={() => onEdit(a.id)}
             className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10"
             title="Editar"
           >
@@ -101,8 +100,8 @@ export default function ApplianceCatalogTable({
       rows={appliances}
       getRowId={(a) => a.id}
       columns={columns}
-      selectedId={editingId}
-      onSelectRow={onSelectRow}
+      onSelectRow={(id) => id && onEdit(id)}
+      highlightId={highlightId}
       defaultSort={{ columnId: 'make', direction: 'asc' }}
       searchPlaceholder="Buscar marca, tipo, modelo..."
       filterRow={(a, q) =>
@@ -110,65 +109,6 @@ export default function ApplianceCatalogTable({
       }
       emptyMessage="Nenhum eletro na lista."
       itemLabel="eletrodomésticos"
-      renderExpanded={(app) => (
-          <div className="space-y-4 w-full max-w-2xl lg:max-w-none">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-400">Editar eletro</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Marca" value={app.make} onChange={(v) => onUpdate(app.id, { make: v })} />
-              <Field label="Modelo" value={app.model} onChange={(v) => onUpdate(app.id, { model: v })} />
-              <div className="col-span-2">
-                <Field label="Tipo" value={app.type} onChange={(v) => onUpdate(app.id, { type: v })} />
-              </div>
-              <DimField label="Largura (m)" value={app.width} onChange={(v) => onUpdate(app.id, { width: v })} />
-              <DimField label="Altura (m)" value={app.height} onChange={(v) => onUpdate(app.id, { height: v })} />
-              <DimField label="Profundidade (m)" value={app.depth} onChange={(v) => onUpdate(app.id, { depth: v })} />
-            </div>
-          </div>
-      )}
     />
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-[9px] uppercase font-mono text-slate-500">{label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-base sm:text-sm text-white"
-      />
-    </div>
-  );
-}
-
-function DimField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-[9px] uppercase font-mono text-slate-500">{label}</label>
-      <input
-        type="number"
-        step="0.01"
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-base sm:text-sm text-white font-mono"
-      />
-    </div>
   );
 }

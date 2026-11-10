@@ -5,7 +5,9 @@ import {
   Clock,
   FileText,
   Loader2,
+  Lock,
   MapPin,
+  MessageCircle,
   Phone,
   RefreshCw,
   ShieldOff,
@@ -24,6 +26,7 @@ import ProposalPanel from '../components/marketplace/ProposalPanel';
 import RequestItemsList from '../components/marketplace/RequestItemsList';
 import { applicatorService } from '../services/applicatorService';
 import { formatCurrency, cn } from '../lib/utils';
+import { buildWhatsAppUrl, parseStoredPhone } from '../utils/phone';
 
 function hoursLeft(expiresAt: string): string {
   const ms = new Date(expiresAt).getTime() - Date.now();
@@ -348,15 +351,7 @@ export default function RegionRequestsPage() {
                         : ''}
                     </p>
                     <ClientSuppliedBadge request={request} />
-                    {request.client?.phone && (
-                      <a
-                        href={`tel:${request.client.phone}`}
-                        className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300"
-                      >
-                        <Phone size={13} />
-                        {request.client.phone}
-                      </a>
-                    )}
+                    <ClientContact request={request} />
                   </div>
                   <span className="shrink-0 text-[10px] font-mono font-bold uppercase px-2 py-1 rounded-lg border text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
                     Aceito
@@ -497,6 +492,55 @@ const PROPOSAL_LABEL: Record<ProposalStatus, { text: string; className: string }
   Aceita: { text: 'Cliente aceitou', className: 'text-emerald-400' },
   Recusada: { text: 'Cliente recusou', className: 'text-red-400' },
 };
+
+/**
+ * Contato do cliente: só depois que ele aceita a proposta (fechamento). Antes
+ * disso a API nem devolve o telefone; aqui fica só o aviso.
+ */
+function ClientContact({ request }: { request: ServiceRequest }) {
+  const closed = request.proposal?.status === 'Aceita';
+  const phone = request.client?.phone ?? '';
+
+  if (!closed) {
+    return (
+      <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500">
+        <Lock size={12} />
+        Contato liberado quando o cliente aceitar sua proposta.
+      </p>
+    );
+  }
+
+  const whatsappUrl = buildWhatsAppUrl(
+    phone,
+    `Olá, ${request.client?.name || 'tudo bem'}! Aqui é da oficina que vai fazer o seu serviço pelo Aplica Pro (${requestTitle(request)}).`,
+  );
+  if (!whatsappUrl) {
+    return (
+      <p className="mt-2 text-xs text-slate-500">O cliente não cadastrou telefone.</p>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <a
+        href={whatsappUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white transition-colors"
+      >
+        <MessageCircle size={16} />
+        Conversar no WhatsApp
+      </a>
+      <a
+        href={`tel:${phone}`}
+        className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300"
+      >
+        <Phone size={13} />
+        {parseStoredPhone(phone).formatted || phone}
+      </a>
+    </div>
+  );
+}
 
 function ProposalSummary({
   proposal,

@@ -165,6 +165,29 @@ export const databaseService = {
     });
   },
 
+  /** Cria ou atualiza um material só; devolve o registro como ficou no banco. */
+  saveMaterial: async (material: Material): Promise<Material> => {
+    const saved = await api<Material>(`/materials/${encodeURIComponent(material.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ material }),
+    });
+    return normalizeMaterialRollFields(saved);
+  },
+
+  deleteMaterial: async (id: string): Promise<void> => {
+    await api(`/materials/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  /** Novo preço por m² para cada material listado; os demais não mudam. */
+  updateMaterialPrices: async (
+    updates: { id: string; pricePerM2: number }[],
+  ): Promise<{ updated: number }> => {
+    return api<{ updated: number }>('/materials/prices', {
+      method: 'PATCH',
+      body: JSON.stringify({ updates }),
+    });
+  },
+
   importMaterials: async (materials: Material[]): Promise<Material[]> => {
     const imported = await api<Material[]>('/materials/import', {
       method: 'POST',
@@ -216,6 +239,18 @@ export const databaseService = {
     });
   },
 
+  /** Cria ou atualiza um veículo só; devolve o registro como ficou no banco. */
+  saveVehicle: async (vehicle: Vehicle): Promise<Vehicle> => {
+    return api<Vehicle>(`/vehicles/${encodeURIComponent(vehicle.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ vehicle }),
+    });
+  },
+
+  deleteVehicle: async (id: string): Promise<void> => {
+    await api(`/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
   importVehicles: async (vehicles: Vehicle[]): Promise<Vehicle[]> => {
     return api<Vehicle[]>('/vehicles/import', {
       method: 'POST',
@@ -232,6 +267,18 @@ export const databaseService = {
       method: 'PUT',
       body: JSON.stringify({ appliances }),
     });
+  },
+
+  /** Cria ou atualiza um eletrodoméstico só; devolve o registro como ficou no banco. */
+  saveAppliance: async (appliance: Appliance): Promise<Appliance> => {
+    return api<Appliance>(`/appliances/${encodeURIComponent(appliance.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ appliance }),
+    });
+  },
+
+  deleteAppliance: async (id: string): Promise<void> => {
+    await api(`/appliances/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
   importAppliances: async (appliances: Appliance[]): Promise<Appliance[]> => {

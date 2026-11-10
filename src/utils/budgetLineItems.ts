@@ -34,7 +34,10 @@ function sum(items: BudgetLineItem[], key: keyof BudgetLineItem): number {
  * funcionando. Com um item só, o orçamento fica igual ao formato anterior.
  */
 export function consolidateBudget(
-  base: Pick<Budget, 'id' | 'customerName' | 'status' | 'date' | 'description' | 'type'>,
+  base: Pick<
+    Budget,
+    'id' | 'customerName' | 'status' | 'date' | 'description' | 'type' | 'paymentTerms'
+  >,
   lineItems: BudgetLineItem[],
 ): Budget {
   const first = lineItems[0];

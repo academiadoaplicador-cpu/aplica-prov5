@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Layers, FileSpreadsheet, Save, CheckCircle2, Download, FileDown } from 'lucide-react';
+import { Plus, Layers, FileSpreadsheet, Download, FileDown, Tags, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { databaseService } from '../services/databaseService';
 import { Material, MaterialType } from '../types';
@@ -11,15 +11,44 @@ import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlo
 import ImportProgressBar from '../components/settings/ImportProgressBar';
 import MaterialCatalogTable from '../components/settings/MaterialCatalogTable';
 import MaterialImportPreviewModal from '../components/settings/MaterialImportPreviewModal';
+import MaterialFormPanel from '../components/settings/MaterialFormPanel';
+import MaterialBulkPricePanel from '../components/settings/MaterialBulkPricePanel';
 import { mergeMaterials, parseMaterialsFromExcel, type MaterialImportResult } from '../utils/materialImport';
 import { downloadMaterialsTemplate } from '../utils/spreadsheetTemplates';
 import { downloadMaterialsCatalog } from '../utils/materialExport';
 import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
+const MATERIAL_TYPES: MaterialType[] = ['Cast', 'Calandrado', 'PPF', 'Poliéster'];
+
+/** Família de produtos = marca + linha (ex.: 3M · 2080). */
+function familyKey(material: Material): string {
+  return `${material.brand.trim()} · ${material.line.trim()}`;
+}
+
+function emptyMaterial(): Material {
+  return {
+    id: generateId(),
+    name: '',
+    brand: '',
+    pricePerM2: 0,
+    type: 'Cast',
+    line: '',
+    colorTexture: '',
+    durability: '',
+    recommendedFor: [],
+    details: '',
+  };
+}
+
 export default function CatalogPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [isSaved, setIsSaved] = useState(false);
-  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+  const [panelMaterial, setPanelMaterial] = useState<Material | null>(null);
+  const [isNewMaterial, setIsNewMaterial] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [familyFilter, setFamilyFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState<MaterialType | ''>('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [materialsImportStatus, setMaterialsImportStatus] = useState<string | null>(null);
   const [materialsImportErrors, setMaterialsImportErrors] = useState<string[]>([]);
   const [importPreview, setImportPreview] = useState<MaterialImportResult | null>(null);
@@ -58,31 +87,105 @@ export default function CatalogPage() {
     databaseService.getMaterials().then(setMaterials);
   }, []);
 
-  const handleSave = async () => {
-    await databaseService.setMaterials(materials);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
+  // O destaque do registro salvo some sozinho depois de alguns segundos.
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+
+  const families = useMemo(
+    () =>
+      Array.from(new Set<string>(materials.map(familyKey))).sort((a, b) =>
+        a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }),
+      ),
+    [materials],
+  );
+
+  const visibleMaterials = useMemo(
+    () =>
+      materials.filter(
+        (m) =>
+          (!familyFilter || familyKey(m) === familyFilter) && (!typeFilter || m.type === typeFilter),
+      ),
+    [materials, familyFilter, typeFilter],
+  );
+
+  const selectedMaterials = useMemo(
+    () => materials.filter((m) => selectedIds.has(m.id)),
+    [materials, selectedIds],
+  );
+  const allVisibleSelected =
+    visibleMaterials.length > 0 && visibleMaterials.every((m) => selectedIds.has(m.id));
 
   const addMaterial = () => {
-    const newMaterial: Material = {
-      id: generateId(),
-      name: 'Novo Material',
-      brand: 'Marca',
-      pricePerM2: 50,
-      type: 'Cast',
-      line: 'Standard',
-      colorTexture: 'Brilhante',
-      durability: '1-2 anos',
-      recommendedFor: ['Móveis'],
-      details: '',
-    };
-    setMaterials([newMaterial, ...materials]);
-    setEditingMaterialId(newMaterial.id);
+    setPanelMaterial(emptyMaterial());
+    setIsNewMaterial(true);
     setIsBatchMode(false);
   };
 
-  const handleBatchAdd = () => {
+  const editMaterial = (id: string) => {
+    const material = materials.find((m) => m.id === id);
+    if (!material) return;
+    setPanelMaterial(material);
+    setIsNewMaterial(false);
+  };
+
+  /** Mostra o registro salvo: tira os filtros que o esconderiam e destaca a linha. */
+  const revealMaterial = (material: Material) => {
+    if (familyFilter && familyKey(material) !== familyFilter) setFamilyFilter('');
+    if (typeFilter && material.type !== typeFilter) setTypeFilter('');
+    setHighlightId(material.id);
+  };
+
+  const handleSaveMaterial = async (draft: Material) => {
+    const saved = await databaseService.saveMaterial(draft);
+    setMaterials((prev) =>
+      prev.some((m) => m.id === saved.id)
+        ? prev.map((m) => (m.id === saved.id ? saved : m))
+        : [saved, ...prev],
+    );
+    setMaterialsImportStatus(
+      isNewMaterial ? `Material "${saved.name}" cadastrado.` : `Material "${saved.name}" atualizado.`,
+    );
+    setMaterialsImportErrors([]);
+    setPanelMaterial(null);
+    revealMaterial(saved);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const m of visibleMaterials) {
+        if (allVisibleSelected) next.delete(m.id);
+        else next.add(m.id);
+      }
+      return next;
+    });
+  };
+
+  const handleApplyBulkPrices = async (updates: { id: string; pricePerM2: number }[]) => {
+    const { updated } = await databaseService.updateMaterialPrices(updates);
+    const prices = new Map(updates.map((u) => [u.id, u.pricePerM2]));
+    setMaterials((prev) =>
+      prev.map((m) => (prices.has(m.id) ? { ...m, pricePerM2: prices.get(m.id)! } : m)),
+    );
+    setMaterialsImportStatus(`Preço atualizado em ${updated} material(is).`);
+    setMaterialsImportErrors([]);
+    setSelectedIds(new Set());
+    setIsBulkOpen(false);
+  };
+
+  const handleBatchAdd = async () => {
     const colorList = batchData.colors.split(',').map((c) => c.trim()).filter((c) => c !== '');
     if (colorList.length === 0) return;
 
@@ -99,26 +202,26 @@ export default function CatalogPage() {
       details: `Cadastrado via lote: ${batchData.line}`,
     }));
 
-    setMaterials([...newMaterials, ...materials]);
+    const next = [...newMaterials, ...materials];
+    await databaseService.setMaterials(next);
+    setMaterials(next);
     setIsBatchMode(false);
     setBatchData({ ...batchData, colors: '' });
+    setMaterialsImportStatus(`${newMaterials.length} material(is) cadastrado(s) em lote.`);
+    setMaterialsImportErrors([]);
+    revealMaterial(newMaterials[0]);
   };
 
-  const updateMaterial = (id: string, updates: Partial<Material>) => {
-    setMaterials(materials.map((m) => (m.id === id ? { ...m, ...updates } : m)));
-  };
-
-  const removeMaterial = (id: string) => {
-    setMaterials(materials.filter((m) => m.id !== id));
-    if (editingMaterialId === id) setEditingMaterialId(null);
-  };
-
-  const toggleRecommendation = (id: string, rec: string) => {
+  const removeMaterial = async (id: string) => {
     const material = materials.find((m) => m.id === id);
-    if (!material) return;
-    const current = material.recommendedFor;
-    const updated = current.includes(rec) ? current.filter((r) => r !== rec) : [...current, rec];
-    updateMaterial(id, { recommendedFor: updated });
+    if (!material || !confirm(`Excluir o material "${material.name}" do catálogo?`)) return;
+    await databaseService.deleteMaterial(id);
+    setMaterials((prev) => prev.filter((m) => m.id !== id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   const handleImportMaterials = async (file: File) => {
@@ -218,13 +321,6 @@ export default function CatalogPage() {
             >
               Cadastro em lote
             </PageButton>
-            <PageButton
-              variant="secondary"
-              icon={isSaved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-              onClick={() => void handleSave()}
-            >
-              {isSaved ? 'Salvo' : 'Salvar alterações'}
-            </PageButton>
             <PageButton variant="primary" icon={<Plus size={16} />} onClick={addMaterial}>
               Novo material
             </PageButton>
@@ -286,7 +382,7 @@ export default function CatalogPage() {
                       </PageButton>
                       <PageButton
                         variant="primary"
-                        onClick={handleBatchAdd}
+                        onClick={() => void handleBatchAdd()}
                         disabled={!batchData.brand || !batchData.colors}
                       >
                         Gerar materiais
@@ -300,20 +396,85 @@ export default function CatalogPage() {
         }
       />
 
+      <MaterialFormPanel
+        material={panelMaterial}
+        isNew={isNewMaterial}
+        onClose={() => setPanelMaterial(null)}
+        onSave={handleSaveMaterial}
+      />
+
+      <MaterialBulkPricePanel
+        open={isBulkOpen}
+        materials={selectedMaterials}
+        onClose={() => setIsBulkOpen(false)}
+        onApply={handleApplyBulkPrices}
+      />
+
       <PagePanel>
         {materials.length === 0 ? (
           <div className="p-8">
             <EmptyCatalog message="Nenhum material cadastrado. Baixe o modelo, preencha e importe — ou clique em Novo material." />
           </div>
         ) : (
-          <MaterialCatalogTable
-            materials={materials}
-            editingId={editingMaterialId}
-            onSelectRow={setEditingMaterialId}
-            onUpdate={updateMaterial}
-            onRemove={removeMaterial}
-            onToggleRecommendation={toggleRecommendation}
-          />
+          <>
+            <div className="flex flex-col gap-3 px-4 pt-4 sm:px-5 sm:pt-5 lg:flex-row lg:items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1">
+                <FilterSelect
+                  label="Família (marca · linha)"
+                  value={familyFilter}
+                  onChange={setFamilyFilter}
+                  options={families}
+                  allLabel="Todas as famílias"
+                />
+                <FilterSelect
+                  label="Tipo"
+                  value={typeFilter}
+                  onChange={(v) => setTypeFilter(v as MaterialType | '')}
+                  options={MATERIAL_TYPES}
+                  allLabel="Todos os tipos"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <PageButton
+                  variant="secondary"
+                  onClick={toggleSelectVisible}
+                  disabled={visibleMaterials.length === 0}
+                >
+                  {allVisibleSelected
+                    ? 'Desmarcar filtrados'
+                    : `Selecionar filtrados (${visibleMaterials.length})`}
+                </PageButton>
+                {selectedIds.size > 0 && (
+                  <>
+                    <PageButton
+                      variant="primary"
+                      icon={<Tags size={16} />}
+                      onClick={() => setIsBulkOpen(true)}
+                    >
+                      Alterar preço ({selectedIds.size})
+                    </PageButton>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds(new Set())}
+                      className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800"
+                      title="Limpar seleção"
+                      aria-label="Limpar seleção"
+                    >
+                      <X size={16} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <MaterialCatalogTable
+              materials={visibleMaterials}
+              highlightId={highlightId}
+              onEdit={editMaterial}
+              onRemove={(id) => void removeMaterial(id)}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+            />
+          </>
         )}
       </PagePanel>
     </div>
@@ -337,6 +498,38 @@ function BatchField({
         onChange={(e) => onChange(e.target.value)}
         className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-base sm:text-sm text-white"
       />
+    </div>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  allLabel,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  allLabel: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-slate-500">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full h-10 bg-slate-950 border border-slate-800 rounded-lg px-2.5 text-base sm:text-sm text-white"
+      >
+        <option value="">{allLabel}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

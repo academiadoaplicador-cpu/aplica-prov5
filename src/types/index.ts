@@ -53,11 +53,27 @@ export interface Material {
   rollLengthsM?: number[];
 }
 
+/** Formas de pagamento que a oficina pode oferecer num orçamento. */
+export type PaymentMethod = 'pix' | 'debito' | 'credito' | 'boleto';
+
+/** Condições de pagamento de um orçamento (ou o padrão da configuração). */
+export interface PaymentTerms {
+  methods: PaymentMethod[];
+  /** Parcelas máximas no cartão de crédito (1 = só à vista). */
+  creditInstallments: number;
+  /** Parcelado sem juros (true) ou com juros da operadora (false). */
+  creditInterestFree: boolean;
+  /** Condições negociadas: entrada, desconto no Pix, prazo… */
+  notes: string;
+}
+
 export interface FinancialSettings {
   hourlyRate: number;
   profitMarginPercentage: number;
   taxPercentage: number;
   fixedCosts: number;
+  /** Condições de pagamento que os novos orçamentos trazem preenchidas. */
+  paymentTerms?: PaymentTerms;
 }
 
 export interface BudgetPiece {
@@ -113,6 +129,8 @@ export interface Budget {
    * orçamentos de um item só criados antes desta lista existir.
    */
   lineItems?: BudgetLineItem[];
+  /** Condições de pagamento deste orçamento; não mudam com a configuração. */
+  paymentTerms?: PaymentTerms;
 }
 
 /** Um produto/serviço dentro do orçamento (ex.: um dos veículos, uma das geladeiras). */

@@ -1,4 +1,4 @@
-import { BudgetLineItem, DecorativeItem } from '../types';
+import { BudgetLineItem, DecorativeItem, PaymentTerms } from '../types';
 import { databaseService } from '../services/databaseService';
 
 export type BudgetDraftKind = 'automotive' | 'decorative';
@@ -20,6 +20,8 @@ export interface AutomotiveBudgetDraft {
   selectedRollLength: number | null;
   activeStep: number;
   lineItems?: BudgetLineItem[];
+  /** Condições ajustadas neste orçamento (null = padrão da configuração). */
+  paymentTerms?: PaymentTerms | null;
 }
 
 export interface DecorativeBudgetDraft {
@@ -38,6 +40,8 @@ export interface DecorativeBudgetDraft {
   selectedRollLength: number | null;
   activeStep: number;
   lineItems?: BudgetLineItem[];
+  /** Condições ajustadas neste orçamento (null = padrão da configuração). */
+  paymentTerms?: PaymentTerms | null;
 }
 
 function draftKey(kind: BudgetDraftKind): string {

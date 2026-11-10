@@ -20,9 +20,11 @@ import {
   hasPartMeasurement,
   isVehicleMeasurementsComplete,
 } from '../utils/vehiclePartsUtils';
-import { BudgetLineItem, FinancialSettings, Material, Vehicle } from '../types';
+import { BudgetLineItem, FinancialSettings, Material, PaymentTerms, Vehicle } from '../types';
 import { consolidateBudget } from '../utils/budgetLineItems';
 import BudgetLineItemsPanel from './BudgetLineItemsPanel';
+import BudgetPaymentTermsPanel from './BudgetPaymentTermsPanel';
+import { hasPaymentTerms, normalizePaymentTerms } from '../constants/paymentMethods';
 import { databaseService } from '../services/databaseService';
 import { formatCurrency, generateId, cn } from '../lib/utils';
 import { motion } from 'motion/react';
@@ -46,6 +48,7 @@ import {
 import MaterialCascadeSelect from './MaterialCascadeSelect';
 import MaterialRollDimensionSelect from './MaterialRollDimensionSelect';
 import RollNestingPreview from './RollNestingPreview';
+import BudgetCuttingPlan from './BudgetCuttingPlan';
 import { getMaterialRollDimensions } from '../utils/materialRoll';
 import { computeRollMaterialUsage, ROLL_WASTE_FACTOR } from '../utils/rollNesting';
 import type { NestingPartInput } from '../utils/rollNesting';
@@ -104,6 +107,10 @@ export default function AutomotiveCalculator() {
   );
   const [lineItems, setLineItems] = useState<BudgetLineItem[]>(
     restoredDraft.current?.lineItems ?? [],
+  );
+  /** null = segue o padrão da configuração; ajustado, vale só para este orçamento. */
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerms | null>(
+    restoredDraft.current?.paymentTerms ? normalizePaymentTerms(restoredDraft.current.paymentTerms) : null,
   );
   const [restoreTick, setRestoreTick] = useState(0);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
@@ -281,6 +288,7 @@ export default function AutomotiveCalculator() {
     let usedLength = 0;
     let rollAreaM2 = 0;
     let materialM2 = 0;
+    let rollsNeeded = 1;
     let hasRollPricing = false;
 
     if (rollDimensions && nestingPartsPerVehicle.length > 0) {
@@ -293,15 +301,13 @@ export default function AutomotiveCalculator() {
       usedLength = usage.usedLength;
       rollAreaM2 = usage.rollAreaM2;
       materialM2 = usage.materialM2;
+      // Rolos reais do encaixe: a soma dos metros não diz quantos rolos são precisos.
+      rollsNeeded = usage.rollsNeeded;
       hasRollPricing = true;
     }
 
     const usedLengthPerVehicle =
       vehicleQuantity > 0 ? usedLength / vehicleQuantity : 0;
-    const rollsNeeded =
-      rollDimensions && rollDimensions.length > 0
-        ? Math.max(1, Math.ceil(usedLength / rollDimensions.length))
-        : 1;
 
     const materialCost = materialM2 * pricePerM2;
     const laborCost = estimatedHours * settings.hourlyRate;
@@ -402,6 +408,11 @@ export default function AutomotiveCalculator() {
     [lineItems, currentLineItem],
   );
 
+  const effectivePaymentTerms = useMemo(
+    () => paymentTerms ?? normalizePaymentTerms(settings.paymentTerms),
+    [paymentTerms, settings.paymentTerms],
+  );
+
   const currentBudget = useMemo(
     () =>
       consolidateBudget(
@@ -412,10 +423,11 @@ export default function AutomotiveCalculator() {
           date: new Date().toISOString(),
           description: description.trim() || undefined,
           type: 'Automotivo',
+          paymentTerms: hasPaymentTerms(effectivePaymentTerms) ? effectivePaymentTerms : undefined,
         },
         allLineItems,
       ),
-    [customerName, description, allLineItems],
+    [customerName, description, allLineItems, effectivePaymentTerms],
   );
 
   const resetItemEditor = () => {
@@ -439,6 +451,7 @@ export default function AutomotiveCalculator() {
         customerName,
         description,
         lineItems: lineItems.map((item) => [item.id, item.totalPrice]),
+        paymentTerms: effectivePaymentTerms,
         selectedVehicleId,
         vehicleQuantity,
         budgetType,
@@ -453,6 +466,7 @@ export default function AutomotiveCalculator() {
       customerName,
       description,
       lineItems,
+      effectivePaymentTerms,
       selectedVehicleId,
       vehicleQuantity,
       budgetType,
@@ -675,6 +689,7 @@ export default function AutomotiveCalculator() {
       selectedRollLength,
       activeStep: wizard.activeStep,
       lineItems,
+      paymentTerms,
     }),
     () =>
       Boolean(
@@ -1064,6 +1079,15 @@ export default function AutomotiveCalculator() {
               )}
             </div>
           )}
+
+          <div className={cn(wizard.stepPanelClass(3))}>
+            <BudgetCuttingPlan
+              lineItems={allLineItems}
+              materials={materials}
+              vehicles={vehicles}
+              accent="indigo"
+            />
+          </div>
         </div>
 
         <div
@@ -1320,6 +1344,15 @@ export default function AutomotiveCalculator() {
                   }}
                 />
               )}
+
+              <BudgetPaymentTermsPanel
+                value={effectivePaymentTerms}
+                isCustom={paymentTerms !== null}
+                onChange={setPaymentTerms}
+                onReset={() => setPaymentTerms(null)}
+                accent="indigo"
+                total={currentBudget.totalPrice}
+              />
 
               <BudgetSavePdfActions
                 saveDisabled={!canExportBudget}

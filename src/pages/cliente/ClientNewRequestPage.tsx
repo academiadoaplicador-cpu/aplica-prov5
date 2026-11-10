@@ -673,22 +673,29 @@ export default function ClientNewRequestPage() {
         )}
 
         {current === 'tipo' && (
-          <OptionList
-            label="Qual é o tipo do material que você tem?"
-            options={laborTypes.map((t) => ({
-              value: t,
-              title: t,
-              hint: FINISH_HINT[t],
-            }))}
-            selected={laborType}
-            onSelect={(value) => {
-              if (value === laborType) return;
-              setLaborType(value);
-              setLaborBrand('');
-              setLaborLine('');
-              setClientMaterialId('');
-            }}
-          />
+          <div>
+            <label className={labelClass}>Qual é o tipo do material que você tem?</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {laborTypes.map((value) => (
+                <div key={value} className="contents">
+                  <ChoiceCard
+                    active={laborType === value}
+                    onClick={() => {
+                      if (value === laborType) return;
+                      setLaborType(value);
+                      setLaborBrand('');
+                      setLaborLine('');
+                      setClientMaterialId('');
+                    }}
+                    title={value}
+                    description={FINISH_HINT[value] || 'Acabamento profissional'}
+                  >
+                    <FinishDetails type={value} active={laborType === value} />
+                  </ChoiceCard>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {current === 'marca' && (
@@ -736,7 +743,7 @@ export default function ClientNewRequestPage() {
           <div className="space-y-4">
             <div>
               <label className={labelClass}>Qual acabamento você prefere?</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {catalog.materialTypes.map((value) => (
                   <div key={value} className="contents">
                     <ChoiceCard
@@ -744,7 +751,9 @@ export default function ClientNewRequestPage() {
                       onClick={() => setMaterialType(value)}
                       title={value}
                       description={FINISH_HINT[value] || 'Acabamento profissional'}
-                    />
+                    >
+                      <FinishDetails type={value} active={materialType === value} />
+                    </ChoiceCard>
                   </div>
                 ))}
               </div>
@@ -866,11 +875,47 @@ export default function ClientNewRequestPage() {
 }
 
 const FINISH_HINT: Record<string, string> = {
-  Cast: 'Premium, acompanha curvas complexas',
-  Calandrado: 'Bom custo-benefício, superfícies planas',
-  PPF: 'Película de proteção transparente',
+  Cast: 'Premium para curvas complexas',
+  Calandrado: 'Custo-benefício para superfícies planas',
+  PPF: 'Película de proteção da pintura',
   Poliéster: 'Película para aplicação em vidros',
 };
+
+/** Descritivos curtos exibidos abaixo de cada tipo de material. */
+const FINISH_DETAILS: Record<string, { label: string; value: string }[]> = {
+  Cast: [
+    { label: 'Durabilidade', value: 'Alta · 5 a 10 anos' },
+    { label: 'Aplicação', value: 'Curvas, recortes e envelopamento total' },
+    { label: 'Custo-benefício', value: 'Investimento maior, maior vida útil' },
+  ],
+  Calandrado: [
+    { label: 'Durabilidade', value: 'Média · 2 a 5 anos' },
+    { label: 'Aplicação', value: 'Superfícies planas ou pouco curvas' },
+    { label: 'Custo-benefício', value: 'O mais econômico' },
+  ],
+  PPF: [
+    { label: 'Durabilidade', value: 'Alta · 5 a 10 anos' },
+    { label: 'Aplicação', value: 'Protege a pintura de riscos e pedras' },
+    { label: 'Custo-benefício', value: 'Investimento maior, preserva o original' },
+  ],
+};
+
+function FinishDetails({ type, active }: { type: string; active?: boolean }) {
+  const details = FINISH_DETAILS[type];
+  if (!details) return null;
+  return (
+    <dl className="mt-2.5 space-y-1 border-t border-slate-800/80 pt-2.5">
+      {details.map((d) => (
+        <div key={d.label} className="text-[11px] leading-snug">
+          <dt className={cn('inline font-semibold', active ? 'text-emerald-300/90' : 'text-slate-400')}>
+            {d.label}:{' '}
+          </dt>
+          <dd className="inline text-slate-500">{d.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 function EstimateBox({
   estimate,
@@ -1135,19 +1180,21 @@ function ChoiceCard({
   icon,
   title,
   description,
+  children,
 }: {
   active: boolean;
   onClick: () => void;
   icon?: ReactNode;
   title: string;
   description: string;
+  children?: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'text-left rounded-xl border p-4 transition-colors',
+        'text-left rounded-xl border p-4 transition-colors flex flex-col justify-start',
         active
           ? 'bg-emerald-600/10 border-emerald-600/30'
           : 'border-slate-800 hover:border-slate-700',
@@ -1163,6 +1210,7 @@ function ChoiceCard({
         {active && <Check size={14} className="ml-auto text-emerald-400" />}
       </div>
       <p className="mt-1 text-xs text-slate-500">{description}</p>
+      {children}
     </button>
   );
 }

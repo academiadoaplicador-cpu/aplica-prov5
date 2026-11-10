@@ -2,12 +2,47 @@ function num(value: unknown): number {
   return Number(value);
 }
 
+const PAYMENT_METHODS = ['pix', 'debito', 'credito', 'boleto'] as const;
+const MAX_CREDIT_INSTALLMENTS = 24;
+const MAX_PAYMENT_NOTES = 500;
+
+export interface PaymentTerms {
+  methods: string[];
+  creditInstallments: number;
+  creditInterestFree: boolean;
+  notes: string;
+}
+
+/**
+ * Condições de pagamento válidas, ou null quando não há nada informado (o PDF
+ * mostra "a definir na aprovação"). Só formas conhecidas, na ordem padrão.
+ */
+export function sanitizePaymentTerms(value: unknown): PaymentTerms | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const requested = Array.isArray(raw.methods) ? raw.methods : [];
+  const methods = PAYMENT_METHODS.filter((method) => requested.includes(method));
+  const notes = typeof raw.notes === 'string' ? raw.notes.trim().slice(0, MAX_PAYMENT_NOTES) : '';
+  if (methods.length === 0 && !notes) return null;
+  const installments = Math.floor(Number(raw.creditInstallments));
+  return {
+    methods,
+    creditInstallments:
+      Number.isFinite(installments) && installments >= 1
+        ? Math.min(MAX_CREDIT_INSTALLMENTS, installments)
+        : 1,
+    creditInterestFree: raw.creditInterestFree !== false,
+    notes,
+  };
+}
+
 export function mapFinancial(row: Record<string, unknown>) {
   return {
     hourlyRate: num(row.hourly_rate),
     profitMarginPercentage: num(row.profit_margin_percentage),
     taxPercentage: num(row.tax_percentage),
     fixedCosts: num(row.fixed_costs),
+    paymentTerms: sanitizePaymentTerms(row.payment_terms) ?? undefined,
   };
 }
 
@@ -37,5 +72,6 @@ export function mapBudget(row: Record<string, unknown>) {
     rollsNeeded:
       row.rolls_needed != null ? Math.max(1, num(row.rolls_needed)) : undefined,
     lineItems: Array.isArray(row.line_items) ? row.line_items : [],
+    paymentTerms: sanitizePaymentTerms(row.payment_terms) ?? undefined,
   };
 }

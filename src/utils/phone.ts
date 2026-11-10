@@ -51,6 +51,18 @@ export function formatStoredPhone(countryCode: string, nationalDigits: string): 
   return `${code}${national}`;
 }
 
+/**
+ * Link do WhatsApp para um telefone salvo com DDI (ex.: +5541999999999).
+ * Número sem DDI (10–11 dígitos) é tratado como brasileiro.
+ */
+export function buildWhatsAppUrl(phone: string, message?: string): string | null {
+  const digits = digitsOnly(phone);
+  if (digits.length < 10) return null;
+  const withCountry = digits.length <= 11 ? `55${digits}` : digits;
+  const text = message ? `?text=${encodeURIComponent(message)}` : '';
+  return `https://wa.me/${withCountry}${text}`;
+}
+
 export function parseStoredPhone(
   stored: string,
   defaultCountry = '+55',

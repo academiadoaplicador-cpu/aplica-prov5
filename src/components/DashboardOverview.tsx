@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { databaseService } from '../services/databaseService';
+import { sortBudgetsByDateDesc } from '../utils/budgetSort';
 import { ROUTES } from '../routes/paths';
 import { useCalculatorMode } from '../contexts/CalculatorModeContext';
 import { Budget, FinancialSettings } from '../types';
@@ -55,7 +56,7 @@ export default function DashboardOverview() {
     }
   ];
 
-  const recentBudgets = budgets.slice(-5).reverse();
+  const recentBudgets = sortBudgetsByDateDesc(budgets).slice(0, 5);
 
   return (
     <div className="space-y-8 w-full pb-20">

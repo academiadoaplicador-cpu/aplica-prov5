@@ -9,6 +9,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
+import { sortBudgetsByDateDesc } from '../utils/budgetSort';
 import { pdfService } from '../services/pdfService';
 import { Budget, Material, Vehicle } from '../types';
 import { formatCurrency, cn } from '../lib/utils';
@@ -57,16 +58,16 @@ export default function BudgetHistory() {
 
   const filteredBudgets = useMemo(
     () =>
-      budgets
-        .filter((b) => {
+      sortBudgetsByDateDesc(
+        budgets.filter((b) => {
           const project = (b.vehicleModel || b.applianceModel || '').toLowerCase();
           const matchesSearch =
             b.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             project.includes(searchTerm.toLowerCase());
           const matchesType = filterType === 'Tudo' || b.type === filterType;
           return matchesSearch && matchesType;
-        })
-        .reverse(),
+        }),
+      ),
     [budgets, searchTerm, filterType],
   );
 

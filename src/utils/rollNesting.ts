@@ -3,24 +3,29 @@ export interface NestingPartInput {
   name: string;
   width: number;
   length: number;
+  /** ID da peça no catálogo (ex.: CAP), quando o `id` ganhou prefixo de item ou cópia. */
+  baseId?: string;
 }
 
 export interface PlacedPart {
   id: string;
   name: string;
+  /** Posição na largura do rolo (m). */
   x: number;
+  /** Posição no comprimento, contada do início do próprio rolo (m). */
   y: number;
   width: number;
   height: number;
   rotated: boolean;
   originalWidth: number;
   originalLength: number;
+  /** Rolo físico onde a peça foi cortada (0 = primeiro rolo). */
+  rollIndex: number;
   /** ID da peça original quando esta faixa veio de um corte. */
   sourceId?: string;
+  baseId?: string;
   splitIndex?: number;
   splitCount?: number;
-  /** Índice da cópia do veículo no plano repetido (+1, +2, …). */
-  vehicleCopyIndex?: number;
 }
 
 interface PackablePiece {
@@ -32,6 +37,7 @@ interface PackablePiece {
   originalWidth: number;
   originalLength: number;
   sourceId: string;
+  baseId?: string;
   splitIndex?: number;
   splitCount?: number;
 }
@@ -44,143 +50,104 @@ export interface UnplacedPart {
   reason: string;
 }
 
+/** Um rolo físico do plano e quanto dele foi usado. */
+export interface RollUsage {
+  /** 0 = primeiro rolo. */
+  index: number;
+  /** Comprimento consumido neste rolo (m), nunca maior que o rolo. */
+  usedLength: number;
+  /** O que sobra deste rolo depois dos cortes (m). */
+  leftoverLength: number;
+}
+
 export interface RollNestingResult {
   rollWidth: number;
+  /** Comprimento físico de cada rolo (m). */
   rollLength: number;
   placed: PlacedPart[];
   unplaced: UnplacedPart[];
+  /** Rolos usados, em ordem. Vazio quando nenhuma peça foi posicionada. */
+  rolls: RollUsage[];
+  /** Soma do comprimento consumido em todos os rolos (m). */
   usedLength: number;
   allFit: boolean;
 }
 
-function bestOrientation(
-  partWidth: number,
-  partLength: number,
-  rollWidth: number,
-): { width: number; length: number; rotated: boolean } | null {
-  if (partWidth <= rollWidth) {
-    return { width: partWidth, length: partLength, rotated: false };
-  }
-  if (partLength <= rollWidth) {
-    return { width: partLength, length: partWidth, rotated: true };
-  }
-  return null;
+const EPS = 0.0001;
+
+/** Em quantos pedaços iguais a dimensão precisa ser dividida para caber no limite. */
+function splitCount(total: number, max: number): number {
+  return total <= max + EPS ? 1 : Math.ceil(total / max - EPS);
 }
 
-/** Divide uma dimensão em faixas iguais que cabem na largura do rolo. */
-function splitDimensionIntoStrips(total: number, maxWidth: number): number[] {
-  if (total <= maxWidth + 0.0001) return [total];
-  const count = Math.ceil(total / maxWidth);
-  const segmentSize = total / count;
-  return Array.from({ length: count }, () => segmentSize);
-}
-
-function makeStrips(
-  dimToSplit: number,
-  fixedDim: number,
-  rollWidth: number,
-  rotated: boolean,
+/**
+ * Coloca a peça no rolo. Se ela não couber inteira, divide em pedaços iguais:
+ * faixas quando passa da largura do rolo, emendas quando passa do comprimento.
+ * Entre a posição original e a girada, fica a que gera menos pedaços (empate:
+ * posição original). Nenhum pedaço passa das medidas do rolo.
+ */
+function expandPartForRoll(
   part: NestingPartInput,
+  rollWidth: number,
+  rollLength: number,
 ): PackablePiece[] {
-  const strips = splitDimensionIntoStrips(dimToSplit, rollWidth);
-  const count = strips.length;
-  return strips.map((stripWidth, index) => ({
+  const layouts = [
+    { across: part.width, along: part.length, rotated: false },
+    { across: part.length, along: part.width, rotated: true },
+  ].map((layout) => {
+    const acrossCount = splitCount(layout.across, rollWidth);
+    const alongCount = splitCount(layout.along, rollLength);
+    return { ...layout, acrossCount, alongCount, total: acrossCount * alongCount };
+  });
+  const best = layouts[1].total < layouts[0].total ? layouts[1] : layouts[0];
+
+  const width = best.across / best.acrossCount;
+  const length = best.along / best.alongCount;
+  const count = best.total;
+  return Array.from({ length: count }, (_, index) => ({
     id: count > 1 ? `${part.id}::${index}` : part.id,
     name: count > 1 ? `${part.name} (${index + 1}/${count})` : part.name,
-    width: stripWidth,
-    length: fixedDim,
-    rotated,
+    width,
+    length,
+    rotated: best.rotated,
     originalWidth: part.width,
     originalLength: part.length,
     sourceId: part.id,
+    baseId: part.baseId,
     splitIndex: count > 1 ? index + 1 : undefined,
     splitCount: count > 1 ? count : undefined,
   }));
 }
 
-/** Orienta a peça no rolo; se não couber inteira, divide em faixas na largura do rolo. */
-function expandPartForRoll(part: NestingPartInput, rollWidth: number): PackablePiece[] {
-  const oriented = bestOrientation(part.width, part.length, rollWidth);
-  if (oriented) {
-    return [
-      {
-        id: part.id,
-        name: part.name,
-        width: oriented.width,
-        length: oriented.length,
-        rotated: oriented.rotated,
-        originalWidth: part.width,
-        originalLength: part.length,
-        sourceId: part.id,
-      },
-    ];
-  }
-
-  const splitAlongWidth = makeStrips(part.width, part.length, rollWidth, false, part);
-  const splitAlongLength = makeStrips(part.length, part.width, rollWidth, true, part);
-  return splitAlongWidth.length <= splitAlongLength.length ? splitAlongWidth : splitAlongLength;
-}
-
-function rollbackSource(placed: PlacedPart[], sourceId: string): PlacedPart[] {
-  return placed.filter((piece) => (piece.sourceId ?? piece.id) !== sourceId);
-}
-
-/** Empacota peças no rolo (largura × comprimento) com algoritmo de prateleiras. */
-export function packPartsOnRoll(
-  parts: NestingPartInput[],
+/**
+ * Preenche um único rolo com prateleiras (faixas ao longo do comprimento).
+ * Peças que não cabem no que resta deste rolo voltam para o próximo.
+ */
+function packSingleRoll(
+  pieces: PackablePiece[],
   rollWidth: number,
   rollLength: number,
-): RollNestingResult {
-  let placed: PlacedPart[] = [];
-  const unplaced: UnplacedPart[] = [];
-  const unplacedSourceIds = new Set<string>();
-
-  const expanded = parts.flatMap((part) => expandPartForRoll(part, rollWidth));
-  const sorted = [...expanded].sort(
-    (a, b) => Math.max(b.width, b.length) - Math.max(a.width, a.length),
-  );
-
+  rollIndex: number,
+): { placed: PlacedPart[]; deferred: PackablePiece[] } {
+  const placed: PlacedPart[] = [];
+  const deferred: PackablePiece[] = [];
   let shelfY = 0;
   let shelfHeight = 0;
   let cursorX = 0;
 
-  const markSourceUnplaced = (piece: PackablePiece, reason: string) => {
-    if (unplacedSourceIds.has(piece.sourceId)) return;
-    unplacedSourceIds.add(piece.sourceId);
-    placed = rollbackSource(placed, piece.sourceId);
-    const original = parts.find((part) => part.id === piece.sourceId);
-    unplaced.push({
-      id: piece.sourceId,
-      name: original?.name ?? piece.name,
-      width: piece.originalWidth,
-      length: piece.originalLength,
-      reason,
-    });
-  };
+  for (const piece of pieces) {
+    const fitsCurrentShelf =
+      cursorX + piece.width <= rollWidth + EPS && shelfY + piece.length <= rollLength + EPS;
 
-  for (const piece of sorted) {
-    if (unplacedSourceIds.has(piece.sourceId)) continue;
-
-    const fitsOnCurrentShelf =
-      cursorX + piece.width <= rollWidth + 0.0001 &&
-      shelfY + piece.length <= rollLength + 0.0001;
-
-    if (!fitsOnCurrentShelf || cursorX + piece.width > rollWidth + 0.0001) {
+    if (!fitsCurrentShelf) {
+      const fitsNewShelf = shelfY + shelfHeight + piece.length <= rollLength + EPS;
+      if (!fitsNewShelf) {
+        deferred.push(piece);
+        continue;
+      }
       shelfY += shelfHeight;
-      cursorX = 0;
       shelfHeight = 0;
-    }
-
-    if (shelfY + piece.length > rollLength + 0.0001) {
-      const splitNote =
-        piece.splitCount && piece.splitCount > 1
-          ? ` (faixa ${piece.splitIndex}/${piece.splitCount})`
-          : '';
-      markSourceUnplaced(
-        piece,
-        `Sem espaço no comprimento do rolo para ${piece.name}${splitNote} (necessário ${piece.length.toFixed(2)} m, restam ${Math.max(0, rollLength - shelfY).toFixed(2)} m).`,
-      );
-      continue;
+      cursorX = 0;
     }
 
     placed.push({
@@ -193,82 +160,111 @@ export function packPartsOnRoll(
       rotated: piece.rotated,
       originalWidth: piece.originalWidth,
       originalLength: piece.originalLength,
+      rollIndex,
       sourceId: piece.sourceId,
+      baseId: piece.baseId,
       splitIndex: piece.splitIndex,
       splitCount: piece.splitCount,
     });
-
     cursorX += piece.width;
     shelfHeight = Math.max(shelfHeight, piece.length);
   }
 
-  const usedLength = placed.length > 0
-    ? Math.max(...placed.map((part) => part.y + part.height))
-    : 0;
+  return { placed, deferred };
+}
+
+/**
+ * Encaixa as peças em rolos de medida fixa. Nenhuma peça passa do fim do rolo:
+ * quando um rolo enche, abre-se outro, até todas as peças estarem cortadas.
+ * Peças maiores que o rolo são divididas em faixas/emendas antes do encaixe.
+ */
+export function packPartsIntoRolls(
+  parts: NestingPartInput[],
+  rollWidth: number,
+  rollLength: number,
+): RollNestingResult {
+  const unplaced: UnplacedPart[] = [];
+  const pieces: PackablePiece[] = [];
+  const validRoll = rollWidth > EPS && rollLength > EPS;
+
+  for (const part of parts) {
+    if (validRoll && part.width > EPS && part.length > EPS) {
+      pieces.push(...expandPartForRoll(part, rollWidth, rollLength));
+    } else {
+      unplaced.push({
+        id: part.id,
+        name: part.name,
+        width: part.width,
+        length: part.length,
+        reason: validRoll ? 'Peça sem medida.' : 'Rolo sem medida cadastrada.',
+      });
+    }
+  }
+
+  let remaining = [...pieces].sort(
+    (a, b) => Math.max(b.width, b.length) - Math.max(a.width, a.length),
+  );
+  const placed: PlacedPart[] = [];
+  const rolls: RollUsage[] = [];
+
+  while (remaining.length > 0) {
+    const rollIndex = rolls.length;
+    const result = packSingleRoll(remaining, rollWidth, rollLength, rollIndex);
+    // Toda peça restante cabe num rolo vazio; a guarda só evita laço infinito.
+    if (result.placed.length === 0) break;
+    const usedLength = Math.min(
+      rollLength,
+      Math.max(...result.placed.map((part) => part.y + part.height)),
+    );
+    placed.push(...result.placed);
+    rolls.push({ index: rollIndex, usedLength, leftoverLength: Math.max(0, rollLength - usedLength) });
+    remaining = result.deferred;
+  }
 
   return {
     rollWidth,
     rollLength,
     placed,
     unplaced,
-    usedLength,
-    allFit: unplaced.length === 0 && parts.length > 0,
+    rolls,
+    usedLength: rolls.reduce((sum, roll) => sum + roll.usedLength, 0),
+    allFit: unplaced.length === 0 && remaining.length === 0 && parts.length > 0,
   };
 }
 
 /**
- * Repete o plano de corte de um veículo em sequência (+1, +2, …) ao longo do rolo.
- * O material total = plano unitário × quantidade de veículos.
+ * Repete as peças de um veículo pela quantidade da frota (+1, +2, …), para
+ * encaixar todas as cópias juntas nos rolos.
  */
-export function buildFleetNestingLayout(
-  perVehicle: RollNestingResult,
+export function repeatPartsForFleet(
+  parts: NestingPartInput[],
   vehicleQuantity: number,
-): RollNestingResult {
+): NestingPartInput[] {
   const qty = Math.max(1, Math.floor(vehicleQuantity));
-  if (qty <= 1) return perVehicle;
-
-  const lengthPerCopy = perVehicle.usedLength;
-  if (lengthPerCopy <= 0.0001) {
-    return { ...perVehicle };
-  }
-
-  const placed: PlacedPart[] = [];
-  for (let copy = 0; copy < qty; copy++) {
-    const yOffset = copy * lengthPerCopy;
-    for (const part of perVehicle.placed) {
-      placed.push({
-        ...part,
-        id: `${part.id}::c${copy}`,
-        y: part.y + yOffset,
-        vehicleCopyIndex: copy + 1,
-      });
-    }
-  }
-
-  const totalUsedLength = lengthPerCopy * qty;
-  const visualRollLength = Math.max(perVehicle.rollLength, totalUsedLength);
-
-  return {
-    rollWidth: perVehicle.rollWidth,
-    rollLength: visualRollLength,
-    placed,
-    unplaced: perVehicle.unplaced,
-    usedLength: totalUsedLength,
-    allFit: perVehicle.allFit,
-  };
+  if (qty <= 1) return parts;
+  return Array.from({ length: qty }, (_, copy) =>
+    parts.map((part) => ({
+      ...part,
+      id: `${part.id}::c${copy}`,
+      name: `${part.name} (+${copy + 1})`,
+      baseId: part.baseId ?? part.id,
+    })),
+  ).flat();
 }
 
 /** Margem para cortes, sobreposição e perdas na aplicação. */
 export const ROLL_WASTE_FACTOR = 1.15;
 
 export interface RollMaterialUsage {
+  /** Comprimento consumido somando todos os rolos (m). */
   usedLength: number;
   usedLengthPerVehicle?: number;
   rollWidth: number;
   rollAreaM2: number;
   materialM2: number;
   vehicleQuantity?: number;
-  rollsNeeded?: number;
+  /** Rolos físicos usados (≥ 1). */
+  rollsNeeded: number;
   nesting: RollNestingResult;
 }
 
@@ -282,7 +278,10 @@ export function placedPartsAreaM2(placed: PlacedPart[]): number {
   return placed.reduce((sum, part) => sum + part.width * part.height, 0);
 }
 
-/** Área faturável = soma das peças efetivamente usadas no rolo × 1,15. */
+/**
+ * Área faturável = soma das peças efetivamente cortadas, em todos os rolos
+ * necessários, × 1,15. Numa frota, todas as cópias são encaixadas juntas.
+ */
 export function computeRollMaterialUsage(
   parts: NestingPartInput[],
   rollWidth: number,
@@ -299,24 +298,17 @@ export function computeRollMaterialUsage(
     vehicleQuantity = Math.max(1, Math.floor(wasteFactorOrOptions.vehicleQuantity ?? 1));
   }
 
-  const nestingPerVehicle = packPartsOnRoll(parts, rollWidth, rollLength);
-  const rollAreaM2PerVehicle = placedPartsAreaM2(nestingPerVehicle.placed);
-  const usedLengthPerVehicle = nestingPerVehicle.usedLength;
-  const rollAreaM2 = rollAreaM2PerVehicle * vehicleQuantity;
-  const usedLength = usedLengthPerVehicle * vehicleQuantity;
-  const materialM2 = rollAreaM2 * wasteFactor;
-  const rollsNeeded =
-    rollLength > 0.001 ? Math.max(1, Math.ceil(usedLength / rollLength)) : 1;
-  const nesting = buildFleetNestingLayout(nestingPerVehicle, vehicleQuantity);
+  const nesting = packPartsIntoRolls(repeatPartsForFleet(parts, vehicleQuantity), rollWidth, rollLength);
+  const rollAreaM2 = placedPartsAreaM2(nesting.placed);
 
   return {
-    usedLength,
-    usedLengthPerVehicle: vehicleQuantity > 1 ? usedLengthPerVehicle : undefined,
+    usedLength: nesting.usedLength,
+    usedLengthPerVehicle: vehicleQuantity > 1 ? nesting.usedLength / vehicleQuantity : undefined,
     rollWidth,
     rollAreaM2,
-    materialM2,
+    materialM2: rollAreaM2 * wasteFactor,
     vehicleQuantity: vehicleQuantity > 1 ? vehicleQuantity : undefined,
-    rollsNeeded: rollsNeeded > 1 ? rollsNeeded : undefined,
+    rollsNeeded: Math.max(1, nesting.rolls.length),
     nesting,
   };
 }

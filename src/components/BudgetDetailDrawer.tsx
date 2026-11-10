@@ -13,6 +13,7 @@ import {
   User,
   Calendar,
   Hash,
+  CreditCard,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Budget, Material, Vehicle } from '../types';
@@ -22,6 +23,7 @@ import SupplierWhatsAppButton from './SupplierWhatsAppButton';
 import { getMaterialProductLine } from '../utils/materialSelection';
 import { getBudgetPieceNames } from '../utils/vehiclePartsUtils';
 import { getBudgetLineItems } from '../utils/budgetLineItems';
+import { formatPaymentMethods, hasPaymentTerms } from '../constants/paymentMethods';
 
 interface BudgetDetailDrawerProps {
   budget: Budget | null;
@@ -76,6 +78,15 @@ export default function BudgetDetailDrawer({
   const projectLabel =
     budget?.vehicleModel || budget?.applianceModel || 'Projeto personalizado';
   const vehicleQty = Math.max(1, budget?.vehicleQuantity ?? 1);
+  // Metros de materiais diferentes (e larguras de rolo diferentes) não se somam.
+  const metersByMaterial = Array.from(
+    lineItems
+      .reduce((acc, item) => {
+        acc.set(item.materialId, (acc.get(item.materialId) ?? 0) + (Number(item.totalMaterialMeters) || 0));
+        return acc;
+      }, new Map<string, number>())
+      .entries(),
+  );
   const displayProjectLabel =
     !multi && budget?.type === 'Automotivo' && vehicleQty > 1
       ? `${projectLabel} · ${vehicleQty} veículos`
@@ -334,12 +345,35 @@ export default function BudgetDetailDrawer({
                 </section>
               )}
 
+              {metersByMaterial.length > 1 && (
+                <section className="space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                    Consumo linear por material
+                  </span>
+                  <ul className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                    {metersByMaterial.map(([materialId, meters]) => {
+                      const m = materials.find((entry) => entry.id === materialId);
+                      return (
+                        <li key={materialId} className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-slate-300 truncate">
+                            {m ? `${m.brand} · ${m.line} · ${m.colorTexture}` : 'Material não encontrado'}
+                          </span>
+                          <span className="font-mono text-white shrink-0">{meters.toFixed(2)} m</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+
               <section className="grid grid-cols-2 gap-3">
-                <MetricCard
-                  icon={<Ruler size={14} />}
-                  label="Consumo linear"
-                  value={`${budget.totalMaterialMeters.toFixed(2)} m`}
-                />
+                {metersByMaterial.length <= 1 && (
+                  <MetricCard
+                    icon={<Ruler size={14} />}
+                    label="Consumo linear"
+                    value={`${budget.totalMaterialMeters.toFixed(2)} m`}
+                  />
+                )}
                 <MetricCard
                   icon={<Layers size={14} />}
                   label="Área"
@@ -372,6 +406,23 @@ export default function BudgetDetailDrawer({
                   Lucro estimado: {formatCurrency(budget.profit)}
                 </p>
               </section>
+
+              {hasPaymentTerms(budget.paymentTerms) && (
+                <section className="flex items-start gap-2 text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+                  <CreditCard size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1 min-w-0">
+                    {budget.paymentTerms.methods.length > 0 && (
+                      <p>
+                        <span className="text-slate-500">Pagamento: </span>
+                        {formatPaymentMethods(budget.paymentTerms, budget.totalPrice)}
+                      </p>
+                    )}
+                    {budget.paymentTerms.notes.trim() && (
+                      <p className="whitespace-pre-line break-words">{budget.paymentTerms.notes.trim()}</p>
+                    )}
+                  </div>
+                </section>
+              )}
             </div>
 
             {/* Footer actions */}

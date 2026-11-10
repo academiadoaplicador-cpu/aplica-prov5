@@ -232,12 +232,17 @@ export function createApplicatorRouter(pool: Pool): Router {
     }
   });
 
-  /** Pedidos que este aplicador já aceitou, com o contato do cliente. */
+  /**
+   * Pedidos que este aplicador já aceitou. O telefone do cliente só sai do banco
+   * depois que o cliente aceita a proposta (fechamento); antes disso, inclusive
+   * com a proposta recusada, a resposta não carrega o contato.
+   */
   router.get('/requests/accepted', async (req: Request, res: Response) => {
     try {
       await sweepDeadlines(pool);
       const result = await pool.query(
-        `SELECT r.*, c.full_name AS client_name, c.phone AS client_phone,
+        `SELECT r.*, c.full_name AS client_name,
+                CASE WHEN r.proposal_status = 'Aceita' THEN c.phone ELSE NULL END AS client_phone,
                 c.neighborhood AS client_neighborhood, b.status AS budget_status
          FROM service_requests r
          LEFT JOIN client_profiles c ON c.user_id = r.client_id

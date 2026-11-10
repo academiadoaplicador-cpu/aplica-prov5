@@ -33,7 +33,7 @@ import { resolveCatalogUserId } from './catalog.js';
 import { createAdminRouter } from './adminRoutes.js';
 import { lookupSupplierForProduct } from './supplierRoutes.js';
 import { fetchActivePromotionForToday } from './promotionRoutes.js';
-import { mapBudget, mapFinancial } from './budgetMappers.js';
+import { mapBudget, mapFinancial, sanitizePaymentTerms } from './budgetMappers.js';
 import { createApplicatorUser } from './userProvisioning.js';
 import { createClientUser } from './clientProvisioning.js';
 import { createClientRouter } from './clientRoutes.js';
@@ -558,6 +558,12 @@ app.get('/api/auth/me', requireUser, async (req, res) => {
   res.json({ user: mapUserWithRole(result.rows[0]) });
 });
 
+/** Parâmetro JSONB das condições de pagamento (null quando não há nada). */
+function jsonPaymentTerms(value: unknown): string | null {
+  const terms = sanitizePaymentTerms(value);
+  return terms ? JSON.stringify(terms) : null;
+}
+
 app.get('/api/financial-settings', requireUser, requireApplicator, async (req, res) => {
   const result = await pool.query('SELECT * FROM financial_settings WHERE user_id = $1', [
     req.userId,
@@ -577,14 +583,24 @@ app.get('/api/financial-settings', requireUser, requireApplicator, async (req, r
 app.put('/api/financial-settings', requireUser, requireApplicator, async (req, res) => {
   const s = req.body;
   await pool.query(
-    `INSERT INTO financial_settings (user_id, hourly_rate, profit_margin_percentage, tax_percentage, fixed_costs)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO financial_settings (
+       user_id, hourly_rate, profit_margin_percentage, tax_percentage, fixed_costs, payment_terms
+     )
+     VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT (user_id) DO UPDATE SET
        hourly_rate = EXCLUDED.hourly_rate,
        profit_margin_percentage = EXCLUDED.profit_margin_percentage,
        tax_percentage = EXCLUDED.tax_percentage,
-       fixed_costs = EXCLUDED.fixed_costs`,
-    [req.userId, s.hourlyRate, s.profitMarginPercentage, s.taxPercentage, s.fixedCosts],
+       fixed_costs = EXCLUDED.fixed_costs,
+       payment_terms = EXCLUDED.payment_terms`,
+    [
+      req.userId,
+      s.hourlyRate,
+      s.profitMarginPercentage,
+      s.taxPercentage,
+      s.fixedCosts,
+      jsonPaymentTerms(s.paymentTerms),
+    ],
   );
   res.json({ ok: true });
 });
@@ -645,6 +661,111 @@ app.put('/api/materials', requireUser, requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Erro ao salvar materiais' });
   } finally {
     client.release();
+  }
+});
+
+/** Reajuste de preço de vários materiais de uma vez; os demais ficam intactos. */
+app.patch('/api/materials/prices', requireUser, requireAdmin, async (req, res) => {
+  const updates = (Array.isArray(req.body.updates) ? req.body.updates : []) as {
+    id?: unknown;
+    pricePerM2?: unknown;
+  }[];
+  const valid = updates.filter(
+    (u) => typeof u.id === 'string' && Number.isFinite(Number(u.pricePerM2)) && Number(u.pricePerM2) >= 0,
+  );
+  if (valid.length === 0 || valid.length !== updates.length) {
+    res.status(400).json({ error: 'Informe materiais e preços válidos' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    const catalogUserId = await resolveCatalogUserId(client);
+    await client.query('BEGIN');
+    let updated = 0;
+    for (const u of valid) {
+      const result = await client.query(
+        'UPDATE materials SET price_per_m2 = $1 WHERE user_id = $2 AND id = $3',
+        [Number(u.pricePerM2), catalogUserId, u.id],
+      );
+      updated += result.rowCount ?? 0;
+    }
+    await client.query('COMMIT');
+    res.json({ updated });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('[materials/prices]', e);
+    res.status(500).json({ error: 'Erro ao atualizar preços' });
+  } finally {
+    client.release();
+  }
+});
+
+/** Cria ou atualiza um único material, sem regravar o catálogo inteiro. */
+app.put('/api/materials/:id', requireUser, requireAdmin, async (req, res) => {
+  const m = (req.body.material || {}) as Record<string, unknown>;
+  const name = String(m.name ?? '').trim();
+  const brand = String(m.brand ?? '').trim();
+  const pricePerM2 = Number(m.pricePerM2);
+  if (!name || !brand || !Number.isFinite(pricePerM2) || pricePerM2 < 0) {
+    res.status(400).json({ error: 'Informe nome, marca e um preço válido' });
+    return;
+  }
+
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    const roll = materialRollDbParams(m);
+    const result = await pool.query(
+      `INSERT INTO materials (
+        user_id, id, name, brand, price_per_m2, type, line, color_texture,
+        durability, application_difficulty, recommended_for, details, roll_width_m, roll_length_m,
+        roll_widths_m, roll_lengths_m
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      ON CONFLICT (user_id, id) DO UPDATE SET
+        name = EXCLUDED.name, brand = EXCLUDED.brand, price_per_m2 = EXCLUDED.price_per_m2,
+        type = EXCLUDED.type, line = EXCLUDED.line, color_texture = EXCLUDED.color_texture,
+        durability = EXCLUDED.durability, application_difficulty = EXCLUDED.application_difficulty,
+        recommended_for = EXCLUDED.recommended_for, details = EXCLUDED.details,
+        roll_width_m = EXCLUDED.roll_width_m, roll_length_m = EXCLUDED.roll_length_m,
+        roll_widths_m = EXCLUDED.roll_widths_m, roll_lengths_m = EXCLUDED.roll_lengths_m
+      RETURNING *`,
+      [
+        catalogUserId,
+        req.params.id,
+        name,
+        brand,
+        pricePerM2,
+        m.type,
+        String(m.line ?? '').trim(),
+        String(m.colorTexture ?? '').trim(),
+        m.durability ?? '',
+        m.applicationDifficulty ?? null,
+        m.recommendedFor || [],
+        m.details ?? null,
+        roll.rollWidthM,
+        roll.rollLengthM,
+        roll.rollWidthsM,
+        roll.rollLengthsM,
+      ],
+    );
+    res.json(mapMaterial(result.rows[0]));
+  } catch (e) {
+    console.error('[materials/:id]', e);
+    res.status(500).json({ error: 'Erro ao salvar material' });
+  }
+});
+
+app.delete('/api/materials/:id', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    await pool.query('DELETE FROM materials WHERE user_id = $1 AND id = $2', [
+      catalogUserId,
+      req.params.id,
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[materials/:id delete]', e);
+    res.status(500).json({ error: 'Erro ao excluir material' });
   }
 });
 
@@ -782,6 +903,52 @@ app.put('/api/vehicles', requireUser, requireAdmin, async (req, res) => {
   }
 });
 
+/** Cria ou atualiza um único veículo, sem regravar a base inteira. */
+app.put('/api/vehicles/:id', requireUser, requireAdmin, async (req, res) => {
+  const v = (req.body.vehicle || {}) as Record<string, unknown>;
+  const make = String(v.make ?? '').trim();
+  const model = String(v.model ?? '').trim();
+  const year = String(v.year ?? '').trim();
+  if (!make || !model || !year) {
+    res.status(400).json({ error: 'Informe fabricante, modelo e ano' });
+    return;
+  }
+
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    const partMeasurements = normalizePartMeasurements(
+      (v.partMeasurements as Record<string, { width: number; length: number; name?: string }>) || {},
+    );
+    const result = await pool.query(
+      `INSERT INTO vehicles (user_id, id, make, model, year, size, part_measurements)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, id) DO UPDATE SET
+         make = EXCLUDED.make, model = EXCLUDED.model, year = EXCLUDED.year,
+         size = EXCLUDED.size, part_measurements = EXCLUDED.part_measurements
+       RETURNING *`,
+      [catalogUserId, req.params.id, make, model, year, v.size, JSON.stringify(partMeasurements)],
+    );
+    res.json(mapVehicle(result.rows[0]));
+  } catch (e) {
+    console.error('[vehicles/:id]', e);
+    res.status(500).json({ error: 'Erro ao salvar veículo' });
+  }
+});
+
+app.delete('/api/vehicles/:id', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    await pool.query('DELETE FROM vehicles WHERE user_id = $1 AND id = $2', [
+      catalogUserId,
+      req.params.id,
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[vehicles/:id delete]', e);
+    res.status(500).json({ error: 'Erro ao excluir veículo' });
+  }
+});
+
 app.post('/api/vehicles/import', requireUser, requireAdmin, async (req, res) => {
   const incoming = (req.body.vehicles || []) as Record<string, unknown>[];
   if (!Array.isArray(incoming) || incoming.length === 0) {
@@ -892,6 +1059,50 @@ app.put('/api/appliances', requireUser, requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Erro ao salvar eletrodomésticos' });
   } finally {
     client.release();
+  }
+});
+
+/** Cria ou atualiza um único eletrodoméstico, sem regravar a base inteira. */
+app.put('/api/appliances/:id', requireUser, requireAdmin, async (req, res) => {
+  const a = (req.body.appliance || {}) as Record<string, unknown>;
+  const make = String(a.make ?? '').trim();
+  const model = String(a.model ?? '').trim();
+  const type = String(a.type ?? '').trim();
+  const dims = [a.width, a.height, a.depth].map(Number);
+  if (!make || !model || !type || dims.some((d) => !Number.isFinite(d) || d <= 0)) {
+    res.status(400).json({ error: 'Informe marca, modelo, tipo e medidas maiores que zero' });
+    return;
+  }
+
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    const result = await pool.query(
+      `INSERT INTO appliances (user_id, id, make, model, type, width, height, depth)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (user_id, id) DO UPDATE SET
+         make = EXCLUDED.make, model = EXCLUDED.model, type = EXCLUDED.type,
+         width = EXCLUDED.width, height = EXCLUDED.height, depth = EXCLUDED.depth
+       RETURNING *`,
+      [catalogUserId, req.params.id, make, model, type, ...dims],
+    );
+    res.json(mapAppliance(result.rows[0]));
+  } catch (e) {
+    console.error('[appliances/:id]', e);
+    res.status(500).json({ error: 'Erro ao salvar eletrodoméstico' });
+  }
+});
+
+app.delete('/api/appliances/:id', requireUser, requireAdmin, async (req, res) => {
+  try {
+    const catalogUserId = await resolveCatalogUserId(pool);
+    await pool.query('DELETE FROM appliances WHERE user_id = $1 AND id = $2', [
+      catalogUserId,
+      req.params.id,
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[appliances/:id delete]', e);
+    res.status(500).json({ error: 'Erro ao excluir eletrodoméstico' });
   }
 });
 
@@ -1021,8 +1232,8 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       user_id, id, customer_name, vehicle_model, appliance_model, vehicle_id, status, date,
       description, items, material_id, custom_price_per_m2, total_hours, total_material_meters,
       total_material_m2, total_cost, total_price, profit, type, sub_type, vehicle_quantity, rolls_needed,
-      line_items
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      line_items, payment_terms
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
     ON CONFLICT (user_id, id) DO UPDATE SET
       customer_name = EXCLUDED.customer_name,
       vehicle_model = EXCLUDED.vehicle_model,
@@ -1044,7 +1255,8 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       sub_type = EXCLUDED.sub_type,
       vehicle_quantity = EXCLUDED.vehicle_quantity,
       rolls_needed = EXCLUDED.rolls_needed,
-      line_items = EXCLUDED.line_items`,
+      line_items = EXCLUDED.line_items,
+      payment_terms = EXCLUDED.payment_terms`,
     [
       req.userId,
       b.id,
@@ -1069,6 +1281,7 @@ app.post('/api/budgets', requireUser, requireApplicator, async (req, res) => {
       Math.max(1, Math.floor(Number(b.vehicleQuantity) || 1)),
       Math.max(1, Math.floor(Number(b.rollsNeeded) || 1)),
       JSON.stringify(Array.isArray(b.lineItems) ? b.lineItems : []),
+      jsonPaymentTerms(b.paymentTerms),
     ],
   );
   res.json({ ok: true });

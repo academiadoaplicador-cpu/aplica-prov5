@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileSpreadsheet, Save, CheckCircle2, Download, FileDown } from 'lucide-react';
+import { Plus, FileSpreadsheet, Download, FileDown } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { Vehicle, VehicleSize } from '../types';
 import { generateId } from '../lib/utils';
@@ -10,6 +10,7 @@ import { EmptyCatalog, ImportFeedback } from '../components/settings/SettingsBlo
 import ImportProgressBar from '../components/settings/ImportProgressBar';
 import VehicleCatalogTable from '../components/settings/VehicleCatalogTable';
 import VehicleImportPreviewModal from '../components/settings/VehicleImportPreviewModal';
+import VehicleFormPanel from '../components/settings/VehicleFormPanel';
 import { mergeVehicles, parseVehiclesFromExcel, type VehicleImportResult } from '../utils/vehicleImport';
 import { downloadVehiclesTemplate } from '../utils/spreadsheetTemplates';
 import { downloadVehiclesCatalog } from '../utils/vehicleExport';
@@ -18,8 +19,9 @@ import { useImportPreviewFlow } from '../hooks/useImportPreviewFlow';
 
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [isSaved, setIsSaved] = useState(false);
-  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [panelVehicle, setPanelVehicle] = useState<Vehicle | null>(null);
+  const [isNewVehicle, setIsNewVehicle] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importPreview, setImportPreview] = useState<VehicleImportResult | null>(null);
@@ -48,32 +50,53 @@ export default function VehiclesPage() {
     databaseService.getVehicles().then(setVehicles);
   }, []);
 
-  const handleSave = async () => {
-    await databaseService.setVehicles(vehicles);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
+  // O destaque do registro salvo some sozinho depois de alguns segundos.
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
   const addVehicle = () => {
-    const newVehicle: Vehicle = {
+    setPanelVehicle({
       id: generateId(),
       make: '',
-      model: 'Novo Modelo',
+      model: '',
       year: new Date().getFullYear().toString(),
       size: VehicleSize.MEDIUM,
       partMeasurements: {},
-    };
-    setVehicles([newVehicle, ...vehicles]);
-    setEditingVehicleId(newVehicle.id);
+    });
+    setIsNewVehicle(true);
   };
 
-  const updateVehicle = (id: string, updates: Partial<Vehicle>) => {
-    setVehicles(vehicles.map((v) => (v.id === id ? { ...v, ...updates } : v)));
+  const editVehicle = (id: string) => {
+    const vehicle = vehicles.find((v) => v.id === id);
+    if (!vehicle) return;
+    setPanelVehicle(vehicle);
+    setIsNewVehicle(false);
   };
 
-  const removeVehicle = (id: string) => {
-    setVehicles(vehicles.filter((v) => v.id !== id));
-    if (editingVehicleId === id) setEditingVehicleId(null);
+  const handleSaveVehicle = async (draft: Vehicle) => {
+    const saved = await databaseService.saveVehicle(draft);
+    setVehicles((prev) =>
+      prev.some((v) => v.id === saved.id)
+        ? prev.map((v) => (v.id === saved.id ? saved : v))
+        : [saved, ...prev],
+    );
+    const label = `${saved.make} ${saved.model} (${saved.year})`;
+    setImportStatus(isNewVehicle ? `Veículo ${label} cadastrado.` : `Veículo ${label} atualizado.`);
+    setImportErrors([]);
+    setPanelVehicle(null);
+    setHighlightId(saved.id);
+  };
+
+  const removeVehicle = async (id: string) => {
+    const vehicle = vehicles.find((v) => v.id === id);
+    if (!vehicle || !confirm(`Excluir o veículo ${vehicle.make} ${vehicle.model} (${vehicle.year})?`)) {
+      return;
+    }
+    await databaseService.deleteVehicle(id);
+    setVehicles((prev) => prev.filter((v) => v.id !== id));
   };
 
   return (
@@ -161,13 +184,6 @@ export default function VehiclesPage() {
             >
               Importar planilha
             </PageButton>
-            <PageButton
-              variant="secondary"
-              icon={isSaved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-              onClick={() => void handleSave()}
-            >
-              {isSaved ? 'Salvo' : 'Salvar alterações'}
-            </PageButton>
             <PageButton variant="primary" icon={<Plus size={16} />} onClick={addVehicle}>
               Novo veículo
             </PageButton>
@@ -185,6 +201,13 @@ export default function VehiclesPage() {
         }
       />
 
+      <VehicleFormPanel
+        vehicle={panelVehicle}
+        isNew={isNewVehicle}
+        onClose={() => setPanelVehicle(null)}
+        onSave={handleSaveVehicle}
+      />
+
       <PagePanel>
         {vehicles.length === 0 ? (
           <div className="p-8">
@@ -193,10 +216,9 @@ export default function VehiclesPage() {
         ) : (
           <VehicleCatalogTable
             vehicles={vehicles}
-            editingId={editingVehicleId}
-            onSelectRow={setEditingVehicleId}
-            onUpdate={updateVehicle}
-            onRemove={removeVehicle}
+            highlightId={highlightId}
+            onEdit={editVehicle}
+            onRemove={(id) => void removeVehicle(id)}
             isVehicleComplete={isVehicleMeasurementsComplete}
           />
         )}

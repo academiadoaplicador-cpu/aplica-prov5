@@ -9,11 +9,14 @@ import {
   Calculator,
   Target,
   Receipt,
-  Factory
+  Factory,
+  CreditCard
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { FinancialSettings } from '../types';
 import { motion } from 'motion/react';
+import { normalizePaymentTerms } from '../constants/paymentMethods';
+import PaymentTermsEditor from './PaymentTermsEditor';
 
 export default function CostsOverview() {
   const [settings, setSettings] = useState<FinancialSettings>({
@@ -164,6 +167,29 @@ export default function CostsOverview() {
               Aluguel, energia, internet e softwares de gestão.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Formas de pagamento */}
+      <div className="glass rounded-3xl p-6 sm:p-8 space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20">
+            <CreditCard className="text-emerald-400" size={20} />
+          </div>
+          <h3 className="text-sm font-mono font-bold text-emerald-400 uppercase tracking-widest">
+            Condições de pagamento padrão
+          </h3>
+        </div>
+        <p className="text-xs text-slate-500">
+          Vêm preenchidas em cada novo orçamento, onde podem ser ajustadas só para aquele cliente.
+          Orçamentos já salvos não mudam.
+        </p>
+        <div className="max-w-xl">
+          <PaymentTermsEditor
+            accent="emerald"
+            value={normalizePaymentTerms(settings.paymentTerms)}
+            onChange={(paymentTerms) => setSettings({ ...settings, paymentTerms })}
+          />
         </div>
       </div>
     </div>

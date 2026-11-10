@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -25,6 +25,11 @@ interface DataTableProps<T> {
   defaultSort?: { columnId: string; direction: 'asc' | 'desc' };
   stickyHeader?: boolean;
   itemLabel?: string;
+  /**
+   * Registro recém-salvo: a tabela limpa a busca se ela o esconderia, rola até
+   * a linha e a destaca. A ordenação escolhida continua valendo.
+   */
+  highlightId?: string | null;
 }
 
 export default function DataTable<T>({
@@ -40,6 +45,7 @@ export default function DataTable<T>({
   defaultSort,
   stickyHeader = true,
   itemLabel = 'registro(s)',
+  highlightId,
 }: DataTableProps<T>) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState(
@@ -66,6 +72,19 @@ export default function DataTable<T>({
       return sort.direction === 'asc' ? cmp : -cmp;
     });
   }, [filtered, sort, columns]);
+
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const visible = filtered.some((row) => getRowId(row) === highlightId);
+    if (!visible && query) {
+      setQuery('');
+      return;
+    }
+    rowRefs.current.get(highlightId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // getRowId fica de fora: vem como função inline e mudaria a cada render.
+  }, [highlightId, filtered, query]);
 
   const toggleSort = (columnId: string, sortable?: boolean) => {
     if (!sortable) return;
@@ -163,9 +182,14 @@ export default function DataTable<T>({
                     sorted.map((row, index) => {
                       const id = getRowId(row);
                       const isSelected = selectedId === id;
+                      const isHighlighted = highlightId === id;
                       return (
                         <Fragment key={id}>
                           <tr
+                            ref={(el) => {
+                              if (el) rowRefs.current.set(id, el);
+                              else rowRefs.current.delete(id);
+                            }}
                             onClick={() => onSelectRow?.(isSelected ? null : id)}
                             className={cn(
                               'border-b border-slate-800/60 transition-colors',
@@ -173,7 +197,9 @@ export default function DataTable<T>({
                               index % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20',
                               isSelected
                                 ? 'bg-indigo-950/40 ring-1 ring-inset ring-indigo-500/30'
-                                : onSelectRow && 'hover:bg-slate-800/50',
+                                : isHighlighted
+                                  ? 'bg-emerald-950/40 ring-1 ring-inset ring-emerald-500/40'
+                                  : onSelectRow && 'hover:bg-slate-800/50',
                             )}
                           >
                             <td className="px-3 py-3 text-center text-[11px] font-mono text-slate-600 border-r border-slate-800/50 tabular-nums">
