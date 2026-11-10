@@ -37,6 +37,8 @@ import ClientAuthPage from './pages/cliente/ClientAuthPage';
 import ClientHomePage from './pages/cliente/ClientHomePage';
 import ClientOrdersPage from './pages/cliente/ClientOrdersPage';
 import ClientProfilePage from './pages/cliente/ClientProfilePage';
+import SupplierLayout from './components/layout/SupplierLayout';
+import SupplierProfilePage from './pages/fornecedor/SupplierProfilePage';
 import ClientNewRequestPage from './pages/cliente/ClientNewRequestPage';
 import RegionRequestsPage from './pages/RegionRequestsPage';
 import ChooseRolePage from './pages/ChooseRolePage';
@@ -45,6 +47,7 @@ import {
   AdminRoute,
   ClientGuestRoute,
   ClientRoute,
+  SupplierRoute,
   GuestRoute,
   homeRouteFor,
   ProtectedRoute,
@@ -116,6 +119,15 @@ export default function App() {
           <Route path="pedidos" element={<ClientOrdersPage />} />
           <Route path="pedidos/novo" element={<ClientNewRequestPage />} />
           <Route path="perfil" element={<ClientProfilePage />} />
+        </Route>
+      </Route>
+
+      <Route element={<SupplierRoute user={user} />}>
+        <Route
+          path="fornecedor"
+          element={<SupplierLayout user={user!} onLogout={() => setUser(null)} />}
+        >
+          <Route index element={<SupplierProfilePage />} />
         </Route>
       </Route>
 

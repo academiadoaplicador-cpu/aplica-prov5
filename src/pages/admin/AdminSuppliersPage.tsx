@@ -241,6 +241,20 @@ export default function AdminSuppliersPage() {
                       <Truck size={14} className="text-amber-400 shrink-0" />
                       {s.legalName}
                     </p>
+                    {(s.pendingChangeRequest || s.hasAccount) && (
+                      <p className="flex flex-wrap gap-1.5 mt-1 pl-[22px]">
+                        {s.pendingChangeRequest && (
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border text-amber-300 border-amber-500/30 bg-amber-500/10">
+                            Alteração pendente
+                          </span>
+                        )}
+                        {s.hasAccount && (
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border text-slate-400 border-slate-700">
+                            Com acesso
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-400 text-xs font-mono">{formatCnpj(s.cnpj)}</td>
                   <td className="px-4 py-3 text-white font-mono text-xs">{s.contactCount}</td>

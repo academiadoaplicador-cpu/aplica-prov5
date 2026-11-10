@@ -38,6 +38,7 @@ import { createApplicatorUser } from './userProvisioning.js';
 import { createClientUser } from './clientProvisioning.js';
 import { createClientRouter } from './clientRoutes.js';
 import { createApplicatorRouter } from './applicatorRoutes.js';
+import { createSupplierSelfRouter } from './supplierPortal.js';
 import type { ClientProfileInput } from './clientProfileData.js';
 import {
   mapProfileRow,
@@ -350,6 +351,8 @@ app.get('/api/promotions/active', requireUser, requireApplicator, async (_req, r
 app.use('/api/admin', requireUser, requireAdmin, createAdminRouter(pool));
 app.use('/api/client', requireUser, requireClient, createClientRouter(pool));
 app.use('/api/applicator', requireUser, requireApplicator, createApplicatorRouter(pool));
+// Área do fornecedor: o próprio router exige papel 'supplier' e resolve o cadastro pela conta logada.
+app.use('/api/supplier', requireUser, createSupplierSelfRouter(pool));
 
 app.get('/status', async (req, res) => {
   const report = await getHealthReport(pool);

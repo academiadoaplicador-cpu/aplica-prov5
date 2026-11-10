@@ -164,8 +164,8 @@ export interface Appliance {
   depth: number;
 }
 
-/** Aplicador (oficina) ou cliente final do marketplace. */
-export type UserRole = 'applicator' | 'client';
+/** Aplicador (oficina), cliente final do marketplace ou fornecedor de material. */
+export type UserRole = 'applicator' | 'client' | 'supplier';
 
 export interface User {
   id: string;
@@ -268,6 +268,42 @@ export interface SupplierListItem {
   isActive: boolean;
   contactCount: number;
   productLinkCount: number;
+  /** O fornecedor tem login próprio. */
+  hasAccount?: boolean;
+  /** Há alteração do fornecedor esperando aprovação. */
+  pendingChangeRequest?: boolean;
+}
+
+/** Alterações que o fornecedor pede e só valem com aprovação do admin. */
+export interface SupplierChangeSet {
+  legalName?: string;
+  cnpj?: string;
+  productLinks?: { brand: string; line: string }[];
+}
+
+export interface SupplierChangeRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  changes: SupplierChangeSet;
+  adminNote?: string;
+  createdAt: string;
+  reviewedAt?: string;
+}
+
+/** O que o fornecedor logado vê do próprio cadastro. */
+export interface SupplierOwnProfile {
+  supplier: Supplier;
+  pendingRequest: SupplierChangeRequest | null;
+  lastReviewedRequest: SupplierChangeRequest | null;
+}
+
+/** Login do fornecedor, visto pelo admin. */
+export interface SupplierAccount {
+  userId: string;
+  email: string;
+  isActive: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
 }
 
 export interface SupplierContactInput {

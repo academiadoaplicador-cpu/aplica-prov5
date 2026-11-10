@@ -2,6 +2,8 @@ import {
   CnpjLookupResult,
   PaginatedResponse,
   Supplier,
+  SupplierAccount,
+  SupplierChangeRequest,
   SupplierImportResult,
   SupplierInput,
   SupplierListItem,
@@ -92,6 +94,42 @@ export const supplierService = {
       method: 'POST',
       body: JSON.stringify({ suppliers }),
     }),
+
+  getSupplierAccount: (id: string): Promise<{ account: SupplierAccount | null }> =>
+    adminApi<{ account: SupplierAccount | null }>(`/suppliers/${encodeURIComponent(id)}/account`),
+
+  createSupplierAccount: (
+    id: string,
+    payload: { email: string; password: string },
+  ): Promise<{ account: SupplierAccount }> =>
+    adminApi<{ account: SupplierAccount }>(`/suppliers/${encodeURIComponent(id)}/account`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  resetSupplierPassword: (id: string, password: string): Promise<{ account: SupplierAccount }> =>
+    adminApi<{ account: SupplierAccount }>(
+      `/suppliers/${encodeURIComponent(id)}/account/password`,
+      { method: 'POST', body: JSON.stringify({ password }) },
+    ),
+
+  removeSupplierAccount: (id: string): Promise<void> =>
+    adminApi<void>(`/suppliers/${encodeURIComponent(id)}/account`, { method: 'DELETE' }),
+
+  getChangeRequests: (id: string): Promise<SupplierChangeRequest[]> =>
+    adminApi<SupplierChangeRequest[]>(`/suppliers/${encodeURIComponent(id)}/change-requests`),
+
+  approveChangeRequest: (id: string, requestId: string): Promise<Supplier> =>
+    adminApi<Supplier>(
+      `/suppliers/${encodeURIComponent(id)}/change-requests/${encodeURIComponent(requestId)}/approve`,
+      { method: 'POST' },
+    ),
+
+  rejectChangeRequest: (id: string, requestId: string, note: string): Promise<void> =>
+    adminApi<void>(
+      `/suppliers/${encodeURIComponent(id)}/change-requests/${encodeURIComponent(requestId)}/reject`,
+      { method: 'POST', body: JSON.stringify({ note }) },
+    ),
 
   lookupCnpj: (cnpj: string): Promise<CnpjLookupResult> =>
     adminApi<CnpjLookupResult>('/suppliers/cnpj-lookup', {

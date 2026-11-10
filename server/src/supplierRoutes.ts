@@ -42,7 +42,7 @@ export interface SupplierInput {
   productLinks?: SupplierProductLinkInput[];
 }
 
-const BRAZILIAN_UF = new Set([
+export const BRAZILIAN_UF = new Set([
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
   'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO', 'NA',
 ]);
@@ -58,7 +58,7 @@ function parseLimit(value: unknown, fallback = 20, max = 100): number {
   return Math.min(Math.floor(n), max);
 }
 
-function digitsOnly(value: string): string {
+export function digitsOnly(value: string): string {
   return value.replace(/\D/g, '');
 }
 
@@ -70,7 +70,7 @@ function normalizeKey(value: string): string {
     .trim();
 }
 
-function newContactId(): string {
+export function newContactId(): string {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
 }
 
@@ -171,10 +171,12 @@ function mapSupplierListItem(row: Record<string, unknown>) {
     isActive: row.is_active !== false,
     contactCount: Number(row.contact_count) || 0,
     productLinkCount: Number(row.product_link_count) || 0,
+    hasAccount: Boolean(row.account_user_id),
+    pendingChangeRequest: Boolean(row.has_pending_change),
   };
 }
 
-function normalizeContacts(body: SupplierInput): SupplierContactInput[] {
+export function normalizeContacts(body: SupplierInput): SupplierContactInput[] {
   if (Array.isArray(body.contacts) && body.contacts.length > 0) {
     const result: SupplierContactInput[] = [];
     for (const contact of body.contacts) {
@@ -220,7 +222,7 @@ function validateSupplierInput(body: SupplierInput): string | null {
   return null;
 }
 
-function normalizeProductLinks(links: SupplierProductLinkInput[] | undefined): SupplierProductLinkInput[] {
+export function normalizeProductLinks(links: SupplierProductLinkInput[] | undefined): SupplierProductLinkInput[] {
   if (!Array.isArray(links)) return [];
   const seen = new Set<string>();
   const result: SupplierProductLinkInput[] = [];
@@ -275,7 +277,7 @@ async function validateProductLinks(
  * salvamento de fornecedores no cadastro/edição — diferente da importação em
  * lote, aqui não faz sentido rejeitar o formulário inteiro por causa disso.
  */
-async function sanitizeProductLinks(
+export async function sanitizeProductLinks(
   db: Pool | PoolClient,
   catalogUserId: string,
   links: SupplierProductLinkInput[],
@@ -308,7 +310,7 @@ async function clearPrimaryForPairs(
   }
 }
 
-async function replaceProductLinks(
+export async function replaceProductLinks(
   client: PoolClient,
   catalogUserId: string,
   supplierId: string,
@@ -328,7 +330,7 @@ async function replaceProductLinks(
   }
 }
 
-async function replaceContacts(
+export async function replaceContacts(
   client: PoolClient,
   catalogUserId: string,
   supplierId: string,
@@ -412,7 +414,7 @@ export async function lookupSupplierForProduct(
   return mapSupplier(row, links, contacts);
 }
 
-async function loadSupplierById(
+export async function loadSupplierById(
   db: Pool | PoolClient,
   catalogUserId: string,
   supplierId: string,
@@ -481,16 +483,21 @@ export function createSupplierAdminRouter(pool: Pool): Router {
 
       const listParams = [...params, limit, offset];
       const listResult = await pool.query(
-        `SELECT s.id, s.name, s.legal_name, s.cnpj, s.email, s.is_active,
+        `SELECT s.id, s.name, s.legal_name, s.cnpj, s.email, s.is_active, s.account_user_id,
                 COUNT(DISTINCT sc.id)::int AS contact_count,
-                COUNT(spl.brand)::int AS product_link_count
+                COUNT(DISTINCT (spl.brand, spl.line))::int AS product_link_count,
+                EXISTS (
+                  SELECT 1 FROM supplier_change_requests scr
+                  WHERE scr.catalog_user_id = s.user_id AND scr.supplier_id = s.id
+                    AND scr.status = 'pending'
+                ) AS has_pending_change
          FROM suppliers s
          LEFT JOIN supplier_contacts sc
            ON sc.user_id = s.user_id AND sc.supplier_id = s.id
          LEFT JOIN supplier_product_links spl
            ON spl.user_id = s.user_id AND spl.supplier_id = s.id
          ${whereClause}
-         GROUP BY s.id, s.name, s.legal_name, s.cnpj, s.email, s.is_active
+         GROUP BY s.user_id, s.id, s.name, s.legal_name, s.cnpj, s.email, s.is_active, s.account_user_id
          ORDER BY COALESCE(s.legal_name, s.name) ASC
          LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
         listParams,
@@ -839,12 +846,17 @@ export function createSupplierAdminRouter(pool: Pool): Router {
     try {
       const catalogUserId = await resolveCatalogUserId(pool);
       const result = await pool.query(
-        'DELETE FROM suppliers WHERE user_id = $1 AND id = $2 RETURNING id',
+        'DELETE FROM suppliers WHERE user_id = $1 AND id = $2 RETURNING id, account_user_id',
         [catalogUserId, req.params.id],
       );
       if (result.rows.length === 0) {
         res.status(404).json({ error: 'Fornecedor não encontrado' });
         return;
+      }
+      // Sem cadastro, o login do fornecedor não tem mais o que acessar.
+      const accountUserId = result.rows[0].account_user_id as string | null;
+      if (accountUserId) {
+        await pool.query("DELETE FROM users WHERE id = $1 AND role = 'supplier'", [accountUserId]);
       }
       res.status(204).send();
     } catch (e) {

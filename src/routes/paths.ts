@@ -17,6 +17,10 @@ export const ROUTES = {
   guiaTecnico: '/guia-tecnico',
   regionRequests: '/pedidos-regiao',
   profile: '/perfil',
+  /** Área do fornecedor (login pelo mesmo "Entrar" da oficina). */
+  supplier: {
+    home: '/fornecedor',
+  },
   client: {
     login: '/cliente/entrar',
     home: '/cliente',

@@ -4,16 +4,29 @@ import { ROUTES } from './paths';
 
 /** Para onde cada papel é levado quando cai numa área que não é a dele. */
 export function homeRouteFor(user: User): string {
-  return user.role === 'client' ? ROUTES.client.home : ROUTES.dashboard;
+  if (user.role === 'client') return ROUTES.client.home;
+  if (user.role === 'supplier') return ROUTES.supplier.home;
+  return ROUTES.dashboard;
 }
 
-/** Área da oficina — cliente final é devolvido para a área dele. */
+/** Área da oficina — cliente e fornecedor são devolvidos para a área deles. */
 export function ProtectedRoute({ user }: { user: User | null }) {
   if (!user) {
     return <Navigate to={ROUTES.login} replace />;
   }
-  if (user.role === 'client') {
-    return <Navigate to={ROUTES.client.home} replace />;
+  if (user.role !== 'applicator') {
+    return <Navigate to={homeRouteFor(user)} replace />;
+  }
+  return <Outlet context={{ user }} />;
+}
+
+/** Área do fornecedor: só a conta de fornecedor entra. */
+export function SupplierRoute({ user }: { user: User | null }) {
+  if (!user) {
+    return <Navigate to={ROUTES.login} replace />;
+  }
+  if (user.role !== 'supplier') {
+    return <Navigate to={homeRouteFor(user)} replace />;
   }
   return <Outlet context={{ user }} />;
 }
@@ -38,7 +51,7 @@ export function ClientRoute({ user }: { user: User | null }) {
     return <Navigate to={ROUTES.client.login} replace />;
   }
   if (user.role !== 'client') {
-    return <Navigate to={ROUTES.dashboard} replace />;
+    return <Navigate to={homeRouteFor(user)} replace />;
   }
   return <Outlet context={{ user }} />;
 }

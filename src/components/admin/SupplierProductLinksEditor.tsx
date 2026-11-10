@@ -10,6 +10,8 @@ interface SupplierProductLinksEditorProps {
   onChange: (links: SupplierProductLink[]) => void;
   hideHeader?: boolean;
   layout?: 'stack' | 'grid';
+  /** Mostra a estrela de fornecedor principal (só o admin decide isso). */
+  allowPrimary?: boolean;
 }
 
 function linkKey(brand: string, line: string): string {
@@ -41,6 +43,7 @@ export default function SupplierProductLinksEditor({
   onChange,
   hideHeader = false,
   layout = 'stack',
+  allowPrimary = true,
 }: SupplierProductLinksEditorProps) {
   const brands = useMemo(() => getMaterialBrands(materials), [materials]);
   const canAddMore = useMemo(
@@ -51,7 +54,10 @@ export default function SupplierProductLinksEditor({
   const addLink = () => {
     const next = findNextAvailablePair(materials, brands, links);
     if (!next) return;
-    onChange([...links, { brand: next.brand, line: next.line, isPrimary: links.length === 0 }]);
+    onChange([
+      ...links,
+      { brand: next.brand, line: next.line, isPrimary: allowPrimary && links.length === 0 },
+    ]);
   };
 
   const updateLink = (index: number, patch: Partial<SupplierProductLink>) => {
@@ -196,19 +202,21 @@ export default function SupplierProductLinksEditor({
                     layout === 'grid' ? 'justify-end pt-1' : 'justify-end sm:justify-start',
                   )}
                 >
-                  <button
-                    type="button"
-                    title="Marcar como principal"
-                    onClick={() => setPrimary(index)}
-                    className={cn(
-                      'p-2 rounded-lg border transition-colors',
-                      link.isPrimary
-                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                        : 'text-slate-500 border-slate-800 hover:text-amber-300',
-                    )}
-                  >
-                    <Star size={16} className={link.isPrimary ? 'fill-current' : ''} />
-                  </button>
+                  {allowPrimary && (
+                    <button
+                      type="button"
+                      title="Marcar como principal"
+                      onClick={() => setPrimary(index)}
+                      className={cn(
+                        'p-2 rounded-lg border transition-colors',
+                        link.isPrimary
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          : 'text-slate-500 border-slate-800 hover:text-amber-300',
+                      )}
+                    >
+                      <Star size={16} className={link.isPrimary ? 'fill-current' : ''} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeLink(index)}
@@ -224,7 +232,7 @@ export default function SupplierProductLinksEditor({
       )}
 
       <p className="text-[10px] text-slate-500">
-        O fornecedor principal aparece no botão WhatsApp durante o orçamento.
+        {allowPrimary && 'O fornecedor principal aparece no botão WhatsApp durante o orçamento.'}
         {!canAddMore && links.length > 0 && (
           <span className="block mt-1 text-amber-500/80">
             Todos os pares Marca/Linha do catálogo já foram vinculados.

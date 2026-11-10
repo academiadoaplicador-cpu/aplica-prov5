@@ -255,7 +255,11 @@ function ClientLoginForm({ onAuthenticated }: { onAuthenticated: (user: User) =>
       const user = await databaseService.login(normalizeEmail(email), password);
       if (user.role !== 'client') {
         await databaseService.logout();
-        setError('Esta conta é de aplicador. Use a área da oficina para entrar.');
+        setError(
+          user.role === 'supplier'
+            ? 'Esta conta é de fornecedor. Use o "Entrar" da oficina/fornecedor.'
+            : 'Esta conta é de aplicador. Use a área da oficina para entrar.',
+        );
         return;
       }
       onAuthenticated(user);

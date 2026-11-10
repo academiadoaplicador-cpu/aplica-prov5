@@ -37,10 +37,11 @@ export function isAdminEmail(email: string): boolean {
   return email.trim().toLowerCase() === adminEmail;
 }
 
-export type UserRole = 'applicator' | 'client';
+export type UserRole = 'applicator' | 'client' | 'supplier';
 
 export function toUserRole(value: unknown): UserRole {
-  return value === 'client' ? 'client' : 'applicator';
+  if (value === 'client' || value === 'supplier') return value;
+  return 'applicator';
 }
 
 export function mapUserWithRole(row: Record<string, unknown>) {

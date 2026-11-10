@@ -9,6 +9,7 @@ import { createApplicatorUser, hashPassword } from './userProvisioning.js';
 import { isValidEmail, normalizeEmail } from './email.js';
 import { getPasswordValidationMessage } from './password.js';
 import { createSupplierAdminRouter } from './supplierRoutes.js';
+import { createSupplierPortalAdminRouter } from './supplierPortal.js';
 import { createPromotionAdminRouter } from './promotionRoutes.js';
 import { fetchCnpjLookup } from './cnpjLookup.js';
 import { fetchPlatformPricing, mapPlatformPricing } from './estimate.js';
@@ -36,7 +37,7 @@ function adminEmailParam(): string {
 async function isApplicatorUser(pool: Pool, userId: string): Promise<boolean> {
   const result = await pool.query('SELECT email, role FROM users WHERE id = $1', [userId]);
   if (result.rows.length === 0) return false;
-  if (result.rows[0].role === 'client') return false;
+  if (result.rows[0].role !== 'applicator') return false;
   return !isAdminEmail(result.rows[0].email as string);
 }
 
@@ -103,6 +104,8 @@ export function createAdminRouter(pool: Pool): Router {
     }
   });
 
+  // Acesso do fornecedor e aprovação de alterações (/suppliers/:id/account, .../change-requests).
+  router.use('/suppliers', createSupplierPortalAdminRouter(pool));
   router.use('/suppliers', createSupplierAdminRouter(pool));
   router.use('/promotions', createPromotionAdminRouter(pool));
 

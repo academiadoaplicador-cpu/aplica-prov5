@@ -4,6 +4,7 @@ import {
   Ban,
   Building2,
   CheckCircle2,
+  KeySquare,
   Link2,
   Mail,
   MapPin,
@@ -34,11 +35,12 @@ import {
   SupplierAdminBackLink,
   SupplierSectionIntro,
 } from '../../components/admin/supplierAdminUi';
+import SupplierAccessPanel from '../../components/admin/SupplierAccessPanel';
 import { digitsOnlyCnpj, formatCnpj } from '../../utils/cnpj';
 import { getMaterialLinesForBrand } from '../../utils/materialSelection';
 import { cn } from '../../lib/utils';
 
-type SupplierTab = 'empresa' | 'contatos' | 'vinculos';
+type SupplierTab = 'empresa' | 'contatos' | 'vinculos' | 'acesso';
 
 function supplierPayloadFromValues(values: SupplierFormValues) {
   return {
@@ -74,6 +76,7 @@ export default function AdminSupplierDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [hasPendingChange, setHasPendingChange] = useState(false);
 
   const load = () => {
     if (!supplierId) return;
@@ -91,6 +94,12 @@ export default function AdminSupplierDetailPage() {
   useEffect(() => {
     load();
     databaseService.getMaterials().then(setMaterials);
+    if (supplierId) {
+      supplierService
+        .getChangeRequests(supplierId)
+        .then((list) => setHasPendingChange(list.some((r) => r.status === 'pending')))
+        .catch(() => setHasPendingChange(false));
+    }
   }, [supplierId]);
 
   useEffect(() => {
@@ -302,6 +311,7 @@ export default function AdminSupplierDetailPage() {
               ['empresa', 'Empresa', Building2],
               ['contatos', 'WhatsApp', MessageCircle],
               ['vinculos', 'Marca / Linha', Link2],
+              ['acesso', 'Acesso', KeySquare],
             ] as const
           ).map(([id, label, Icon]) => (
             <button
@@ -317,10 +327,23 @@ export default function AdminSupplierDetailPage() {
             >
               <Icon size={15} />
               {label}
+              {id === 'acesso' && hasPendingChange && (
+                <span className="w-2 h-2 rounded-full bg-amber-400" aria-label="alteração pendente" />
+              )}
             </button>
           ))}
         </div>
       </div>
+
+      {hasPendingChange && tab !== 'acesso' && (
+        <button
+          type="button"
+          onClick={() => setTab('acesso')}
+          className="w-full text-left text-sm text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 hover:bg-amber-500/15"
+        >
+          O fornecedor pediu alteração de dados da empresa ou de marcas/linhas. Ver na aba Acesso.
+        </button>
+      )}
 
       {/* Feedback */}
       {error && (
@@ -402,6 +425,14 @@ export default function AdminSupplierDetailPage() {
             layout="grid"
           />
         </div>
+      )}
+
+      {tab === 'acesso' && (
+        <SupplierAccessPanel
+          supplier={supplier}
+          onApproved={load}
+          onPendingChange={setHasPendingChange}
+        />
       )}
 
       {tab === 'vinculos' && (
